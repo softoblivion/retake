@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from frame_notes import __version__  # noqa: E402
 from frame_notes.core import selfupdate  # noqa: E402
 from frame_notes.core.paths import ENV_HOME, AppPaths  # noqa: E402
+from frame_notes.vendor.selfupdate import schedule as vendor_schedule  # noqa: E402
 
 
 class BuildUpdaterTest(unittest.TestCase):
@@ -62,20 +63,29 @@ class BuildUpdaterTest(unittest.TestCase):
         self.assertTrue(callable(selfupdate.UpdateConfig))
         self.assertTrue(callable(selfupdate.SelfUpdater))
 
-    def test_scheduler_and_interval_keys(self) -> None:
-        from frame_notes.shell import bridge
+    def test_scheduler_period_is_fixed(self) -> None:
+        import time
 
         updater = selfupdate.build_updater(AppPaths(), "1.0.0", lambda status: None)
-        scheduler = selfupdate.build_scheduler(updater, "6h")
+        scheduler = selfupdate.build_scheduler(updater)
         self.assertIsInstance(scheduler, selfupdate.UpdateScheduler)
-        self.assertEqual(scheduler.interval_key, "6h")
         self.assertIs(scheduler.updater, updater)
         self.assertEqual(scheduler.log.name, "frame_notes.selfupdate.schedule")
         self.assertIsNone(scheduler.next_check_at)
-        self.assertEqual(selfupdate.build_scheduler(updater, "bogus").interval_key, "30m")
-        self.assertEqual(selfupdate.DEFAULT_CHECK_INTERVAL, "30m")
-        self.assertEqual(selfupdate.INTERVAL_KEYS, ("30m", "1h", "6h", "1d", "1w"))
-        self.assertEqual(bridge.INTERVAL_KEYS, selfupdate.INTERVAL_KEYS)
+        self.assertFalse(hasattr(selfupdate, "INTERVAL_KEYS"))
+        self.assertFalse(hasattr(selfupdate, "CHECK_INTERVALS"))
+        self.assertFalse(hasattr(scheduler, "set_interval"))
+        self.addCleanup(scheduler.stop)
+        before = time.time()
+        scheduler.start()
+        nxt = scheduler.next_check_at
+        self.assertIsNotNone(nxt)
+        wait = nxt - before
+        self.assertEqual(vendor_schedule.CHECK_PERIOD, 300)
+        self.assertGreaterEqual(wait, 300 - vendor_schedule.CHECK_JITTER - 1)
+        self.assertLessEqual(wait, 300 + vendor_schedule.CHECK_JITTER + 2)
+        scheduler.stop()
+        self.assertIsNone(scheduler.next_check_at)
 
     def test_toast_callback_is_passed_through(self) -> None:
         paths = AppPaths()

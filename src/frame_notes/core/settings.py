@@ -26,8 +26,10 @@ DEFAULTS: dict[str, Any] = {
     "fps_overrides": {},  # {absolute video path: fps}
     "auto_download_updates": True,
     "notes_panel_open": True,
-    "update_check_interval": "30m",  # a key of the self-updater's CHECK_INTERVALS; the shell validates it
 }
+
+# Keys written by older versions that no longer mean anything: dropped silently on load and never written back.
+RETIRED_KEYS = ("update_check_interval",)
 
 
 def _path_key(path: Path | str) -> str:
@@ -117,6 +119,8 @@ class Settings:
                 self._move_aside()
                 return
             self.data = _merge(DEFAULTS, loaded)
+            for key in RETIRED_KEYS:
+                self.data.pop(key, None)
             self.data["recent"] = _clean_recent(self.data["recent"])
             self.data["fps_overrides"] = _clean_overrides(self.data["fps_overrides"])
 

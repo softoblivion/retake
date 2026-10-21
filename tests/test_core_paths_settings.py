@@ -148,10 +148,36 @@ class SettingsTest(TempCase):
         self.assertEqual(s.last_frame(self.tmp / "v10.mp4"), 99)
         self.assertEqual(s.last_frame(self.tmp / "nope.mp4"), 0)
 
-    def test_forget_recent_and_interval_default(self) -> None:
+    def test_auto_download_defaults_to_on(self) -> None:
+        folder = self.tmp / "home"
+        folder.mkdir()
+        (folder / "settings.json").write_text(json.dumps({"notes_panel_open": False}), encoding="utf-8")
         s = self.make()
         s.load()
-        self.assertEqual(s.data["update_check_interval"], "30m")
+        self.assertIs(s.data["auto_download_updates"], True)
+        self.assertIs(s.data["notes_panel_open"], False)
+
+    def test_retired_interval_key_is_dropped_silently(self) -> None:
+        folder = self.tmp / "home"
+        folder.mkdir()
+        (folder / "settings.json").write_text(
+            json.dumps({"update_check_interval": "6h", "auto_download_updates": False, "last_dir": "clips"}),
+            encoding="utf-8",
+        )
+        s = self.make()
+        s.load()
+        self.assertNotIn("update_check_interval", s.data)
+        self.assertNotIn("update_check_interval", DEFAULTS)
+        self.assertIs(s.data["auto_download_updates"], False)
+        self.assertFalse((folder / "settings.json.bad").exists())
+        s.save()
+        written = json.loads((folder / "settings.json").read_text(encoding="utf-8"))
+        self.assertNotIn("update_check_interval", written)
+        self.assertEqual(written["last_dir"], "clips")
+
+    def test_forget_recent(self) -> None:
+        s = self.make()
+        s.load()
         s.touch_recent(self.tmp / "a.mp4", 1)
         s.touch_recent(self.tmp / "b.mp4", 2)
         self.assertTrue(s.forget_recent(str(self.tmp / "A.MP4")))

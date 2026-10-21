@@ -181,9 +181,6 @@ class FakeScheduler:
     def start(self) -> None:
         self.calls.append(("start",))
 
-    def set_interval(self, key: str) -> None:
-        self.calls.append(("set_interval", key))
-
     def stop(self) -> None:
         self.calls.append(("stop",))
 
@@ -351,10 +348,7 @@ class StateTests(BridgeCase):
         self.assertEqual(state["version"], "1.0.0")
         self.assertIsNone(state["video"])
         self.assertEqual(state["notes"], [])
-        self.assertEqual(state["settings"], {"auto_download_updates": True, "notes_panel_open": True,
-                                             "update_check_interval": "30m"})
-        self.settings.data["update_check_interval"] = "2h"  # unknown keys from a hand-edited file read as default
-        self.assertEqual(self.bridge.get_state()["settings"]["update_check_interval"], "30m")
+        self.assertEqual(state["settings"], {"auto_download_updates": True, "notes_panel_open": True})
         self.assertEqual(state["recent"], [])
 
     def test_state_composition_after_open(self) -> None:
@@ -532,14 +526,11 @@ class CallTests(BridgeCase):
         self.assertFalse(self.settings.data["notes_panel_open"])
         self.assertGreaterEqual(self.settings.saves, 1)
         for key, value in (("window", {}), ("notes_panel_open", "yes"), ("auto_download_updates", 1),
-                           ("update_check_interval", "2h"), ("update_check_interval", 30)):
+                           ("update_check_interval", "1d"), ("update_check_interval", 30)):
             with self.subTest(key=key, value=value), self.assertRaises(BridgeError):
                 self.bridge.set_setting(key, value)
+        self.assertNotIn("update_check_interval", self.settings.data)
         self.assertEqual(self.scheduler.calls, [])
-        state = self.bridge.set_setting("update_check_interval", "1d")
-        self.assertEqual(state["settings"]["update_check_interval"], "1d")
-        self.assertEqual(self.settings.data["update_check_interval"], "1d")
-        self.assertEqual(self.scheduler.calls, [("set_interval", "1d")])
 
     def test_log_writes_to_the_ui_logger(self) -> None:
         with self.assertLogs("frame_notes.ui", level="DEBUG") as captured:

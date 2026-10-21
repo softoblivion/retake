@@ -153,7 +153,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     session = Session(settings, bridge._on_change, logging.getLogger("frame_notes.session"))
     bridge._attach_session(session)
     updater = build_updater(paths, __version__, bridge._on_update_status, bridge._on_update_toast)
-    bridge._attach_updater(updater, build_scheduler(updater, str(settings.data.get("update_check_interval") or "")))
+    bridge._attach_updater(updater, build_scheduler(updater))
     if args.video:
         bridge._queue_open(str(Path(args.video).expanduser().resolve()))
 

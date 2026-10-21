@@ -188,10 +188,11 @@ Network traffic goes to GitHub only (release check and download). Videos and not
 
 ## Updates
 
-The app checks GitHub Releases on every launch in the background and then on a timer: every 30 minutes by
-default, or every hour, 6 hours, day or week (*Check for updates* in the version popover). A new version is downloaded automatically
-(*Download updates automatically*, on by default) or on **Download**, verified by byte size and SHA-256 against
-the release's `SHA256SUMS`, and installed by **Restart to update**: the downloaded exe waits for the app to exit,
+The app checks GitHub Releases on every launch in the background and then every 5 minutes while it runs. A failed
+check is retried later with a growing wait, up to an hour, and nothing is checked while there is no network
+connection. A new version is downloaded automatically (*Download updates automatically* in the version popover, on
+by default) or on **Download**, verified by byte size and SHA-256 against
+the release's `SHA256SUMS`. A downloaded version is installed only by **Restart to update**: the downloaded exe waits for the app to exit,
 keeps the old file as `FrameNotes.exe.old` until the new one has started, and relaunches it. If anything fails
 the current exe stays untouched. Every release ships two assets: `FrameNotes.exe` and `SHA256SUMS`. Release notes
 live in [`docs/releases/`](docs/releases/).

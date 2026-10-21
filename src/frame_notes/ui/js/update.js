@@ -15,7 +15,6 @@ export function initUpdate({ actions }) {
   const btnDownload = $('up-download');
   const btnRestart = $('up-restart');
   const auto = $('up-auto');
-  const interval = $('up-interval');
   let closing = false;
 
   popover(chip, pop, { onOpen: render });
@@ -35,11 +34,6 @@ export function initUpdate({ actions }) {
   auto.addEventListener('change', async () => {
     const st = await guard(api.set_setting('auto_download_updates', auto.checked));
     if (st) actions.applyState(st);
-  });
-  interval.addEventListener('change', async () => {
-    const st = await guard(api.set_setting('update_check_interval', interval.value));
-    if (st) actions.applyState(st);
-    else render();
   });
 
   function setStatus(status) {
@@ -84,7 +78,6 @@ export function initUpdate({ actions }) {
     btnRestart.disabled = closing || !(stage === 'ready' && u.can_apply);
     const settings = (app.state && app.state.settings) || {};
     auto.checked = !!settings.auto_download_updates;
-    if (document.activeElement !== interval) interval.value = settings.update_check_interval || '30m';
   }
 
   app.on('state', render);

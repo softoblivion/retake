@@ -18,8 +18,7 @@ export function createMock(dispatch) {
   let order = 0;
   let lastFrame = 0;
   let fileExists = false;     // the mock "notes file" exists after the first note
-  const settings = { auto_download_updates: true, notes_panel_open: true, update_check_interval: '30m' };
-  const INTERVALS = ['30m', '1h', '6h', '1d', '1w'];
+  const settings = { auto_download_updates: true, notes_panel_open: true };
   const recent = [];
   const sample = params.get('video');
   const NO_NOTES = { notes_count: null, frames_count: null, notes_dir: null };
@@ -402,12 +401,6 @@ export function createMock(dispatch) {
       return reply(null);
     },
     set_setting(key, value) {
-      if (key === 'update_check_interval') {
-        if (!INTERVALS.includes(value)) return fail('Invalid setting value.');
-        settings[key] = value;
-        emitState();
-        return reply(payload());
-      }
       if (!['auto_download_updates', 'notes_panel_open'].includes(key)) return fail('Unknown setting.');
       settings[key] = !!value;
       emitState();

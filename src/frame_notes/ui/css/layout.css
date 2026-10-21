@@ -121,25 +121,9 @@ body:not(.has-video) .video-only { display: none !important; }
   white-space: pre-wrap;
 }
 .up-buttons { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.up-interval {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-  color: var(--ink-2);
-  font-size: 12.5px;
-}
-.up-select {
-  height: 26px;
-  padding: 0 6px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-m);
-  background: var(--bg-3);
-  font-size: 12.5px;
-}
 .up-auto { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 12.5px; cursor: pointer; }
 .up-auto input { margin: 0; accent-color: var(--accent); }
+.up-hint { margin: 3px 0 0 24px; color: var(--ink-3); font-size: 11.5px; line-height: 1.4; }
 
 /* Work area: viewer on the left, notes panel on the right. */
 #work {

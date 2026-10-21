@@ -37,9 +37,8 @@ ui_log = logging.getLogger("frame_notes.ui")
 WINDOW_TITLE = "Frame Notes"
 VIDEO_PATTERNS = "*.mp4;*.m4v;*.mov;*.webm;*.mkv"
 FILE_TYPES = (f"Video ({VIDEO_PATTERNS})", "All files (*.*)")
-INTERVAL_KEYS = ("30m", "1h", "6h", "1d", "1w")  # keys of the updater's CHECK_INTERVALS (checked in a test)
-ALLOWED_SETTINGS = {"auto_download_updates": bool, "notes_panel_open": bool, "update_check_interval": str}
-SETTING_DEFAULTS = (("auto_download_updates", True), ("notes_panel_open", True), ("update_check_interval", "30m"))
+ALLOWED_SETTINGS = {"auto_download_updates": bool, "notes_panel_open": bool}
+SETTING_DEFAULTS = (("auto_download_updates", True), ("notes_panel_open", True))
 LOG_LEVELS = {"debug": logging.DEBUG, "info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 MAX_UI_LOG_CHARS = 2000
 COALESCED_EVENTS = frozenset({"state"})
@@ -323,8 +322,6 @@ class Bridge:
         state["recent"] = self._recent((video or {}).get("path"))
         data = self._settings.data
         state["settings"] = {key: data.get(key, default) for key, default in SETTING_DEFAULTS}
-        if state["settings"]["update_check_interval"] not in INTERVAL_KEYS:
-            state["settings"]["update_check_interval"] = SETTING_DEFAULTS[2][1]
         return state
 
     def _state(self) -> dict:
@@ -436,7 +433,7 @@ class Bridge:
         if self._scheduler is not None:
             try:
                 self._scheduler.start()
-                log.info("periodic update checks every %s", self._settings.data.get("update_check_interval"))
+                log.info("periodic update checks every 5 minutes")
             except Exception:  # noqa: BLE001
                 log.warning("periodic update checks could not start", exc_info=True)
 
@@ -661,15 +658,12 @@ class Bridge:
         expected = ALLOWED_SETTINGS.get(key) if isinstance(key, str) else None
         if expected is None:
             raise BridgeError("Unknown setting.")
-        if not isinstance(value, expected) or (key == "update_check_interval" and value not in INTERVAL_KEYS):
+        if not isinstance(value, expected):
             raise BridgeError("Invalid setting value.")
         with self._lock:
             self._settings.data[key] = value
             self._settings.save()
             state = self._push_state()
-        if key == "update_check_interval" and self._scheduler is not None:
-            self._scheduler.set_interval(value)
-            log.info("periodic update checks every %s", value)
         if key == "auto_download_updates" and value and self._updater is not None:
             status = self._updater.status()
             if status.get("stage") == "available":
