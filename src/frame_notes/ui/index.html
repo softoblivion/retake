@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frame Notes</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/viewer.css">
+  <link rel="stylesheet" href="css/timeline.css">
+  <link rel="stylesheet" href="css/panel.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header id="header">
+      <button type="button" id="btn-open" class="btn" title="Open a video (Ctrl+O)">Open</button>
+      <div class="file video-only">
+        <span id="file-name" class="file-name"></span>
+        <span id="file-size" class="file-size muted mono"></span>
+      </div>
+      <div id="fps-box" class="fps-box video-only">
+        <select id="fps-select" class="fps-select" aria-label="Frame rate"></select>
+        <span class="fps-unit muted">fps</span>
+        <span id="fps-hint" class="fps-hint muted"></span>
+        <button type="button" id="fps-reset" class="btn btn-link" hidden title="Use the rate from the file">Reset</button>
+        <button type="button" id="fps-use" class="btn btn-s" hidden></button>
+      </div>
+      <div id="counts" class="counts video-only" aria-label="Note counts"></div>
+      <div class="spacer"></div>
+      <button type="button" id="btn-copy" class="btn video-only" title="Copy the notes text (Ctrl+C)">Copy</button>
+      <div class="menu-wrap video-only">
+        <button type="button" id="btn-reveal" class="btn btn-menu" aria-haspopup="menu" aria-expanded="false">Reveal</button>
+        <div id="reveal-menu" class="menu" role="menu" hidden>
+          <button type="button" role="menuitem" data-reveal="video">Video</button>
+          <button type="button" role="menuitem" data-reveal="notes">Notes file</button>
+          <button type="button" role="menuitem" data-reveal="images">Images</button>
+        </div>
+      </div>
+      <button type="button" id="btn-keys" class="btn" title="Keyboard keys (?)">Keys</button>
+      <button type="button" id="btn-panel" class="btn video-only" aria-pressed="true" title="Show or hide the notes list">Notes</button>
+      <div class="menu-wrap">
+        <button type="button" id="version" class="version-chip" aria-haspopup="dialog" aria-expanded="false"><i class="vc-dot" aria-hidden="true"></i><span id="version-text"></span></button>
+        <div id="update-pop" class="menu update-pop" role="dialog" aria-label="Updates" hidden>
+          <div id="up-message" class="up-message"></div>
+          <pre id="up-notes" class="up-notes" hidden></pre>
+          <div class="up-buttons">
+            <button type="button" id="up-check" class="btn">Check for updates</button>
+            <button type="button" id="up-download" class="btn">Download</button>
+            <button type="button" id="up-restart" class="btn btn-primary">Restart</button>
+          </div>
+          <label class="up-auto"><input type="checkbox" id="up-auto"> Download updates automatically</label>
+        </div>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" role="alert" hidden>
+      <span id="banner-text" class="banner-text"></span>
+      <button type="button" id="banner-close" class="banner-close" aria-label="Close">&#x2715;</button>
+    </div>
+
+    <main id="work">
+      <section id="viewer">
+        <div id="stage">
+          <video id="video" preload="auto" playsinline disablepictureinpicture></video>
+          <svg id="overlay" aria-hidden="true"></svg>
+
+          <div id="note-editor" class="note-editor" hidden>
+            <div class="ne-head"><span class="ne-kind badge"></span><span class="ne-tc mono"></span></div>
+            <div class="ne-slot"></div>
+          </div>
+
+          <div id="hint" class="hint" hidden>
+            <span class="hint-text"></span>
+            <span class="hint-keys"></span>
+          </div>
+
+          <div id="empty" class="empty">
+            <div class="drop-zone">
+              <div class="dz-title">Drop a video here</div>
+              <div class="dz-sub muted">MP4 (H.264) or WebM (VP9, AV1)</div>
+              <div class="dz-actions">
+                <button type="button" id="empty-open" class="btn btn-primary">Open video</button>
+                <label id="mock-file" class="btn" hidden>Choose file<input type="file" accept="video/*,.mkv" hidden></label>
+              </div>
+              <div class="dz-keys muted"><kbd>Ctrl</kbd>+<kbd>O</kbd></div>
+            </div>
+            <div id="recent" class="recent" hidden>
+              <div class="recent-title muted">Recent</div>
+              <ul id="recent-list" class="recent-list"></ul>
+            </div>
+          </div>
+        </div>
+
+        <div id="transport" class="transport video-only">
+          <div class="tp-buttons">
+            <button type="button" class="tp-btn" data-act="first" title="First frame (Home)" aria-label="First frame"></button>
+            <button type="button" class="tp-btn" data-act="prev" title="Previous frame (Left)" aria-label="Previous frame"></button>
+            <button type="button" class="tp-btn tp-play" data-act="play" title="Play (Space)" aria-label="Play"></button>
+            <button type="button" class="tp-btn" data-act="next" title="Next frame (Right)" aria-label="Next frame"></button>
+            <button type="button" class="tp-btn" data-act="last" title="Last frame (End)" aria-label="Last frame"></button>
+          </div>
+          <div class="tp-time">
+            <span id="tc-current" class="tc-current mono"></span>
+            <span class="tc-sep muted">/</span>
+            <span id="tc-duration" class="tc-duration mono muted"></span>
+            <span id="frame-num" class="frame-num mono muted"></span>
+          </div>
+          <div class="spacer"></div>
+          <div class="tp-legend" aria-label="Note keys">
+            <button type="button" class="legend-key k-FIX" data-kind-key="1" title="FIX note at this frame"><kbd>1</kbd>fix</button>
+            <span class="legend-sep muted">·</span>
+            <button type="button" class="legend-key k-ADD" data-kind-key="2" title="ADD note at this frame"><kbd>2</kbd>add</button>
+            <span class="legend-sep muted">·</span>
+            <button type="button" class="legend-key k-REMOVE" data-kind-key="3" title="REMOVE note at this frame"><kbd>3</kbd>remove</button>
+          </div>
+        </div>
+      </section>
+
+      <aside id="panel" class="panel video-only" aria-label="Notes">
+        <div class="np-header">
+          <span class="np-title">Notes</span>
+          <span class="np-count muted mono"></span>
+          <div class="spacer"></div>
+          <button type="button" class="btn btn-icon np-close" title="Hide the notes list" aria-label="Hide the notes list">&#x203A;</button>
+        </div>
+        <ul class="np-list" role="listbox" aria-label="Notes"></ul>
+        <div class="np-empty muted" hidden>No notes. Press <kbd>1</kbd>, <kbd>2</kbd> or <kbd>3</kbd> to add one at the current frame.</div>
+      </aside>
+    </main>
+
+    <section id="timeline" class="timeline video-only" aria-label="Timeline">
+      <div class="tl-body">
+        <canvas class="tl-ruler"></canvas>
+        <div class="tl-track"></div>
+        <div class="tl-playhead"><i class="tl-ph-head"></i></div>
+      </div>
+      <div class="tl-scroll" hidden><div class="tl-thumb"></div></div>
+      <div class="tl-card" hidden>
+        <div class="tc-card-head"><span class="badge"></span><span class="tc-card-tc mono"></span></div>
+        <div class="tc-card-text"></div>
+        <img alt="" hidden>
+      </div>
+    </section>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="drop-veil" class="drop-veil" hidden><div>Drop to open</div></div>
+
+  <div id="keys-help" class="keys-help" hidden>
+    <div class="kh-box" role="dialog" aria-label="Keyboard keys">
+      <div class="kh-head"><span>Keys</span><button type="button" class="btn btn-icon kh-close" aria-label="Close">&#x2715;</button></div>
+      <dl class="kh-list">
+        <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+        <dt><kbd>&#x2190;</kbd> <kbd>&#x2192;</kbd></dt><dd>One frame back / forward</dd>
+        <dt><kbd>Shift</kbd>+<kbd>&#x2190;</kbd> <kbd>&#x2192;</kbd></dt><dd>Ten frames</dd>
+        <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last frame</dd>
+        <dt><kbd>&#x2191;</kbd> <kbd>&#x2193;</kbd></dt><dd>Previous / next note</dd>
+        <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>New FIX / ADD / REMOVE note</dd>
+        <dt><kbd>Enter</kbd> <kbd>Esc</kbd></dt><dd>Save / cancel the note</dd>
+        <dt><kbd>F2</kbd></dt><dd>Edit the selected note (also double click)</dd>
+        <dt><kbd>Backspace</kbd></dt><dd>In an empty note field: remove the region</dd>
+        <dt><kbd>Delete</kbd></dt><dd>Remove the selected note</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>C</kbd></dt><dd>Copy the notes text</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>O</kbd></dt><dd>Open a video</dd>
+        <dt>Wheel</dt><dd>Zoom the timeline (<kbd>Shift</kbd>: pan)</dd>
+        <dt><kbd>0</kbd></dt><dd>Show the whole video on the timeline</dd>
+        <dt><kbd>?</kbd></dt><dd>This list</dd>
+      </dl>
+    </div>
+  </div>
+</body>
+</html>
