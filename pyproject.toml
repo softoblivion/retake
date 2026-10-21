@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frame-notes"
+description = "Frame-accurate video review notes with After Effects style timecodes"
+readme = "README.md"
+requires-python = ">=3.14"
+license = { file = "LICENSE" }
+dynamic = ["version"]
+dependencies = [
+    "pywebview>=6.2.1,<7",
+    "pythonnet>=3.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyinstaller>=6.22",
+    "pillow>=12",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+frame_notes = ["ui/**/*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "frame_notes.__version__" }
