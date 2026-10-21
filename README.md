@@ -14,6 +14,10 @@
 ![CSS](https://img.shields.io/badge/CSS-663399?logo=css&logoColor=white)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
+<img src="docs/assets/screenshot.png" alt="Frame Notes main window" width="860">
+
+<sub>Pause on a frame · press 1, 2 or 3 · drag a rectangle around the element · type the note. Saved next to the video.</sub>
+
 </div>
 
 ---
@@ -38,9 +42,11 @@
 
 - **Three keys, no mouse.** `1` fix, `2` add, `3` remove. The video pauses, the note takes the current frame, you
   type one line and press `Enter`.
+- **Point at the thing.** After the key, drag a rectangle around the element on the frame (or click to put a
+  point). The note gets a PNG of that frame with the mark drawn on it, so "this title" needs no description.
 - **Timecodes the editor can use.** `0:00:12:07` as in the After Effects timeline (drop-frame `0;00;12;07` for
   29.97 and 59.94), computed from the file's real frame rate.
-- **One readable file, next to the video.** `promo_v3.mp4` gets `promo_v3.notes.txt`: a header and one line per
+- **One readable file, next to the video.** `promo_v3.mp4` gets `promo_v3_notes.txt`: a header and one line per
   note. Paste it into a chat, open it in Notepad, hand it to the editor. Open the video again and the notes are
   back on the timeline.
 - **A mini timeline.** Every note is a coloured marker; click a marker to jump to its frame, step frame by frame
@@ -52,8 +58,8 @@
 1. Download [`FrameNotes.exe`](https://github.com/softoblivion/frame-notes/releases/latest/download/FrameNotes.exe)
    into a folder of its own, for example `D:\Apps\FrameNotes\`.
 2. Run it and drop a video onto the window (or press `Ctrl+O`, or use "Open with" in Explorer).
-3. Play, pause on a frame, press `1`, `2` or `3`, type the note, press `Enter`. The notes file is saved after every
-   change.
+3. Play, pause on a frame, press `1`, `2` or `3`, drag a rectangle around the element if it helps, type the note,
+   press `Enter`. The notes file is saved after every change.
 
 **Requirements:** Windows 10 (1809+) or Windows 11 with the Microsoft Edge WebView2 Runtime (preinstalled on
 Windows 11 and on up-to-date Windows 10). No installer, no admin rights.
@@ -66,13 +72,15 @@ Windows 11 and on up-to-date Windows 10). No installer, no admin rights.
 | | |
 |---|---|
 | **Three note types** | FIX (correct something), ADD (something is missing), REMOVE (take something out), bound to `1` / `2` / `3`. Each has its own marker colour on the timeline and its own tag in the file. |
+| **Region on the frame** | While a note is being written, drag a rectangle on the video or click to put a point. The frame is saved as a PNG with the mark drawn on it into `<name>_notes\` next to the video, and the mark reappears over the video whenever the note is selected. |
 | **Frame-accurate** | Seeks land on frame centres; the current frame and its timecode are shown next to the total duration. Arrow keys step one frame, `Shift` + arrows ten. |
-| **Mini timeline** | Ruler with timecodes, playhead, one marker per note. Click to seek, hover for the text, wheel to zoom, `Shift` + wheel to pan. |
-| **Notes list** | Every note as `timecode  TYPE  text`; select with `↑` / `↓` (the video follows), edit with `F2`, remove with `Delete`. |
+| **Mini timeline** | Ruler with timecodes, playhead, one marker per note with the first words of its text. Hover shows the full note and its frame image; click seeks; wheel zooms, `Shift` + wheel pans. |
+| **Notes list** | Every note as `timecode  TYPE  text` with a thumbnail; select with `↑` / `↓` (the video follows), edit with `F2`, remove with `Delete`. |
 | **Automatic save** | The notes file is rewritten after every change with an atomic replace. No Save button, nothing to lose when the window closes. |
 | **Copy to clipboard** | `Ctrl+C` outside a text field copies the whole notes file as text. |
 | **Frame rate from the file** | Read from the MP4 / MOV or WebM container; a header control shows it and lets you override it when a file reports a wrong rate. |
-| **Self-updating app** | New releases are detected on launch, downloaded on request, verified by size and SHA-256 and installed on restart. |
+| **Portable** | One exe, one data folder next to it, no installer. Several windows can be open at once, one review each. |
+| **Self-updating app** | New releases are detected on launch, downloaded in the background (or on request), verified by size and SHA-256 and installed on **Restart**. |
 
 ## Keyboard
 
@@ -82,8 +90,8 @@ Windows 11 and on up-to-date Windows 10). No installer, no admin rights.
 | `←` `→` | One frame back / forward |
 | `Shift+←` `Shift+→` | Ten frames |
 | `Home` `End` | First / last frame |
-| `1` `2` `3` | Add a FIX / ADD / REMOVE note at the current frame (pauses first) |
-| `Enter` | Save the note text |
+| `1` `2` `3` | Start a FIX / ADD / REMOVE note at the current frame (pauses first); then drag on the video to mark a region, or click to put a point |
+| `Enter` | Save the note |
 | `Esc` | Cancel: a new note is removed, an edit is reverted |
 | `F2` | Edit the selected note |
 | `Delete` | Remove the selected note |
@@ -91,24 +99,28 @@ Windows 11 and on up-to-date Windows 10). No installer, no admin rights.
 | `Ctrl+C` | Copy the notes file text (when no text field is focused) |
 | `Ctrl+O` | Open a video |
 | `0` | Reset the timeline zoom |
+| `?` | Show the key map |
 
 ## The notes file
 
-`promo_v3.mp4` → `promo_v3.notes.txt` in the same folder. UTF-8, tab-separated:
+`promo_v3.mp4` → `promo_v3_notes.txt` in the same folder, plus a `promo_v3_notes\` folder with one PNG per note
+that has a region. UTF-8, tab-separated:
 
 ```
 # Frame Notes 1
 # source: promo_v3.mp4
 # fps: 25
 # duration: 0:01:32:10
-0:00:12:07	FIX	logo flickers for two frames
+0:00:12:07	FIX	logo flickers for two frames	rect 0.540,0.360 0.880,0.800	0-00-12-07_FIX.png
 0:00:40:00	ADD	subtitle for the second speaker
-0:01:02:15	REMOVE	second take of the handshake
+0:01:02:15	REMOVE	second take of the handshake	point 0.512,0.300	0-01-02-15_REMOVE.png
 ```
 
-Lines are sorted by frame. The `source` line ties the file to its video; lines the app does not understand are
-kept where they are, so hand edits survive. Removing every note leaves the header, so the editor can see that the
-review happened and found nothing.
+The first three columns are what the editor reads: timecode, type, text. The optional fourth column is the region
+in fractions of the frame, the fifth the image file name. Lines are sorted by frame. The `source` line ties the
+file to its video; lines the app does not understand are kept, so hand edits survive. Removing a note deletes
+its image; removing every note leaves the header, so the editor can see that the review happened and found
+nothing.
 
 ## Timecodes
 
@@ -132,19 +144,20 @@ profile:
 
 | Path | Content |
 |---|---|
-| `settings.json` | window placement, recent files with their last frame and frame-rate override, update settings |
+| `settings.json` | window placement, recent files with their last frame and frame-rate override, panel state, update setting |
 | `logs\` | `app.log` |
 | `updates\` | downloaded app updates and `apply.log` |
 
-Network traffic goes to GitHub only (release check and download). Videos never leave the machine.
+Network traffic goes to GitHub only (release check and download). Videos and notes never leave the machine.
 
 ## Updates
 
-The app checks GitHub Releases on every launch in the background. A new version is downloaded on **Download**
-(or automatically when *Download updates automatically* is on), verified by byte size and SHA-256 against the
-release's `SHA256SUMS`, and installed by **Restart**: the running `FrameNotes.exe` is kept as `FrameNotes.exe.old`
-until the new one has started. If anything fails the current exe stays untouched. Every release ships two assets:
-`FrameNotes.exe` and `SHA256SUMS`. Release notes live in [`docs/releases/`](docs/releases/).
+The app checks GitHub Releases on every launch in the background. A new version is downloaded automatically
+(*Download updates automatically*, on by default) or on **Download**, verified by byte size and SHA-256 against
+the release's `SHA256SUMS`, and installed by **Restart to update**: the downloaded exe waits for the app to exit,
+keeps the old file as `FrameNotes.exe.old` until the new one has started, and relaunches it. If anything fails
+the current exe stays untouched. Every release ships two assets: `FrameNotes.exe` and `SHA256SUMS`. Release notes
+live in [`docs/releases/`](docs/releases/).
 
 ## Building from source
 
