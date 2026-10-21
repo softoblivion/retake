@@ -19,6 +19,14 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from frame_notes.core.notes import (
+    NotesLayoutError,
+    delete_notes,
+    legacy_notes_path_for,
+    notes_dir_for,
+    notes_path_for,
+    notes_summary,
+)
 from frame_notes.core.session import SessionError
 
 from . import winutil
@@ -29,7 +37,9 @@ ui_log = logging.getLogger("frame_notes.ui")
 WINDOW_TITLE = "Frame Notes"
 VIDEO_PATTERNS = "*.mp4;*.m4v;*.mov;*.webm;*.mkv"
 FILE_TYPES = (f"Video ({VIDEO_PATTERNS})", "All files (*.*)")
-ALLOWED_SETTINGS = {"auto_download_updates": bool, "notes_panel_open": bool}
+INTERVAL_KEYS = ("30m", "1h", "6h", "1d", "1w")  # keys of the updater's CHECK_INTERVALS (checked in a test)
+ALLOWED_SETTINGS = {"auto_download_updates": bool, "notes_panel_open": bool, "update_check_interval": str}
+SETTING_DEFAULTS = (("auto_download_updates", True), ("notes_panel_open", True), ("update_check_interval", "30m"))
 LOG_LEVELS = {"debug": logging.DEBUG, "info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 MAX_UI_LOG_CHARS = 2000
 COALESCED_EVENTS = frozenset({"state"})
@@ -195,6 +205,7 @@ class Bridge:
         self._reveal = reveal or winutil.reveal_in_explorer
         self._session: Any = None
         self._updater: Any = None
+        self._scheduler: Any = None
         self._window: Any = None
         self._lock = threading.RLock()
         self._opening = False
@@ -204,13 +215,16 @@ class Bridge:
         self._closing = False
         self._shut_down = False
         self._on_closed: Optional[Callable[[], None]] = None
+        self._summaries: dict[str, tuple[list, Optional[dict]]] = {}
 
     # -- wiring (underscore names are not exposed to JS)
     def _attach_session(self, session: Any) -> None:
         self._session = session
 
-    def _attach_updater(self, updater: Any) -> None:
+    def _attach_updater(self, updater: Any, scheduler: Any = None) -> None:
+        """The updater and its periodic scheduler; the scheduler starts after the launch check."""
         self._updater = updater
+        self._scheduler = scheduler
 
     def _attach_window(self, window: Any) -> None:
         self._window = window
@@ -242,19 +256,60 @@ class Bridge:
                 out["image_url"] = url
         return out
 
-    def _recent(self) -> list[dict]:
+    def _recent(self, open_path: Optional[str] = None) -> list[dict]:
         items = []
+        open_key = _path_key(open_path) if open_path else None
         for entry in list(self._settings.data.get("recent") or []):
             path = str(entry.get("path", ""))
             if not path:
                 continue
+            summary = self._summary(Path(path))
+            folder = notes_dir_for(Path(path))
             items.append({
                 "path": path,
                 "name": Path(path).name,
                 "last_frame": int(entry.get("last_frame", 0) or 0),
                 "exists": os.path.isfile(path),
+                "notes_count": summary["notes"] if summary else None,
+                "frames_count": summary["frames"] if summary else None,
+                "notes_dir": str(folder) if folder.is_dir() else None,
+                "is_open": open_key is not None and _path_key(path) == open_key,
             })
         return items
+
+    def _summary(self, video: Path) -> Optional[dict]:
+        """Note and frame counts of a recent video, read again only after its data file changed."""
+        stamps: list = []
+        for candidate in (notes_path_for(video), legacy_notes_path_for(video)):
+            try:
+                info = os.stat(candidate)
+                stamps.append((info.st_mtime_ns, info.st_size))
+            except OSError:
+                stamps.append(None)
+        key = _path_key(str(video))
+        if stamps == [None, None]:
+            self._summaries.pop(key, None)
+            return None
+        cached = self._summaries.get(key)
+        if cached is not None and cached[0] == stamps:
+            return cached[1]
+        summary = notes_summary(video)
+        self._summaries[key] = (stamps, summary)
+        return summary
+
+    def _recent_entry(self, path: Any) -> str:
+        """A path of the recent list (the open video is always in it); anything else is refused."""
+        if isinstance(path, str) and path.strip():
+            key = _path_key(path)
+            for entry in list(self._settings.data.get("recent") or []):
+                listed = str(entry.get("path", ""))
+                if listed and _path_key(listed) == key:
+                    return listed
+        raise BridgeError("File not found.")
+
+    def _open_video_path(self) -> Optional[str]:
+        video = self._session.payload().get("video") if self._session is not None else None
+        return (video or {}).get("path") or None
 
     def _compose(self, payload: dict) -> dict:
         state = dict(payload)
@@ -265,10 +320,11 @@ class Bridge:
             video["url"] = self._server.media_url()
         state["video"] = video
         state["notes"] = [self._decorate_note(n) for n in payload.get("notes", [])]
-        state["recent"] = self._recent()
+        state["recent"] = self._recent((video or {}).get("path"))
         data = self._settings.data
-        state["settings"] = {key: data.get(key, default) for key, default in
-                             (("auto_download_updates", True), ("notes_panel_open", True))}
+        state["settings"] = {key: data.get(key, default) for key, default in SETTING_DEFAULTS}
+        if state["settings"]["update_check_interval"] not in INTERVAL_KEYS:
+            state["settings"]["update_check_interval"] = SETTING_DEFAULTS[2][1]
         return state
 
     def _state(self) -> dict:
@@ -377,6 +433,12 @@ class Bridge:
             updater.check_background()
         except Exception:  # noqa: BLE001
             log.warning("update check could not start", exc_info=True)
+        if self._scheduler is not None:
+            try:
+                self._scheduler.start()
+                log.info("periodic update checks every %s", self._settings.data.get("update_check_interval"))
+            except Exception:  # noqa: BLE001
+                log.warning("periodic update checks could not start", exc_info=True)
 
     # -- shutdown
     def _close_window(self) -> None:
@@ -393,6 +455,11 @@ class Bridge:
             if self._shut_down:
                 return
             self._shut_down = True
+            if self._scheduler is not None:
+                try:
+                    self._scheduler.stop()
+                except Exception:  # noqa: BLE001
+                    log.debug("scheduler stop failed", exc_info=True)
             if self._session is not None:
                 try:
                     self._session.close()
@@ -516,6 +583,23 @@ class Bridge:
         return None
 
     @_api
+    def readable_text(self):
+        with self._lock:
+            return self._session.readable_text()
+
+    @_api
+    def copy_readable_text(self):
+        with self._lock:
+            self._video_info()
+            text = self._session.readable_text()
+        try:
+            self._clipboard(text)
+        except OSError as exc:
+            raise BridgeError(str(exc) or "Could not copy to the clipboard.") from None
+        self._toast("Readable notes copied")
+        return None
+
+    @_api
     def reveal(self, which):
         with self._lock:
             video = self._video_info()
@@ -532,18 +616,60 @@ class Bridge:
         self._reveal(target)
         return None
 
+    # -- contract: recent list
+    @_api
+    def reveal_recent(self, path):
+        video = Path(self._recent_entry(path))
+        folder = notes_dir_for(video)
+        if folder.is_dir():
+            self._reveal(str(folder))
+        elif video.is_file():
+            self._reveal(str(video))
+        else:
+            raise BridgeError("File not found.")
+        return None
+
+    @_api
+    def delete_notes(self, path):
+        video = self._recent_entry(path)
+        with self._lock:
+            current = self._open_video_path()
+            try:
+                result = delete_notes(Path(video), log)
+            except NotesLayoutError as exc:
+                log.info("delete_notes refused for %s: %s", video, exc)
+                raise BridgeError(str(exc)) from None
+            if current and _path_key(current) == _path_key(video):
+                state = self._open_path(current)  # the session starts again with no notes
+            else:
+                state = self._push_state()
+        self._toast(deleted_message(result))
+        return state
+
+    @_api
+    def forget_recent(self, path):
+        if not isinstance(path, str) or not path.strip():
+            raise BridgeError("File not found.")
+        with self._lock:
+            if self._settings.forget_recent(path):
+                self._settings.save()
+            return self._push_state()
+
     # -- contract: settings and log
     @_api
     def set_setting(self, key, value):
         expected = ALLOWED_SETTINGS.get(key) if isinstance(key, str) else None
         if expected is None:
             raise BridgeError("Unknown setting.")
-        if not isinstance(value, expected):
+        if not isinstance(value, expected) or (key == "update_check_interval" and value not in INTERVAL_KEYS):
             raise BridgeError("Invalid setting value.")
         with self._lock:
             self._settings.data[key] = value
             self._settings.save()
             state = self._push_state()
+        if key == "update_check_interval" and self._scheduler is not None:
+            self._scheduler.set_interval(value)
+            log.info("periodic update checks every %s", value)
         if key == "auto_download_updates" and value and self._updater is not None:
             status = self._updater.status()
             if status.get("stage") == "available":
@@ -587,6 +713,24 @@ class Bridge:
         if self._updater is None:
             raise BridgeError("Updates are not available.")
         return self._updater
+
+
+def _path_key(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def deleted_message(result: dict) -> str:
+    """Toast after delete_notes: `Deleted 3 notes and 2 frames.`, the frames part left out when there were none."""
+    notes = int(result.get("notes") or 0)
+    frames = int(result.get("frames") or 0)
+    if not notes and not frames:
+        return "Deleted the empty notes folder."
+    parts = [_count(notes, "note")] + ([_count(frames, "frame")] if frames else [])
+    return "Deleted " + " and ".join(parts) + "."
 
 
 def _note_of(result: dict, note_id: Optional[str] = None) -> dict:

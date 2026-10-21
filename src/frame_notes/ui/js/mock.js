@@ -5,7 +5,7 @@
 import { timecodeBase, formatTimecode, formatFps, durationFrames } from './frames.js';
 
 const KINDS = ['FIX', 'ADD', 'REMOVE'];
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const LATENCY = 25;
 
 export function createMock(dispatch) {
@@ -18,11 +18,14 @@ export function createMock(dispatch) {
   let order = 0;
   let lastFrame = 0;
   let fileExists = false;     // the mock "notes file" exists after the first note
-  const settings = { auto_download_updates: true, notes_panel_open: true };
+  const settings = { auto_download_updates: true, notes_panel_open: true, update_check_interval: '30m' };
+  const INTERVALS = ['30m', '1h', '6h', '1d', '1w'];
   const recent = [];
   const sample = params.get('video');
-  if (sample) recent.push({ path: sample, name: nameOf(sample), last_frame: 0, exists: true });
-  recent.push({ path: 'D:\\clips\\promo_v2.mp4', name: 'promo_v2.mp4', last_frame: 120, exists: false });
+  const NO_NOTES = { notes_count: null, frames_count: null, notes_dir: null };
+  if (sample) recent.push({ path: sample, name: nameOf(sample), last_frame: 0, exists: true, ...NO_NOTES });
+  recent.push({ path: 'D:\\clips\\promo_v2.mp4', name: 'promo_v2.mp4', last_frame: 120, exists: false,
+    notes_count: 4, frames_count: 1, notes_dir: 'D:\\clips\\promo_v2_notes' });
 
   const later = (fn, ms = 0) => setTimeout(fn, ms);
   const reply = (value) => new Promise((resolve) => later(() => resolve(value), LATENCY));
@@ -48,7 +51,7 @@ export function createMock(dispatch) {
     return {
       id: n.id, frame: n.frame, timecode: tcOf(n.frame), kind: n.kind, text: n.text,
       region: n.region ? { ...n.region } : null,
-      image: n.image, image_path: n.image ? `${video.dir}\\${stem(video.name)}_notes\\${n.image}` : null,
+      image: n.image, image_path: n.image ? `${notesDir()}\\frames\\${n.image}` : null,
       image_url: n.imageUrl || null, order: n.order,
     };
   }
@@ -65,8 +68,10 @@ export function createMock(dispatch) {
         duration: video.duration, duration_frames: f ? durationFrames(video.duration, b.fps) : null,
         fps: f, fps_text: f ? formatFps(f) : null,
         fps_source: override ? 'override' : probedFps ? 'file' : 'unknown',
-        notes_path: `${video.dir}\\${stem(video.name)}_notes.txt`,
-        images_dir: `${video.dir}\\${stem(video.name)}_notes`,
+        notes_dir: notesDir(),
+        notes_path: `${notesDir()}\\${stem(video.name)}_notes.txt`,
+        export_path: `${notesDir()}\\${stem(video.name)}_notes.md`,
+        images_dir: `${notesDir()}\\frames`,
         last_frame: lastFrame, url: video.url,
       };
     }
@@ -76,9 +81,24 @@ export function createMock(dispatch) {
       timecode: b ? { base: b.base, drop: b.drop, digits: b.digits, separator: b.separator } : null,
       notes: sorted().map(notePayload),
       counts,
-      recent: recent.map((r) => ({ ...r })),
+      recent: recent.map((r) => recentEntry(r)),
       settings: { ...settings },
     };
+  }
+
+  function notesDir() {
+    return `${video.dir}\\${stem(video.name)}_notes`;
+  }
+
+  /** Recent entry as the shell sends it; the open video's counts follow its notes. */
+  function recentEntry(r) {
+    const out = { ...r, is_open: !!video && r.path === video.path };
+    if (out.is_open) {
+      out.notes_count = fileExists ? notes.length : null;
+      out.frames_count = fileExists ? notes.filter((n) => n.image).length : null;
+      out.notes_dir = fileExists ? notesDir() : null;
+    }
+    return out;
   }
 
   function probe(url) {
@@ -125,7 +145,8 @@ export function createMock(dispatch) {
     override = null;
     const i = recent.findIndex((r) => r.path === path);
     if (i >= 0) recent.splice(i, 1);
-    recent.unshift({ path, name, last_frame: lastFrame, exists: true });
+    recent.unshift({ path, name, last_frame: lastFrame, exists: true, notes_count: null, frames_count: null,
+      notes_dir: null });
     return payload();
   }
 
@@ -150,6 +171,25 @@ export function createMock(dispatch) {
   function regionText(r) {
     const f = (v) => v.toFixed(3);
     return r.shape === 'point' ? `point ${f(r.x0)},${f(r.y0)}` : `rect ${f(r.x0)},${f(r.y0)} ${f(r.x1)},${f(r.y1)}`;
+  }
+
+  function readableText() {
+    if (!video || !fps()) return '';
+    const b = tb();
+    const counts = { FIX: 0, ADD: 0, REMOVE: 0 };
+    for (const n of notes) counts[n.kind] += 1;
+    const summary = [`${formatFps(fps())} fps`, formatTimecode(durationFrames(video.duration, b.fps), b),
+      ...KINDS.map((k) => `${k} ${counts[k]}`)];
+    const lines = [`# ${video.name}`, '', summary.join(' · '), ''];
+    if (!notes.length) lines.push('No notes.');
+    for (const n of sorted()) lines.push(`- ${[`**${tcOf(n.frame)}**`, n.kind, n.text].filter(Boolean).join(' · ')}`);
+    return `${lines.join('\n')}\n`;
+  }
+
+  function deletedMessage(n, f) {
+    const p = (c, w) => `${c} ${w}${c === 1 ? '' : 's'}`;
+    if (!n && !f) return 'Deleted the empty notes folder.';
+    return `Deleted ${[p(n, 'note'), ...(f ? [p(f, 'frame')] : [])].join(' and ')}.`;
   }
 
   function notesText() {
@@ -313,6 +353,47 @@ export function createMock(dispatch) {
       later(() => dispatch('toast', { message: 'Notes copied' }));
       return reply(null);
     },
+    readable_text() {
+      return reply(readableText());
+    },
+    async copy_readable_text() {
+      if (!video) return fail('No video is open.');
+      try {
+        await navigator.clipboard.writeText(readableText());
+      } catch {
+        console.info(readableText());
+      }
+      later(() => dispatch('toast', { message: 'Readable notes copied' }));
+      return reply(null);
+    },
+    reveal_recent(path) {
+      const r = recent.find((x) => x.path === path);
+      if (!r) return fail('File not found.');
+      const e = recentEntry(r);
+      if (!e.notes_dir && e.exists === false) return fail('File not found.');
+      later(() => dispatch('toast', { message: `Reveal ${e.notes_dir || r.name}: not available in the browser mock` }));
+      return reply(null);
+    },
+    delete_notes(path) {
+      const r = recent.find((x) => x.path === path);
+      if (!r) return fail('File not found.');
+      const e = recentEntry(r);
+      if (e.notes_count == null) return fail(`There are no notes for ${r.name}.`);
+      if (e.is_open) {
+        notes = [];
+        fileExists = false;
+      }
+      Object.assign(r, { notes_count: null, frames_count: null, notes_dir: null });
+      later(() => dispatch('toast', { message: deletedMessage(e.notes_count, e.frames_count || 0) }));
+      emitState();
+      return reply(payload());
+    },
+    forget_recent(path) {
+      const i = recent.findIndex((x) => x.path === path);
+      if (i >= 0) recent.splice(i, 1);
+      emitState();
+      return reply(payload());
+    },
     reveal(which) {
       if (!video) return fail('No video is open.');
       if (which === 'notes' && !fileExists) return fail('No notes file yet.');
@@ -321,6 +402,12 @@ export function createMock(dispatch) {
       return reply(null);
     },
     set_setting(key, value) {
+      if (key === 'update_check_interval') {
+        if (!INTERVALS.includes(value)) return fail('Invalid setting value.');
+        settings[key] = value;
+        emitState();
+        return reply(payload());
+      }
       if (!['auto_download_updates', 'notes_panel_open'].includes(key)) return fail('Unknown setting.');
       settings[key] = !!value;
       emitState();

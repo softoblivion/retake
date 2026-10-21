@@ -30,13 +30,27 @@
       </div>
       <div id="counts" class="counts video-only" aria-label="Note counts"></div>
       <div class="spacer"></div>
-      <button type="button" id="btn-copy" class="btn video-only" title="Copy the notes text (Ctrl+C)">Copy</button>
+      <div class="menu-wrap split video-only">
+        <button type="button" id="btn-copy" class="btn split-main" title="Copy the notes file text (Ctrl+C)">Copy</button>
+        <button type="button" id="btn-copy-more" class="btn split-more" aria-haspopup="menu" aria-expanded="false" aria-label="More ways to copy" title="More ways to copy">&#x25BE;</button>
+        <div id="copy-menu" class="menu" role="menu" hidden>
+          <button type="button" role="menuitem" data-copy="notes">Notes file<span class="mi-key">Ctrl+C</span></button>
+          <button type="button" role="menuitem" data-copy="readable">Readable text<span class="mi-key">Ctrl+Shift+C</span></button>
+        </div>
+      </div>
       <div class="menu-wrap video-only">
         <button type="button" id="btn-reveal" class="btn btn-menu" aria-haspopup="menu" aria-expanded="false">Reveal</button>
         <div id="reveal-menu" class="menu" role="menu" hidden>
           <button type="button" role="menuitem" data-reveal="video">Video</button>
           <button type="button" role="menuitem" data-reveal="notes">Notes file</button>
-          <button type="button" role="menuitem" data-reveal="images">Images</button>
+          <button type="button" role="menuitem" data-reveal="images">Frames</button>
+        </div>
+      </div>
+      <div class="menu-wrap video-only">
+        <button type="button" id="btn-recent" class="btn btn-menu" aria-haspopup="menu" aria-expanded="false" title="Recent videos (right click an entry for more)">Recent</button>
+        <div id="recent-menu" class="menu recent-pop" hidden>
+          <ul id="recent-menu-list" class="recent-list"></ul>
+          <div id="recent-menu-empty" class="recent-pop-empty muted" hidden>No recent videos.</div>
         </div>
       </div>
       <button type="button" id="btn-keys" class="btn" title="Keyboard keys (?)">Keys</button>
@@ -51,6 +65,15 @@
             <button type="button" id="up-download" class="btn">Download</button>
             <button type="button" id="up-restart" class="btn btn-primary">Restart</button>
           </div>
+          <label class="up-interval">Check for updates
+            <select id="up-interval" class="up-select">
+              <option value="30m">Every 30 minutes</option>
+              <option value="1h">Every hour</option>
+              <option value="6h">Every 6 hours</option>
+              <option value="1d">Every day</option>
+              <option value="1w">Every week</option>
+            </select>
+          </label>
           <label class="up-auto"><input type="checkbox" id="up-auto"> Download updates automatically</label>
         </div>
       </div>
@@ -146,6 +169,7 @@
     </section>
   </div>
 
+  <div id="ctx-menu" class="menu ctx-menu" role="menu" hidden></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="drop-veil" class="drop-veil" hidden><div>Drop to open</div></div>
 
@@ -163,7 +187,8 @@
         <dt><kbd>F2</kbd></dt><dd>Edit the selected note (also double click)</dd>
         <dt><kbd>Backspace</kbd></dt><dd>In an empty note field: remove the region</dd>
         <dt><kbd>Delete</kbd></dt><dd>Remove the selected note</dd>
-        <dt><kbd>Ctrl</kbd>+<kbd>C</kbd></dt><dd>Copy the notes text</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>C</kbd></dt><dd>Copy the notes file text</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></dt><dd>Copy the readable text</dd>
         <dt><kbd>Ctrl</kbd>+<kbd>O</kbd></dt><dd>Open a video</dd>
         <dt>Wheel</dt><dd>Zoom the timeline (<kbd>Shift</kbd>: pan)</dd>
         <dt><kbd>0</kbd></dt><dd>Show the whole video on the timeline</dd>

@@ -62,6 +62,21 @@ class BuildUpdaterTest(unittest.TestCase):
         self.assertTrue(callable(selfupdate.UpdateConfig))
         self.assertTrue(callable(selfupdate.SelfUpdater))
 
+    def test_scheduler_and_interval_keys(self) -> None:
+        from frame_notes.shell import bridge
+
+        updater = selfupdate.build_updater(AppPaths(), "1.0.0", lambda status: None)
+        scheduler = selfupdate.build_scheduler(updater, "6h")
+        self.assertIsInstance(scheduler, selfupdate.UpdateScheduler)
+        self.assertEqual(scheduler.interval_key, "6h")
+        self.assertIs(scheduler.updater, updater)
+        self.assertEqual(scheduler.log.name, "frame_notes.selfupdate.schedule")
+        self.assertIsNone(scheduler.next_check_at)
+        self.assertEqual(selfupdate.build_scheduler(updater, "bogus").interval_key, "30m")
+        self.assertEqual(selfupdate.DEFAULT_CHECK_INTERVAL, "30m")
+        self.assertEqual(selfupdate.INTERVAL_KEYS, ("30m", "1h", "6h", "1d", "1w"))
+        self.assertEqual(bridge.INTERVAL_KEYS, selfupdate.INTERVAL_KEYS)
+
     def test_toast_callback_is_passed_through(self) -> None:
         paths = AppPaths()
 

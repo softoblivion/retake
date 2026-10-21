@@ -1,12 +1,12 @@
 // Empty state (drop target, Open video, recent files) and drag and drop of a file onto the window.
 
-import { app, el } from './app.js';
+import { app } from './app.js';
 import { isMock } from './bridge.js';
-import { showError } from './ui.js';
+import { renderRecent } from './recent.js';
 
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|ogv|ogg)$/i;
 
-export function initEmpty({ actions }) {
+export function initEmpty({ actions, recentMenu }) {
   const $ = (id) => document.getElementById(id);
   const list = $('recent-list');
   const recentBox = $('recent');
@@ -24,32 +24,13 @@ export function initEmpty({ actions }) {
     });
   }
 
-  list.addEventListener('click', (e) => {
-    const item = e.target.closest('.recent-item');
-    if (item && !item.classList.contains('missing')) actions.openPath(item.dataset.path);
-  });
+  recentMenu.attach(list);
 
   function render() {
     const recent = (app.state && app.state.recent) || [];
     recentBox.hidden = recent.length === 0;
-    list.replaceChildren();
-    for (const r of recent) {
-      const item = el('li', 'recent-item');
-      item.dataset.path = r.path;
-      item.title = r.exists === false ? `${r.path} (not found)` : r.path;
-      if (r.exists === false) item.classList.add('missing');
-      item.tabIndex = r.exists === false ? -1 : 0;
-      const main = el('div', 'ri-main');
-      main.append(el('span', 'ri-name', r.name), el('span', 'ri-path muted', dirOf(r.path)));
-      item.append(main);
-      const pos = recentPosition(r);
-      if (pos) item.append(el('span', 'ri-pos mono muted', pos));
-      list.append(item);
-    }
+    renderRecent(list, recent);
   }
-  list.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.classList.contains('recent-item')) e.target.click();
-  });
 
   // Drag and drop anywhere on the window.
   let depth = 0;
@@ -91,13 +72,3 @@ function mockUrl(file) {
   return `${URL.createObjectURL(file)}#${encodeURIComponent(file.name)}`;
 }
 
-function dirOf(path) {
-  const i = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
-  return i > 0 ? path.slice(0, i) : '';
-}
-
-function recentPosition(r) {
-  if (!r.last_frame) return '';
-  if (r.timecode) return r.timecode;
-  return `frame ${r.last_frame}`;
-}

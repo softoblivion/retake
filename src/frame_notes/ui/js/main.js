@@ -12,6 +12,7 @@ import { NotesPanel } from './notes.js';
 import { initHeader } from './header.js';
 import { initUpdate } from './update.js';
 import { initEmpty } from './empty.js';
+import { initRecentMenu } from './recent.js';
 import { initKeys } from './keys.js';
 import { toast, showError, hideError, guard } from './ui.js';
 import { ICONS } from './icons.js';
@@ -38,6 +39,11 @@ const timeline = new Timeline({
 new NotesPanel({ root: $('panel'), composer, onPick: pick });
 
 let lastVideoPath = null;
+
+/** Windows paths compare without case. */
+function samePath(a, b) {
+  return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+}
 
 const actions = {
   applyState(state) {
@@ -86,6 +92,27 @@ const actions = {
   async copy() {
     if (!app.video) return;
     await guard(api.copy_notes_text());
+  },
+
+  async copyReadable() {
+    if (!app.video) return;
+    await guard(api.copy_readable_text());
+  },
+
+  revealRecent(path) {
+    guard(api.reveal_recent(path));
+  },
+
+  async deleteNotes(path) {
+    const v = app.video;
+    if (v && samePath(v.path, path) && app.edit) composer.cancel();
+    const st = await guard(api.delete_notes(path));
+    if (st) this.applyState(st);
+  },
+
+  async forgetRecent(path) {
+    const st = await guard(api.forget_recent(path));
+    if (st) this.applyState(st);
   },
 
   togglePanel() {
@@ -142,9 +169,10 @@ const actions = {
   },
 };
 
-initHeader({ actions });
+const recentMenu = initRecentMenu({ entries: () => (app.state && app.state.recent) || [], actions });
+initHeader({ actions, recentMenu });
 const update = initUpdate({ actions });
-initEmpty({ actions });
+initEmpty({ actions, recentMenu });
 initKeys({ player, composer, timeline, actions });
 
 // Transport row.

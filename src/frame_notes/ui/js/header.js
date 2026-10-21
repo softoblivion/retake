@@ -1,11 +1,13 @@
-// Header bar: open, file name and size, frame rate control, note counts, Copy, Reveal, Keys, panel toggle.
+// Header bar: open, file name and size, frame rate control, note counts, Copy split menu, Reveal, Recent, Keys,
+// panel toggle.
 
 import { app, el, KINDS } from './app.js';
 import { api } from './bridge.js';
 import { NOMINAL_RATES, formatFps } from './frames.js';
+import { renderRecent } from './recent.js';
 import { guard, popover, toast } from './ui.js';
 
-export function initHeader({ actions }) {
+export function initHeader({ actions, recentMenu }) {
   const $ = (id) => document.getElementById(id);
   const fpsBox = $('fps-box');
   const select = $('fps-select');
@@ -16,6 +18,23 @@ export function initHeader({ actions }) {
 
   $('btn-open').addEventListener('click', () => actions.open());
   $('btn-copy').addEventListener('click', () => actions.copy());
+  const copyMenu = popover($('btn-copy-more'), $('copy-menu'));
+  $('copy-menu').addEventListener('click', (e) => {
+    const item = e.target.closest('[data-copy]');
+    if (!item) return;
+    copyMenu.close();
+    if (item.dataset.copy === 'readable') actions.copyReadable();
+    else actions.copy();
+  });
+
+  const recentList = $('recent-menu-list');
+  const renderRecentMenu = () => {
+    const recent = (app.state && app.state.recent) || [];
+    $('recent-menu-empty').hidden = recent.length > 0;
+    renderRecent(recentList, recent);
+  };
+  const recentPop = popover($('btn-recent'), $('recent-menu'), { onOpen: renderRecentMenu });
+  recentMenu.attach(recentList, { beforeOpen: () => recentPop.close() });
   $('btn-keys').addEventListener('click', () => actions.toggleHelp());
   $('btn-panel').addEventListener('click', () => actions.togglePanel());
 
@@ -111,6 +130,7 @@ export function initHeader({ actions }) {
       box.append(c);
     }
     $('btn-panel').setAttribute('aria-pressed', app.panelOpen ? 'true' : 'false');
+    if (recentPop.isOpen) renderRecentMenu();
   }
 
   app.on('state', render);

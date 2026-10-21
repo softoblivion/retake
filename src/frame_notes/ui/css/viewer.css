@@ -117,10 +117,28 @@ body.has-video .empty { display: none; }
 .recent-item:hover { background: var(--bg-3); }
 .recent-item.missing { opacity: 0.45; cursor: default; }
 .recent-item.missing:hover { background: none; }
+.recent-item:focus-visible { outline-offset: -2px; }
 .ri-main { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .ri-name, .ri-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ri-path { font-size: 11.5px; }
-.ri-pos { flex: none; font-size: 12px; }
+.ri-open {
+  margin-left: 7px;
+  padding: 0 5px;
+  border-radius: var(--r-s);
+  background: var(--accent-bg);
+  color: var(--accent-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.ri-meta { display: flex; flex-direction: column; align-items: flex-end; flex: none; gap: 1px; }
+.ri-pos { font-size: 12px; }
+.ri-counts { font-size: 11.5px; }
+
+/* Recent menu in the header */
+.recent-pop { width: 380px; max-height: min(460px, 70vh); overflow-y: auto; }
+.recent-pop .recent-item { padding: 6px 8px; }
+.recent-pop-empty { padding: 8px 10px; }
 
 /* Transport row */
 .transport {

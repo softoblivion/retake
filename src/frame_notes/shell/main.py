@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from frame_notes import __version__
-from frame_notes.core.selfupdate import APPLY_FLAG, build_updater, run_apply
+from frame_notes.core.selfupdate import APPLY_FLAG, build_scheduler, build_updater, run_apply
 
 WINDOW_TITLE = "Frame Notes"
 BACKGROUND = "#111214"
@@ -152,7 +152,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     bridge = Bridge(settings, server, pump, __version__)
     session = Session(settings, bridge._on_change, logging.getLogger("frame_notes.session"))
     bridge._attach_session(session)
-    bridge._attach_updater(build_updater(paths, __version__, bridge._on_update_status, bridge._on_update_toast))
+    updater = build_updater(paths, __version__, bridge._on_update_status, bridge._on_update_toast)
+    bridge._attach_updater(updater, build_scheduler(updater, str(settings.data.get("update_check_interval") or "")))
     if args.video:
         bridge._queue_open(str(Path(args.video).expanduser().resolve()))
 

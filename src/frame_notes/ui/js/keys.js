@@ -45,7 +45,8 @@ export function initKeys({ player, composer, timeline, actions }) {
         actions.open();
       } else if (isKey(e, 'KeyC', 'c') && !hasTextSelection()) {
         e.preventDefault();
-        actions.copy();
+        if (e.shiftKey) actions.copyReadable();
+        else actions.copy();
       }
       return;
     }

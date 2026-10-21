@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import inspect
 import json
+import os
 import re
 import shutil
 import sys
@@ -13,6 +14,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "src") not in sys.path:
@@ -24,6 +26,7 @@ from frame_notes.shell.bridge import (  # noqa: E402
     BridgeError,
     EventPump,
     build_event_script,
+    deleted_message,
     friendly_message,
     js_literal,
 )
@@ -31,7 +34,8 @@ from frame_notes.shell.server import MediaServer  # noqa: E402
 
 CONTRACT_METHODS = {
     "ready", "open_video", "get_state", "set_fps", "set_last_frame", "add_note", "update_note", "remove_note",
-    "notes_text", "copy_notes_text", "reveal", "set_setting", "log",
+    "notes_text", "copy_notes_text", "readable_text", "copy_readable_text", "reveal",
+    "reveal_recent", "delete_notes", "forget_recent", "set_setting", "log",
     "update_status", "check_updates", "download_update", "apply_update",
 }
 PNG = b"\x89PNG\r\n\x1a\nfake-image-bytes"
@@ -44,6 +48,11 @@ class FakeSettings:
 
     def save(self) -> None:
         self.saves += 1
+
+    def forget_recent(self, path) -> bool:
+        before = len(self.data["recent"])
+        self.data["recent"] = [r for r in self.data["recent"] if str(r["path"]).lower() != str(path).lower()]
+        return len(self.data["recent"]) != before
 
 
 class FakeSession:
@@ -112,6 +121,9 @@ class FakeSession:
     def notes_text(self) -> str:
         return "# Frame Notes 1\n"
 
+    def readable_text(self) -> str:
+        return "# promo_v3.mp4\n"
+
     def _changed(self) -> dict:
         payload = self.payload()
         if self.on_change:
@@ -162,6 +174,20 @@ class FakeUpdater:
         return self.apply_result
 
 
+class FakeScheduler:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def start(self) -> None:
+        self.calls.append(("start",))
+
+    def set_interval(self, key: str) -> None:
+        self.calls.append(("set_interval", key))
+
+    def stop(self) -> None:
+        self.calls.append(("stop",))
+
+
 class BridgeCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="fn_bridge_"))
@@ -177,9 +203,10 @@ class BridgeCase(unittest.TestCase):
         self.session = FakeSession(self.bridge._on_change)
         self.window = FakeWindow()
         self.updater = FakeUpdater()
+        self.scheduler = FakeScheduler()
         self.bridge._attach_session(self.session)
         self.bridge._attach_window(self.window)
-        self.bridge._attach_updater(self.updater)
+        self.bridge._attach_updater(self.updater, self.scheduler)
 
     def tearDown(self) -> None:
         self.pump.stop()
@@ -324,7 +351,10 @@ class StateTests(BridgeCase):
         self.assertEqual(state["version"], "1.0.0")
         self.assertIsNone(state["video"])
         self.assertEqual(state["notes"], [])
-        self.assertEqual(state["settings"], {"auto_download_updates": True, "notes_panel_open": True})
+        self.assertEqual(state["settings"], {"auto_download_updates": True, "notes_panel_open": True,
+                                             "update_check_interval": "30m"})
+        self.settings.data["update_check_interval"] = "2h"  # unknown keys from a hand-edited file read as default
+        self.assertEqual(self.bridge.get_state()["settings"]["update_check_interval"], "30m")
         self.assertEqual(state["recent"], [])
 
     def test_state_composition_after_open(self) -> None:
@@ -337,8 +367,10 @@ class StateTests(BridgeCase):
         self.assertEqual(state["video"]["url"], f"{self.server.base_url}/media/{token}/promo_v3.mp4")
         self.assertEqual(state["video"]["name"], "promo_v3.mp4")
         self.assertEqual(state["recent"], [
-            {"path": str(self.video), "name": "promo_v3.mp4", "last_frame": 307, "exists": True},
-            {"path": str(self.tmp / "gone.mp4"), "name": "gone.mp4", "last_frame": 0, "exists": False},
+            {"path": str(self.video), "name": "promo_v3.mp4", "last_frame": 307, "exists": True,
+             "notes_count": None, "frames_count": None, "notes_dir": None, "is_open": True},
+            {"path": str(self.tmp / "gone.mp4"), "name": "gone.mp4", "last_frame": 0, "exists": False,
+             "notes_count": None, "frames_count": None, "notes_dir": None, "is_open": False},
         ])
         self.settings.data["notes_panel_open"] = False
         self.assertFalse(self.bridge.get_state()["settings"]["notes_panel_open"])
@@ -483,14 +515,31 @@ class CallTests(BridgeCase):
         with self.assertRaises(BridgeError):
             self.bridge.reveal("other")
 
+    def test_copy_readable_text(self) -> None:
+        with self.assertRaises(BridgeError):
+            self.bridge.copy_readable_text()
+        self.open_video()
+        self.assertEqual(self.bridge.readable_text(), "# promo_v3.mp4\n")
+        self.assertIsNone(self.bridge.copy_readable_text())
+        self.assertEqual(self.clipboard, ["# promo_v3.mp4\n"])
+        self.pump.set_ready()
+        self.drain()
+        self.assertIn(("toast", {"message": "Readable notes copied"}), self.events())
+
     def test_set_setting(self) -> None:
         state = self.bridge.set_setting("notes_panel_open", False)
         self.assertFalse(state["settings"]["notes_panel_open"])
         self.assertFalse(self.settings.data["notes_panel_open"])
         self.assertGreaterEqual(self.settings.saves, 1)
-        for key, value in (("window", {}), ("notes_panel_open", "yes"), ("auto_download_updates", 1)):
-            with self.subTest(key=key), self.assertRaises(BridgeError):
+        for key, value in (("window", {}), ("notes_panel_open", "yes"), ("auto_download_updates", 1),
+                           ("update_check_interval", "2h"), ("update_check_interval", 30)):
+            with self.subTest(key=key, value=value), self.assertRaises(BridgeError):
                 self.bridge.set_setting(key, value)
+        self.assertEqual(self.scheduler.calls, [])
+        state = self.bridge.set_setting("update_check_interval", "1d")
+        self.assertEqual(state["settings"]["update_check_interval"], "1d")
+        self.assertEqual(self.settings.data["update_check_interval"], "1d")
+        self.assertEqual(self.scheduler.calls, [("set_interval", "1d")])
 
     def test_log_writes_to_the_ui_logger(self) -> None:
         with self.assertLogs("frame_notes.ui", level="DEBUG") as captured:
@@ -499,6 +548,95 @@ class CallTests(BridgeCase):
         self.assertEqual(captured.records[0].levelname, "WARNING")
         self.assertEqual(captured.records[0].getMessage(), "ui: something happened")
         self.assertEqual(captured.records[1].levelname, "INFO")
+
+
+class RecentTests(BridgeCase):
+    DATA = ("# Frame Notes 1\n# source: {name}\n# fps: 25\n"
+            "0:00:01:00\tFIX\ta\trect 0.100,0.100 0.200,0.200\t0-00-01-00_FIX.png\n0:00:02:00\tADD\tb\n")
+
+    def make_review(self, video: Path) -> Path:
+        folder = video.with_name(video.stem + "_notes")
+        (folder / "frames").mkdir(parents=True)
+        (folder / f"{video.stem}_notes.txt").write_text(self.DATA.format(name=video.name), encoding="utf-8")
+        (folder / "frames" / "0-00-01-00_FIX.png").write_bytes(PNG)
+        return folder
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.other = self.tmp / "other.mp4"
+        self.other.write_bytes(b"1" * 64)
+        self.settings.data["recent"] = [{"path": str(p), "last_frame": 0, "opened_at": 0}
+                                        for p in (self.video, self.other)]
+
+    def test_counts_are_read_and_cached_until_the_file_changes(self) -> None:
+        folder = self.make_review(self.other)
+        entry = self.bridge.get_state()["recent"][1]
+        self.assertEqual((entry["notes_count"], entry["frames_count"]), (2, 1))
+        self.assertEqual(entry["notes_dir"], str(folder))
+        with mock.patch("frame_notes.shell.bridge.notes_summary") as summary:
+            self.bridge.get_state()
+            summary.assert_not_called()
+        data = folder / "other_notes.txt"
+        data.write_text(self.DATA.format(name="other.mp4") + "0:00:03:00\tREMOVE\tc\n", encoding="utf-8")
+        os.utime(data, ns=(1, 1))
+        self.assertEqual(self.bridge.get_state()["recent"][1]["notes_count"], 3)
+
+    def test_delete_notes_of_another_video(self) -> None:
+        self.open_video()
+        folder = self.make_review(self.other)
+        self.pump.set_ready()
+        state = self.bridge.delete_notes(str(self.other).upper())
+        self.assertFalse(folder.exists())
+        self.assertIsNone(state["recent"][1]["notes_count"])
+        self.assertEqual(state["video"]["name"], "promo_v3.mp4")
+        self.drain()
+        self.assertIn(("toast", {"message": "Deleted 2 notes and 1 frame."}), self.events())
+        with self.assertRaises(BridgeError) as ctx:
+            self.bridge.delete_notes(str(self.other))
+        self.assertEqual(str(ctx.exception), "There are no notes for other.mp4.")
+
+    def test_delete_notes_of_the_open_video_reopens_it(self) -> None:
+        self.open_video()
+        folder = self.make_review(self.video)
+        token = self.server.token
+        opens = sum(1 for c in self.session.calls if c[0] == "open")
+        self.bridge.delete_notes(str(self.video))
+        self.assertFalse(folder.exists())
+        self.assertEqual(sum(1 for c in self.session.calls if c[0] == "open"), opens + 1)
+        self.assertNotEqual(self.server.token, token)
+
+    def test_delete_refusals_and_unknown_paths(self) -> None:
+        folder = self.make_review(self.other)
+        (folder / "keep.docx").write_bytes(b"x")
+        with self.assertRaises(BridgeError) as ctx:
+            self.bridge.delete_notes(str(self.other))
+        self.assertIn("holds other files", str(ctx.exception))
+        self.assertTrue(folder.is_dir())
+        for bad in (None, "", 5, str(self.tmp / "not_recent.mp4")):
+            with self.subTest(bad=bad), self.assertRaises(BridgeError):
+                self.bridge.delete_notes(bad)
+
+    def test_forget_and_reveal(self) -> None:
+        self.bridge.reveal_recent(str(self.other))
+        self.assertEqual(self.revealed, [str(self.other)])
+        folder = self.make_review(self.other)
+        self.bridge.reveal_recent(str(self.other))
+        self.assertEqual(self.revealed[-1], str(folder))
+        state = self.bridge.forget_recent(str(self.other))
+        self.assertEqual([r["name"] for r in state["recent"]], ["promo_v3.mp4"])
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(self.bridge.forget_recent(str(self.other))["recent"][0]["name"], "promo_v3.mp4")
+        with self.assertRaises(BridgeError):
+            self.bridge.reveal_recent(str(self.other))  # no longer in the list
+        self.video.unlink()
+        with self.assertRaises(BridgeError) as ctx:
+            self.bridge.reveal_recent(str(self.video))
+        self.assertEqual(str(ctx.exception), "File not found.")
+
+    def test_deleted_message(self) -> None:
+        self.assertEqual(deleted_message({"notes": 3, "frames": 2}), "Deleted 3 notes and 2 frames.")
+        self.assertEqual(deleted_message({"notes": 1, "frames": 0}), "Deleted 1 note.")
+        self.assertEqual(deleted_message({"notes": 0, "frames": 0}), "Deleted the empty notes folder.")
 
 
 class ReadyTests(BridgeCase):
@@ -538,6 +676,7 @@ class ReadyTests(BridgeCase):
     def test_updater_starts_after_ready(self) -> None:
         self.bridge.ready()
         self.assertTrue(self.wait_for(lambda: self.updater.called == ["startup", "check_background"]))
+        self.assertTrue(self.wait_for(lambda: self.scheduler.calls == [("start",)]))
 
 
 class UpdateTests(BridgeCase):
@@ -591,6 +730,7 @@ class ShutdownTests(BridgeCase):
         self.bridge._shutdown()
         self.assertEqual([c for c in self.session.calls if c[0] == "close"], [("close",)])
         self.assertGreaterEqual(self.settings.saves, 1)
+        self.assertEqual(self.scheduler.calls, [("stop",)])
 
 
 if __name__ == "__main__":
