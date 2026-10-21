@@ -1,7 +1,8 @@
-"""The review session: one open video, its notes in memory and the notes file / image files on disk.
+"""The review session: one open video, its notes in memory and the notes folder on disk.
 
-Owns probing the video, loading and saving the notes file, the note images and the frame rate choice. Every mutation
-writes the files and then calls `on_change(payload)`. The contract and the payload shape are in `docs/CORE.md`
+Owns probing the video, loading and saving the data file and the readable export, the note images and the frame rate
+choice; the 1.0 layout is moved into the notes folder on open. Every mutation writes the files and then calls
+`on_change(payload)`. The contract and the payload shape are in `docs/CORE.md`
 (section `session.py`); nothing here knows about URLs or the window.
 """
 
@@ -20,14 +21,21 @@ from .notes import (
     Note,
     NotesFile,
     NotesFormatError,
+    NotesLayoutError,
     Region,
+    export_path_for,
     image_name,
     images_dir_for,
+    is_plain_name,
+    legacy_notes_path_for,
+    migrate_layout,
     new_id,
     normalize_text,
+    notes_dir_for,
     notes_path_for,
     parse,
     render,
+    render_readable,
 )
 from .paths import atomic_write_bytes, atomic_write_text
 from .probe import ProbeResult, probe
@@ -96,12 +104,24 @@ class Session:
                 self._log.warning("probe failed for %s: %s", path, exc)
                 raise SessionError("The video file cannot be read") from None
 
+            try:
+                migrated = migrate_layout(path, self._log)
+            except NotesLayoutError as exc:
+                raise SessionError(str(exc)) from None
+
             notes: list[Note] = []
             extra: list[str] = []
             file_fps: float | None = None
             file_duration: int | None = None
             notes_path = notes_path_for(path)
             exists = notes_path.is_file()
+            if not exists and legacy_notes_path_for(path).is_file():
+                # Left in place by the migration: report it the way 1.0 did (another source, newer format).
+                notes_path = legacy_notes_path_for(path)
+                exists = True
+                legacy = True
+            else:
+                legacy = False
             if exists:
                 try:
                     text = notes_path.read_text(encoding="utf-8-sig")
@@ -114,6 +134,11 @@ class Session:
                 if parsed.source.casefold() != path.name.casefold():
                     raise SessionError(
                         f"The notes file {notes_path.name} belongs to {parsed.source}, not to {path.name}"
+                    )
+                if legacy:
+                    # Readable but not movable (e.g. the folder could not be created): refuse rather than split.
+                    raise SessionError(
+                        f"The notes of {path.name} could not be moved into the {notes_dir_for(path).name} folder."
                     )
                 notes, extra = parsed.notes, parsed.extra
                 file_fps = _usable_fps(parsed.fps)
@@ -134,6 +159,10 @@ class Session:
             self._settings.touch_recent(path, self._last_frame)
             self._settings.data["last_dir"] = str(path.parent)
             self._save_settings()
+            if migrated and exists:
+                error = self._write_export()
+                if error:
+                    self._log.warning("%s", error)
             self._log.info("opened %s (fps %s, %d notes)", path, self._fps, len(notes))
             return self.payload()
 
@@ -249,7 +278,9 @@ class Session:
                     "fps": tb.fps if tb is not None else None,
                     "fps_text": format_fps(self._fps) if self._fps is not None else "",
                     "fps_source": self._fps_source,
+                    "notes_dir": str(notes_dir_for(video)),
                     "notes_path": str(notes_path_for(video)),
+                    "export_path": str(export_path_for(video)),
                     "images_dir": str(images_dir),
                     "last_frame": self._last_frame,
                 },
@@ -268,6 +299,13 @@ class Session:
             if self._video is None or self._fps is None:
                 return ""
             return render(self._notes_file())
+
+    def readable_text(self) -> str:
+        """The readable export without the image lines, for the clipboard ("" like `notes_text`)."""
+        with self._lock:
+            if self._video is None or self._fps is None:
+                return ""
+            return render_readable(self._notes_file(), images=False)
 
     def set_last_frame(self, frame: int) -> None:
         """Remember the playback position; the settings file is written at most once per two seconds."""
@@ -404,6 +442,18 @@ class Session:
             self._log.error("cannot write %s: %s", path, exc)
             return f"The notes could not be saved to {path}"
         self._notes_file_exists = True
+        return self._write_export()
+
+    def _write_export(self) -> str | None:
+        """Write the readable export next to the data file. Returns an error sentence or None."""
+        if self._video is None or self._fps is None:
+            return None
+        path = export_path_for(self._video)
+        try:
+            atomic_write_text(path, render_readable(self._notes_file()))
+        except OSError as exc:
+            self._log.error("cannot write %s: %s", path, exc)
+            return f"The notes could not be saved to {path}"
         return None
 
     def _finish(self, error: str | None) -> dict:
@@ -422,9 +472,7 @@ class Session:
 
     def _image_file(self, name: str | None) -> Path | None:
         """Path of an image in the images folder; None for no image or a name that is not a plain file name."""
-        if not name or self._video is None:
-            return None
-        if Path(name).name != name or name in (".", ".."):
+        if not name or self._video is None or not is_plain_name(name):
             return None
         return images_dir_for(self._video) / name
 

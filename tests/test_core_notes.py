@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -72,9 +75,15 @@ class ImageNameTest(unittest.TestCase):
 
     def test_paths(self) -> None:
         video = Path("D:/clips/promo_v3.mp4")
-        self.assertEqual(nt.notes_path_for(video), Path("D:/clips/promo_v3_notes.txt"))
-        self.assertEqual(nt.images_dir_for(video), Path("D:/clips/promo_v3_notes"))
-        self.assertEqual(nt.notes_path_for(Path("a.b.mov")), Path("a.b_notes.txt"))
+        self.assertEqual(nt.notes_dir_for(video), Path("D:/clips/promo_v3_notes"))
+        self.assertEqual(nt.notes_path_for(video), Path("D:/clips/promo_v3_notes/promo_v3_notes.txt"))
+        self.assertEqual(nt.export_path_for(video), Path("D:/clips/promo_v3_notes/promo_v3_notes.md"))
+        self.assertEqual(nt.images_dir_for(video), Path("D:/clips/promo_v3_notes/frames"))
+        self.assertEqual(nt.legacy_notes_path_for(video), Path("D:/clips/promo_v3_notes.txt"))
+        self.assertEqual(nt.notes_path_for(Path("a.b.mov")), Path("a.b_notes/a.b_notes.txt"))
+        self.assertTrue(nt.is_plain_name("0-00-12-07_FIX.png"))
+        for bad in ("", None, ".", "..", "..\\x.png", "a/b.png", "C:\\x.png"):
+            self.assertFalse(nt.is_plain_name(bad), bad)
 
 
 class ParseRenderTest(unittest.TestCase):
@@ -185,6 +194,110 @@ class ParseRenderTest(unittest.TestCase):
             self.assertRegex(value, r"^[0-9a-f]{8}$")
             self.assertNotIn(value, taken)
             taken.add(value)
+
+
+class ReadableTest(unittest.TestCase):
+    def test_export_of_the_sample(self) -> None:
+        nf = nt.parse(SAMPLE)
+        self.assertEqual(
+            nt.render_readable(nf),
+            "# promo_v3.mp4\n"
+            "\n"
+            "25 fps · 0:01:32:10 · FIX 1 · ADD 1 · REMOVE 1\n"
+            "\n"
+            "- **0:00:12:07** · FIX · logo flickers for two frames\n"
+            "  ![](frames/0-00-12-07_FIX.png)\n"
+            "- **0:00:40:00** · ADD · subtitle for the second speaker\n"
+            "- **0:01:02:15** · REMOVE · second take of the handshake\n"
+            "  ![](frames/0-01-02-15_REMOVE.png)\n",
+        )
+        self.assertNotIn("![]", nt.render_readable(nf, images=False))
+
+    def test_empty_unknown_duration_drop_frame_and_odd_names(self) -> None:
+        nf = nt.NotesFile(source="clip.mp4", fps=30000 / 1001, duration_frames=None)
+        self.assertEqual(nt.render_readable(nf), "# clip.mp4\n\n29.97 fps · FIX 0 · ADD 0 · REMOVE 0\n\nNo notes.\n")
+        nf.notes = [nt.Note("a", 1800, "ADD", "", image="my frame.png"), nt.Note("b", 1, "FIX", "x", image="..\\y.png")]
+        nf.extra = ["hand written"]
+        text = nt.render_readable(nf)
+        self.assertIn("- **0;00;00;01** · FIX · x\n- **0;01;00;02** · ADD\n  ![](<frames/my frame.png>)\n", text)
+        self.assertNotIn("hand written", text)
+
+
+class FolderTest(unittest.TestCase):
+    DATA = ("# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n"
+            "0:00:01:00\tFIX\ta\trect 0.100,0.100 0.200,0.200\t0-00-01-00_FIX.png\n0:00:02:00\tADD\tb\n")
+
+    def setUp(self) -> None:
+        self.dir = Path(tempfile.mkdtemp(prefix="fn_notes_"))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.video = self.dir / "promo.mp4"
+        self.video.write_bytes(b"video")
+        self.log = logging.getLogger("fn_notes_test")
+        self.log.addHandler(logging.NullHandler())
+        self.log.propagate = False
+
+    def make_review(self) -> Path:
+        folder = self.dir / "promo_notes"
+        (folder / "frames").mkdir(parents=True)
+        (folder / "promo_notes.txt").write_text(self.DATA, encoding="utf-8")
+        (folder / "promo_notes.md").write_text("# promo.mp4\n", encoding="utf-8")
+        (folder / "frames" / "0-00-01-00_FIX.png").write_bytes(b"png")
+        return folder
+
+    def test_summary(self) -> None:
+        self.assertIsNone(nt.notes_summary(self.video))
+        (self.dir / "promo_notes.txt").write_text(self.DATA, encoding="utf-8")
+        self.assertEqual(nt.notes_summary(self.video), {"notes": 2, "frames": 1})
+        (self.dir / "promo_notes.txt").unlink()
+        self.make_review()
+        self.assertEqual(nt.notes_summary(self.video), {"notes": 2, "frames": 1})
+        (self.dir / "promo_notes" / "promo_notes.txt").write_text(self.DATA.replace("promo.mp4", "promo.mov"),
+                                                                 encoding="utf-8")
+        self.assertIsNone(nt.notes_summary(self.video))
+
+    def test_delete_review(self) -> None:
+        folder = self.make_review()
+        (folder / "frames" / "x.png.part").write_bytes(b"")
+        (folder / "Thumbs.db").write_bytes(b"")
+        result = nt.delete_notes(self.video, self.log)
+        self.assertEqual(result, {"notes": 2, "frames": 1, "path": str(folder)})
+        self.assertEqual([p.name for p in self.dir.iterdir()], ["promo.mp4"])
+        with self.assertRaises(nt.NotesLayoutError) as ctx:
+            nt.delete_notes(self.video, self.log)
+        self.assertEqual(str(ctx.exception), "There are no notes for promo.mp4.")
+
+    def test_delete_legacy_layout(self) -> None:
+        (self.dir / "promo_notes.txt").write_text(self.DATA, encoding="utf-8")
+        (self.dir / "promo_notes").mkdir()
+        (self.dir / "promo_notes" / "0-00-01-00_FIX.png").write_bytes(b"png")
+        (self.dir / "other_notes.txt").write_text("keep", encoding="utf-8")
+        self.assertEqual(nt.delete_notes(self.video, self.log)["frames"], 1)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["other_notes.txt", "promo.mp4"])
+
+    def test_delete_refuses_foreign_content_and_other_videos(self) -> None:
+        folder = self.make_review()
+        (folder / "my edit.prproj").write_text("keep", encoding="utf-8")
+        with self.assertRaises(nt.NotesLayoutError) as ctx:
+            nt.delete_notes(self.video, self.log)
+        self.assertEqual(str(ctx.exception), "The notes folder promo_notes holds other files. Delete it by hand.")
+        (folder / "my edit.prproj").unlink()
+        (folder / "frames" / "sub").mkdir()
+        with self.assertRaises(nt.NotesLayoutError):
+            nt.delete_notes(self.video, self.log)
+        (folder / "frames" / "sub").rmdir()
+        (folder / "promo_notes.txt").write_text(self.DATA.replace("promo.mp4", "promo.mov"), encoding="utf-8")
+        with self.assertRaises(nt.NotesLayoutError) as ctx:
+            nt.delete_notes(self.video, self.log)
+        self.assertEqual(str(ctx.exception), "The notes folder promo_notes belongs to promo.mov.")
+        # nothing was removed by any refusal
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["frames", "promo_notes.md", "promo_notes.txt"])
+        self.assertTrue((folder / "frames" / "0-00-01-00_FIX.png").is_file())
+
+    def test_delete_refuses_a_file_in_place_of_the_folder(self) -> None:
+        (self.dir / "promo_notes").write_text("not a folder", encoding="utf-8")
+        with self.assertRaises(nt.NotesLayoutError):
+            nt.delete_notes(self.video, self.log)
+        self.assertTrue((self.dir / "promo_notes").is_file())
 
 
 if __name__ == "__main__":

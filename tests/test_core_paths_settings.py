@@ -148,6 +148,16 @@ class SettingsTest(TempCase):
         self.assertEqual(s.last_frame(self.tmp / "v10.mp4"), 99)
         self.assertEqual(s.last_frame(self.tmp / "nope.mp4"), 0)
 
+    def test_forget_recent_and_interval_default(self) -> None:
+        s = self.make()
+        s.load()
+        self.assertEqual(s.data["update_check_interval"], "30m")
+        s.touch_recent(self.tmp / "a.mp4", 1)
+        s.touch_recent(self.tmp / "b.mp4", 2)
+        self.assertTrue(s.forget_recent(str(self.tmp / "A.MP4")))
+        self.assertFalse(s.forget_recent(self.tmp / "a.mp4"))
+        self.assertEqual([Path(r["path"]).name for r in s.data["recent"]], ["b.mp4"])
+
     def test_fps_override_set_and_clear(self) -> None:
         s = self.make()
         s.load()

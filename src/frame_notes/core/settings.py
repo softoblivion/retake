@@ -26,6 +26,7 @@ DEFAULTS: dict[str, Any] = {
     "fps_overrides": {},  # {absolute video path: fps}
     "auto_download_updates": True,
     "notes_panel_open": True,
+    "update_check_interval": "30m",  # a key of the self-updater's CHECK_INTERVALS; the shell validates it
 }
 
 
@@ -145,6 +146,15 @@ class Settings:
                 },
             )
             self.data["recent"] = recent[:MAX_RECENT]
+
+    def forget_recent(self, path: Path | str) -> bool:
+        """Remove `path` from the recent list. True when it was listed."""
+        key = _path_key(path)
+        with self._lock:
+            recent = [item for item in self.data["recent"] if _path_key(item["path"]) != key]
+            found = len(recent) != len(self.data["recent"])
+            self.data["recent"] = recent
+        return found
 
     def last_frame(self, path: Path) -> int:
         """Last frame remembered for `path`, 0 when unknown."""

@@ -67,12 +67,12 @@ class OpenTest(SessionCase):
         self.assertEqual((v["fps"], v["fps_text"], v["fps_source"]), (25.0, "25", "file"))
         self.assertEqual(v["duration_frames"], 2310)
         self.assertAlmostEqual(v["duration"], 92.4)
-        self.assertEqual(v["notes_path"], str(self.clips / "promo_notes.txt"))
-        self.assertEqual(v["images_dir"], str(self.clips / "promo_notes"))
+        self.assertEqual(v["notes_path"], str(self.clips / "promo_notes" / "promo_notes.txt"))
+        self.assertEqual(v["images_dir"], str(self.clips / "promo_notes" / "frames"))
         self.assertEqual(data["timecode"], {"base": 25, "drop": False, "digits": 2, "separator": ":"})
         self.assertEqual(data["notes"], [])
         self.assertEqual(data["counts"], {"FIX": 0, "ADD": 0, "REMOVE": 0})
-        self.assertFalse((self.clips / "promo_notes.txt").exists())
+        self.assertEqual([p.name for p in self.clips.iterdir()], ["promo.mp4"])
 
     def test_empty_payload_without_video(self) -> None:
         self.assertEqual(
@@ -92,7 +92,7 @@ class OpenTest(SessionCase):
         self.assertIsNone(data["timecode"])
         with self.assertRaises(ss.SessionError):
             self.session.add_note(0, "FIX", "x", None, None)
-        self.assertFalse((self.clips / "dummy_notes.txt").exists())
+        self.assertFalse((self.clips / "dummy_notes" / "dummy_notes.txt").exists())
 
     def test_notes_file_of_another_source_is_refused(self) -> None:
         video = self.make_video()
@@ -125,7 +125,7 @@ class OpenTest(SessionCase):
         self.assertEqual(data["notes"][0]["timecode"], "0:00:12:07")
         self.assertEqual(data["counts"], {"FIX": 1, "ADD": 1, "REMOVE": 0})
         self.session.add_note(10, "REMOVE", "third", None, None)
-        saved = (self.clips / "promo_notes.txt").read_text(encoding="utf-8")
+        saved = (self.clips / "promo_notes" / "promo_notes.txt").read_text(encoding="utf-8")
         self.assertTrue(saved.endswith("hand written line\n"))
         self.assertIn("0:00:00:10\tREMOVE\tthird\n", saved)
         self.assertIn("# duration: 0:01:32:10\n", saved)
@@ -153,7 +153,7 @@ class NotesTest(SessionCase):
     def test_add_note_writes_file_and_calls_back(self) -> None:
         video = self.open_unknown()
         data = self.session.add_note(307, "FIX", "logo\tflickers\nnow ", None, None)
-        notes_file = self.clips / "dummy_notes.txt"
+        notes_file = self.clips / "dummy_notes" / "dummy_notes.txt"
         self.assertEqual(
             notes_file.read_text(encoding="utf-8"),
             "# Frame Notes 1\n# source: dummy.mp4\n# fps: 25\n0:00:12:07\tFIX\tlogo flickers now\n",
@@ -162,19 +162,28 @@ class NotesTest(SessionCase):
         self.assertEqual(data["notes"][0]["text"], "logo flickers now")
         self.assertEqual(data["notes"][0]["timecode"], "0:00:12:07")
         self.assertRegex(data["notes"][0]["id"], r"^[0-9a-f]{8}$")
-        self.assertFalse((self.clips / "dummy_notes").exists())
+        self.assertFalse((self.clips / "dummy_notes" / "frames").exists())
         self.assertEqual(self.session.notes_text(), notes_file.read_text(encoding="utf-8"))
         self.assertTrue(video.exists())
+        self.assertEqual(
+            (self.clips / "dummy_notes" / "dummy_notes.md").read_text(encoding="utf-8"),
+            "# dummy.mp4\n\n25 fps · FIX 1 · ADD 0 · REMOVE 0\n\n- **0:00:12:07** · FIX · logo flickers now\n",
+        )
+        self.assertEqual(sorted(p.name for p in (self.clips / "dummy_notes").iterdir()),
+                         ["dummy_notes.md", "dummy_notes.txt"])
+        self.assertEqual(data["video"]["notes_dir"], str(self.clips / "dummy_notes"))
+        self.assertEqual(data["video"]["export_path"], str(self.clips / "dummy_notes" / "dummy_notes.md"))
+        self.assertEqual(data["video"]["images_dir"], str(self.clips / "dummy_notes" / "frames"))
 
     def test_note_with_region_and_image(self) -> None:
         self.open_unknown()
         data = self.session.add_note(307, "FIX", "logo", dict(RECT), PNG)
         note = data["notes"][0]
         self.assertEqual(note["image"], "0-00-12-07_FIX.png")
-        self.assertEqual(note["image_path"], str(self.clips / "dummy_notes" / "0-00-12-07_FIX.png"))
+        self.assertEqual(note["image_path"], str(self.clips / "dummy_notes" / "frames" / "0-00-12-07_FIX.png"))
         self.assertEqual(note["region"], RECT)
-        self.assertEqual((self.clips / "dummy_notes" / "0-00-12-07_FIX.png").read_bytes(), PNG)
-        text = (self.clips / "dummy_notes.txt").read_text(encoding="utf-8")
+        self.assertEqual((self.clips / "dummy_notes" / "frames" / "0-00-12-07_FIX.png").read_bytes(), PNG)
+        text = (self.clips / "dummy_notes" / "dummy_notes.txt").read_text(encoding="utf-8")
         self.assertIn("0:00:12:07\tFIX\tlogo\trect 0.540,0.360 0.880,0.800\t0-00-12-07_FIX.png\n", text)
 
     def test_image_name_collision_and_no_image_without_region(self) -> None:
@@ -184,7 +193,7 @@ class NotesTest(SessionCase):
         self.assertEqual([n["image"] for n in data["notes"]], ["0-00-12-07_FIX.png", "0-00-12-07_FIX_2.png"])
         data = self.session.add_note(308, "ADD", "c", None, PNG)
         self.assertIsNone(data["notes"][2]["image"])
-        self.assertEqual(sorted(p.name for p in (self.clips / "dummy_notes").iterdir()),
+        self.assertEqual(sorted(p.name for p in (self.clips / "dummy_notes" / "frames").iterdir()),
                          ["0-00-12-07_FIX.png", "0-00-12-07_FIX_2.png"])
 
     def test_notes_are_sorted_with_order_tie_break(self) -> None:
@@ -201,23 +210,27 @@ class NotesTest(SessionCase):
         second = self.session.add_note(400, "ADD", "b", dict(RECT), PNG)["notes"][1]["id"]
         self.events.clear()
         self.session.remove_note(first)
-        self.assertFalse((self.clips / "dummy_notes" / "0-00-12-07_FIX.png").exists())
-        self.assertTrue((self.clips / "dummy_notes").is_dir())
+        self.assertFalse((self.clips / "dummy_notes" / "frames" / "0-00-12-07_FIX.png").exists())
+        self.assertTrue((self.clips / "dummy_notes" / "frames").is_dir())
         self.assertEqual(len(self.events), 1)
         self.assertEqual(len(self.events[0]["notes"]), 1)
         self.session.remove_note(second)
-        self.assertFalse((self.clips / "dummy_notes").exists())
+        self.assertFalse((self.clips / "dummy_notes" / "frames").exists())
         self.assertEqual(
-            (self.clips / "dummy_notes.txt").read_text(encoding="utf-8"),
+            (self.clips / "dummy_notes" / "dummy_notes.txt").read_text(encoding="utf-8"),
             "# Frame Notes 1\n# source: dummy.mp4\n# fps: 25\n",
         )
         self.assertEqual(self.events[-1]["notes"], [])
         self.assertEqual(len(self.events), 2)
+        self.assertEqual(sorted(p.name for p in (self.clips / "dummy_notes").iterdir()),
+                         ["dummy_notes.md", "dummy_notes.txt"])
+        self.assertTrue((self.clips / "dummy_notes" / "dummy_notes.md").read_text(encoding="utf-8")
+                        .endswith("REMOVE 0\n\nNo notes.\n"))
 
     def test_update_text_region_and_image(self) -> None:
         self.open_unknown()
         note_id = self.session.add_note(307, "FIX", "old", dict(RECT), PNG)["notes"][0]["id"]
-        image = self.clips / "dummy_notes" / "0-00-12-07_FIX.png"
+        image = self.clips / "dummy_notes" / "frames" / "0-00-12-07_FIX.png"
         data = self.session.update_note(note_id, text="new\ntext")
         self.assertEqual(data["notes"][0]["text"], "new text")
         self.assertEqual(data["notes"][0]["region"], RECT)
@@ -236,7 +249,7 @@ class NotesTest(SessionCase):
         self.assertIsNone(data["notes"][0]["region"])
         self.assertIsNone(data["notes"][0]["image"])
         self.assertFalse(image.parent.exists())
-        text = (self.clips / "dummy_notes.txt").read_text(encoding="utf-8")
+        text = (self.clips / "dummy_notes" / "dummy_notes.txt").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("0:00:12:07\tFIX\tnew text\n"))
         # a region added later gets an image name when an image comes with it
         data = self.session.update_note(note_id, region=dict(RECT), image_png=PNG)
@@ -256,7 +269,7 @@ class NotesTest(SessionCase):
             self.session.update_note("deadbeef", text="x")
         with self.assertRaises(ss.SessionError):
             self.session.remove_note("deadbeef")
-        self.assertFalse((self.clips / "dummy_notes.txt").exists())
+        self.assertFalse((self.clips / "dummy_notes").exists())
         self.assertEqual(self.events, [])
 
     def test_mutation_without_video_is_refused(self) -> None:
@@ -274,7 +287,7 @@ class NotesTest(SessionCase):
         self.assertEqual(len(self.events), 1)
         self.assertEqual(self.events[0]["notes"][0]["text"], "kept")
         self.session.add_note(20, "ADD", "next", None, None)
-        saved = (self.clips / "dummy_notes.txt").read_text(encoding="utf-8")
+        saved = (self.clips / "dummy_notes" / "dummy_notes.txt").read_text(encoding="utf-8")
         self.assertIn("kept", saved)
         self.assertIn("next", saved)
 
@@ -320,7 +333,7 @@ class FpsTest(SessionCase):
         self.open_unknown(25.0)
         self.session.add_note(307, "FIX", "a", dict(RECT), PNG)
         self.session.add_note(1800, "ADD", "b", dict(RECT), PNG + b"b")
-        images = self.clips / "dummy_notes"
+        images = self.clips / "dummy_notes" / "frames"
         self.assertEqual(sorted(p.name for p in images.iterdir()), ["0-00-12-07_FIX.png", "0-01-12-00_ADD.png"])
         self.events.clear()
         data = self.session.set_fps(29.97)
@@ -330,7 +343,7 @@ class FpsTest(SessionCase):
         self.assertEqual([n["image"] for n in data["notes"]], ["0-00-10-07_FIX.png", "0-01-00-02_ADD.png"])
         self.assertEqual(sorted(p.name for p in images.iterdir()), ["0-00-10-07_FIX.png", "0-01-00-02_ADD.png"])
         self.assertEqual((images / "0-01-00-02_ADD.png").read_bytes(), PNG + b"b")
-        text = (self.clips / "dummy_notes.txt").read_text(encoding="utf-8")
+        text = (self.clips / "dummy_notes" / "dummy_notes.txt").read_text(encoding="utf-8")
         self.assertIn("# fps: 29.97\n", text)
         self.assertIn("0;01;00;02\tADD\tb\t", text)
         self.assertIn("0-01-00-02_ADD.png", text)
@@ -342,7 +355,7 @@ class FpsTest(SessionCase):
     def test_set_fps_without_notes_writes_no_file(self) -> None:
         self.session.open(self.make_video("dummy.mp4", real=False))
         self.session.set_fps(24)
-        self.assertFalse((self.clips / "dummy_notes.txt").exists())
+        self.assertFalse((self.clips / "dummy_notes" / "dummy_notes.txt").exists())
 
     def test_unknown_probe_uses_fps_of_existing_notes_file(self) -> None:
         video = self.make_video("dummy.mp4", real=False)
@@ -352,6 +365,102 @@ class FpsTest(SessionCase):
         data = self.session.open(video)
         self.assertEqual(data["video"]["fps"], 30.0)
         self.assertEqual(data["notes"][0]["frame"], 30)
+
+
+class LayoutTest(SessionCase):
+    LEGACY = (
+        "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n"
+        "0:00:12:07\tFIX\tlogo\trect 0.100,0.100 0.200,0.200\t0-00-12-07_FIX.png\n"
+        "0:00:40:00\tADD\tsubtitle\n"
+    )
+
+    def make_legacy(self, images: bool = True) -> Path:
+        video = self.make_video()
+        (self.clips / "promo_notes.txt").write_text(self.LEGACY, encoding="utf-8")
+        if images:
+            (self.clips / "promo_notes").mkdir()
+            (self.clips / "promo_notes" / "0-00-12-07_FIX.png").write_bytes(PNG)
+        return video
+
+    def test_open_moves_the_1_0_layout_once(self) -> None:
+        video = self.make_legacy()
+        with self.assertLogs("fn_test", level="INFO") as logs:
+            data = self.session.open(video)
+        self.assertTrue(any("moved the notes of promo.mp4" in line for line in logs.output))
+        folder = self.clips / "promo_notes"
+        self.assertEqual(sorted(p.name for p in self.clips.iterdir()), ["promo.mp4", "promo_notes"])
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["frames", "promo_notes.md", "promo_notes.txt"])
+        self.assertEqual((folder / "promo_notes.txt").read_text(encoding="utf-8"), self.LEGACY)
+        self.assertEqual((folder / "frames" / "0-00-12-07_FIX.png").read_bytes(), PNG)
+        export = (folder / "promo_notes.md").read_text(encoding="utf-8")
+        self.assertIn("- **0:00:12:07** · FIX · logo\n  ![](frames/0-00-12-07_FIX.png)\n", export)
+        self.assertEqual(data["notes"][0]["image_path"], str(folder / "frames" / "0-00-12-07_FIX.png"))
+        # a second open finds the new layout and moves nothing
+        self.assertTrue(self.session.open(video)["notes"])
+
+    def test_data_file_only_and_images_only(self) -> None:
+        video = self.make_legacy(images=False)
+        self.session.open(video)
+        self.assertEqual(sorted(p.name for p in (self.clips / "promo_notes").iterdir()),
+                         ["promo_notes.md", "promo_notes.txt"])
+        other = self.make_video("other.mp4")
+        (self.clips / "other_notes").mkdir()
+        (self.clips / "other_notes" / "a.png").write_bytes(PNG)
+        data = self.session.open(other)
+        self.assertEqual(data["notes"], [])
+        self.assertTrue((self.clips / "other_notes" / "frames" / "a.png").is_file())
+        self.assertFalse((self.clips / "other_notes" / "a.png").exists())
+
+    def test_interrupted_migration_is_finished_on_the_next_open(self) -> None:
+        video = self.make_legacy()
+        real_replace = os.replace
+        calls = []
+
+        def failing_replace(src, dst):
+            calls.append((src, dst))
+            if str(src).endswith("promo_notes.txt"):
+                raise OSError("crash before the data file moved")
+            return real_replace(src, dst)
+
+        with mock.patch("frame_notes.core.notes.os.replace", side_effect=failing_replace):
+            with self.assertRaises(ss.SessionError) as ctx:
+                self.session.open(video)
+        self.assertIn("could not be moved into the promo_notes folder", str(ctx.exception))
+        # readable state: images already in frames/, data file still beside the video
+        self.assertTrue((self.clips / "promo_notes" / "frames" / "0-00-12-07_FIX.png").is_file())
+        self.assertTrue((self.clips / "promo_notes.txt").is_file())
+        data = self.session.open(video)
+        self.assertEqual(len(data["notes"]), 2)
+        self.assertFalse((self.clips / "promo_notes.txt").exists())
+        self.assertTrue((self.clips / "promo_notes" / "promo_notes.txt").is_file())
+
+    def test_new_layout_wins_over_a_legacy_file(self) -> None:
+        video = self.make_video()
+        (self.clips / "promo_notes").mkdir()
+        (self.clips / "promo_notes" / "promo_notes.txt").write_text(
+            "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n0:00:01:00\tFIX\tnew layout\n", encoding="utf-8")
+        (self.clips / "promo_notes.txt").write_text(self.LEGACY, encoding="utf-8")
+        data = self.session.open(video)
+        self.assertEqual([n["text"] for n in data["notes"]], ["new layout"])
+        self.assertEqual((self.clips / "promo_notes.txt").read_text(encoding="utf-8"), self.LEGACY)
+
+    def test_legacy_file_of_another_video_is_left_and_refused(self) -> None:
+        video = self.make_video()
+        (self.clips / "promo_notes.txt").write_text(self.LEGACY.replace("promo.mp4", "promo.mov"), encoding="utf-8")
+        (self.clips / "promo_notes").mkdir()
+        (self.clips / "promo_notes" / "0-00-12-07_FIX.png").write_bytes(PNG)
+        with self.assertRaises(ss.SessionError) as ctx:
+            self.session.open(video)
+        self.assertIn("promo.mov", str(ctx.exception))
+        self.assertTrue((self.clips / "promo_notes.txt").is_file())
+        self.assertTrue((self.clips / "promo_notes" / "0-00-12-07_FIX.png").is_file())
+
+    def test_readable_text_leaves_images_out(self) -> None:
+        self.session.open(self.make_legacy())
+        text = self.session.readable_text()
+        self.assertNotIn("![]", text)
+        self.assertIn("- **0:00:40:00** · ADD · subtitle\n", text)
+        self.assertIn("![](frames/", (self.clips / "promo_notes" / "promo_notes.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
