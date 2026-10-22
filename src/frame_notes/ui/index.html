@@ -165,6 +165,23 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <div id="drop-veil" class="drop-veil" hidden><div>Drop to open</div></div>
 
+  <div id="update-sheet" class="sheet-scrim" hidden>
+    <div id="us-panel" class="sheet" role="dialog" aria-modal="true" aria-labelledby="us-title" tabindex="-1">
+      <h2 id="us-title" class="us-title"></h2>
+      <div id="us-meta" class="us-meta"></div>
+      <div id="us-notes" class="us-notes" tabindex="0" aria-label="Release notes"></div>
+      <div id="us-progress" class="us-progress" hidden>
+        <div class="us-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+        <div id="us-pct" class="us-pct"></div>
+      </div>
+      <div id="us-error" class="us-error" role="alert" hidden></div>
+      <div class="us-buttons">
+        <button type="button" id="us-later" class="btn">Later</button>
+        <button type="button" id="us-install" class="btn btn-primary">Install</button>
+      </div>
+    </div>
+  </div>
+
   <div id="keys-help" class="keys-help" hidden>
     <div class="kh-box" role="dialog" aria-label="Keyboard keys">
       <div class="kh-head"><span>Keys</span><button type="button" class="btn btn-icon kh-close" aria-label="Close">&#x2715;</button></div>

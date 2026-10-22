@@ -125,6 +125,81 @@ body:not(.has-video) .video-only { display: none !important; }
 .up-auto input { margin: 0; accent-color: var(--accent); }
 .up-hint { margin: 3px 0 0 24px; color: var(--ink-3); font-size: 11.5px; line-height: 1.4; }
 
+/* Update sheet: modal notice for a newer version (js/update.js). */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  animation: sheet-fade 0.16s ease-out;
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: 80vh;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--bg-2);
+  box-shadow: var(--shadow);
+  outline: none;
+  user-select: text;
+  animation: sheet-rise 0.18s ease-out;
+}
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-rise { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-scrim, .sheet { animation: none; }
+}
+.us-title { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; }
+.us-meta { margin-top: 2px; color: var(--ink-3); font-size: 12px; }
+.us-notes {
+  flex: 0 1 auto;
+  min-height: 48px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--bg-1);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.us-notes > :first-child { margin-top: 0; }
+.us-notes > :last-child { margin-bottom: 0; }
+.us-notes h4 { margin: 14px 0 4px; color: var(--ink-1); font-size: 12.5px; font-weight: 600; }
+.us-notes h4.h-top { font-size: 13.5px; }
+.us-notes p { margin: 0 0 8px; }
+.us-notes ul { margin: 0 0 8px; padding-left: 18px; }
+.us-notes li { margin: 2px 0; }
+.us-notes hr { height: 1px; margin: 10px 0; border: 0; background: var(--line-2); }
+.us-notes strong { color: var(--ink-1); font-weight: 600; }
+.us-notes code { padding: 0 4px; border-radius: var(--r-s); background: var(--bg-3); color: var(--ink-1); font: 11.5px var(--mono); }
+.us-notes a { color: var(--accent-ink); text-decoration: underline; cursor: pointer; }
+.us-notes .us-url { color: var(--ink-3); }
+.us-notes.is-empty { color: var(--ink-3); }
+.us-progress { margin-top: 14px; }
+.us-bar { height: 6px; overflow: hidden; border-radius: 3px; background: var(--bg-4); }
+.us-bar > span { display: block; width: calc(var(--p, 0) * 100%); height: 100%; border-radius: 3px; background: var(--accent); }
+.us-pct { margin-top: 6px; color: var(--ink-2); font: 12px var(--mono); }
+.us-error {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger-bg);
+  border-radius: var(--r-m);
+  background: var(--danger-bg);
+  color: #ffd7d9;
+  font-size: 12.5px;
+}
+.us-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.us-buttons .btn { height: 30px; padding: 0 16px; }
+
 /* Work area: viewer on the left, notes panel on the right. */
 #work {
   display: flex;

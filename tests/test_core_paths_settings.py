@@ -94,15 +94,14 @@ class SettingsTest(TempCase):
         s = self.make()
         s.load()
         s.data["last_dir"] = "D:\\clips"
-        s.data["window"]["width"] = 1000
+        s.data["window"]["x"] = 40
         s.touch_recent(self.tmp / "a.mp4", 42)
         s.set_fps_override(self.tmp / "a.mp4", 29.97)
         s.save()
         t = self.make()
         t.load()
         self.assertEqual(t.data["last_dir"], "D:\\clips")
-        self.assertEqual(t.data["window"]["width"], 1000)
-        self.assertEqual(t.data["window"]["height"], 800)
+        self.assertEqual(t.data["window"], {"x": 40, "y": None})
         self.assertEqual(t.data["recent"][0]["last_frame"], 42)
         self.assertEqual(t.fps_override(self.tmp / "a.mp4"), 29.97)
         self.assertIsNone(t.fps_override(self.tmp / "b.mp4"))
@@ -121,19 +120,32 @@ class SettingsTest(TempCase):
         folder = self.tmp / "home"
         folder.mkdir()
         (folder / "settings.json").write_text(
-            json.dumps({"window": {"width": "wide", "x": 10}, "recent": [{"path": 5}, {"path": "p", "last_frame": 3,
+            json.dumps({"window": {"x": "left", "y": 10}, "recent": [{"path": 5}, {"path": "p", "last_frame": 3,
                         "opened_at": 1}], "fps_overrides": {"a": 25, "b": -1, "c": "x"}, "extra_key": 1,
                         "auto_download_updates": "yes"}),
             encoding="utf-8",
         )
         s = self.make()
         s.load()
-        self.assertEqual(s.data["window"]["width"], 1280)
-        self.assertEqual(s.data["window"]["x"], 10)
+        self.assertEqual(s.data["window"], {"x": None, "y": 10})
         self.assertEqual(s.data["recent"], [{"path": "p", "last_frame": 3, "opened_at": 1}])
         self.assertEqual(s.data["fps_overrides"], {"a": 25.0})
         self.assertEqual(s.data["extra_key"], 1)
         self.assertIs(s.data["auto_download_updates"], True)
+
+    def test_old_window_size_keys_are_dropped(self) -> None:
+        folder = self.tmp / "home"
+        folder.mkdir()
+        (folder / "settings.json").write_text(
+            json.dumps({"window": {"x": 30, "y": 20, "width": 900, "height": 700, "maximized": True}}),
+            encoding="utf-8",
+        )
+        s = self.make()
+        s.load()
+        self.assertEqual(s.data["window"], {"x": 30, "y": 20})
+        s.save()
+        saved = json.loads((folder / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["window"], {"x": 30, "y": 20})
 
     def test_recent_list_is_newest_first_unique_and_capped(self) -> None:
         s = self.make()

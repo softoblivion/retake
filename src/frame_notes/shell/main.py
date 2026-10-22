@@ -21,7 +21,9 @@ from frame_notes.core.selfupdate import APPLY_FLAG, build_scheduler, build_updat
 
 WINDOW_TITLE = "Frame Notes"
 BACKGROUND = "#111214"
-MIN_SIZE = (960, 600)
+# The window is not resizable and cannot be maximized. Its size is one of these steps (logical pixels, 16:10),
+# the first one that fits the monitor's work area; the last one wins when none fits.
+WINDOW_SIZES = ((1280, 800), (1152, 720), (1024, 640), (960, 600))
 LOG_NAME = "app.log"
 
 log = logging.getLogger("frame_notes.main")
@@ -87,25 +89,41 @@ def setup_logging(log_dir: Path, debug: bool) -> None:
     threading.excepthook = _thread_excepthook
 
 
+def choose_window_size(area_width: float, area_height: float) -> tuple[int, int]:
+    """First entry of WINDOW_SIZES that fits `area_width` x `area_height` (logical pixels); the last when none does."""
+    for width, height in WINDOW_SIZES:
+        if width <= area_width and height <= area_height:
+            return width, height
+    return WINDOW_SIZES[-1]
+
+
+def restore_position(x: Any, y: Any, width: int, height: int,
+                     screen: Optional[tuple[int, int, int, int]], scale: float) -> tuple[Optional[int], Optional[int]]:
+    """The saved logical x / y, or (None, None) when they are missing or would leave the window off every monitor.
+
+    `screen` is (left, top, width, height) of the virtual screen in physical pixels, `scale` the DPI scale.
+    """
+    if not (isinstance(x, int) and isinstance(y, int)) or isinstance(x, bool) or isinstance(y, bool):
+        return None, None
+    if screen is None:
+        return x, y
+    left, top, sw, sh = screen
+    px, py = x * scale, y * scale
+    margin = 100  # at least this much of the window must be reachable
+    if left - width * scale + margin <= px <= left + sw - margin and top <= py <= top + sh - margin:
+        return x, y
+    return None, None
+
+
 def _start_geometry(window_settings: dict) -> dict:
-    """Window x / y / width / height from settings, with the position dropped when it would be off every monitor."""
+    """Fixed window size for the monitor the window opens on, plus the saved position when it is still on screen."""
     from . import winutil
 
-    width = max(MIN_SIZE[0], int(window_settings.get("width") or 1280))
-    height = max(MIN_SIZE[1], int(window_settings.get("height") or 800))
+    scale = winutil.dpi_scale()
     x, y = window_settings.get("x"), window_settings.get("y")
-    if isinstance(x, int) and isinstance(y, int):
-        screen = winutil.virtual_screen()
-        scale = winutil.dpi_scale()
-        if screen is not None:
-            left, top, sw, sh = screen
-            px, py = x * scale, y * scale
-            margin = 100  # at least this much of the window must be reachable
-            if not (left - width * scale + margin <= px <= left + sw - margin
-                    and top <= py <= top + sh - margin):
-                x = y = None
-    else:
-        x = y = None
+    area = winutil.work_area(x * scale, y * scale) if isinstance(x, int) and isinstance(y, int) else winutil.work_area()
+    width, height = choose_window_size(area[2] / scale, area[3] / scale) if area else WINDOW_SIZES[0]
+    x, y = restore_position(x, y, width, height, winutil.virtual_screen(), scale)
     return {"width": width, "height": height, "x": x, "y": y}
 
 
@@ -168,7 +186,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         height=geometry["height"],
         x=geometry["x"],
         y=geometry["y"],
-        min_size=MIN_SIZE,
+        resizable=False,
         background_color=BACKGROUND,
         text_select=True,
     )
@@ -190,23 +208,16 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 
 def _wire_window_events(window: Any, settings: Any, bridge: Bridge) -> None:
-    state = {"maximized": bool((settings.data.get("window") or {}).get("maximized"))}
-
-    def on_shown() -> None:
-        if state["maximized"]:
-            try:
-                window.maximize()
-            except Exception:  # noqa: BLE001
-                log.debug("could not restore the maximized state", exc_info=True)
+    state: dict[str, bool] = {}
 
     def on_closing() -> None:
-        saved = dict(settings.data.get("window") or {})
-        saved["maximized"] = state["maximized"]
-        if not state["maximized"]:  # keep the restored size and position while maximized
-            try:
-                saved.update(x=int(window.x), y=int(window.y), width=int(window.width), height=int(window.height))
-            except Exception:  # noqa: BLE001
-                log.debug("could not read the window placement", exc_info=True)
+        saved = {key: value for key, value in (settings.data.get("window") or {}).items() if key in ("x", "y")}
+        try:
+            x, y = int(window.x), int(window.y)
+            if x > -10000 and y > -10000:  # a minimized window reports (-32000, -32000): keep the last real place
+                saved.update(x=x, y=y)
+        except Exception:  # noqa: BLE001
+            log.debug("could not read the window position", exc_info=True)
         settings.data["window"] = saved
         bridge._shutdown()
 
@@ -231,11 +242,8 @@ def _wire_window_events(window: Any, settings: Any, bridge: Bridge) -> None:
         except Exception:  # noqa: BLE001
             log.warning("drag and drop is not available", exc_info=True)
 
-    window.events.shown += on_shown
     window.events.loaded += on_loaded
     window.events.closing += on_closing
-    window.events.maximized += lambda: state.update(maximized=True)
-    window.events.restored += lambda: state.update(maximized=False)
 
 
 if __name__ == "__main__":

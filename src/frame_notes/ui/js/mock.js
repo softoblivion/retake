@@ -1,11 +1,12 @@
 // Browser mock of the shell (?mock=1): answers every call of docs/BRIDGE_API.md with the same shapes, keeps
 // notes in memory, builds timecodes with js/frames.js and returns images as data URLs.
-// URL parameters: video=<url relative to the page>, fps=<rate>|unknown (default 25), update=available.
+// URL parameters: video=<url relative to the page>, fps=<rate>|unknown (default 25), update=available (a newer
+// version is found; with auto=off it waits for Install, with fail=1 the first download fails at 40 %).
 
 import { timecodeBase, formatTimecode, formatFps, durationFrames } from './frames.js';
 
 const KINDS = ['FIX', 'ADD', 'REMOVE'];
-const VERSION = '1.1.0';
+const VERSION = '1.3.0';
 const LATENCY = 25;
 
 export function createMock(dispatch) {
@@ -18,7 +19,7 @@ export function createMock(dispatch) {
   let order = 0;
   let lastFrame = 0;
   let fileExists = false;     // the mock "notes file" exists after the first note
-  const settings = { auto_download_updates: true, notes_panel_open: true };
+  const settings = { auto_download_updates: params.get('auto') !== 'off', notes_panel_open: true };
   const recent = [];
   const sample = params.get('video');
   const NO_NOTES = { notes_count: null, frames_count: null, notes_dir: null };
@@ -209,13 +210,17 @@ export function createMock(dispatch) {
 
   // Self-update simulation.
   const wantUpdate = params.get('update') === 'available';
-  const RELEASE_NOTES = '## Changes\n\n- Timeline markers keep their labels when zoomed out.\n- The notes file keeps '
-    + 'hand-written lines in their original order.\n\n## Fixes\n\n- Stepping at 59.94 fps lands on every frame.';
+  const RELEASE_NOTES = '## Frame Notes v1.4.0\n\nTimeline markers keep their labels when zoomed out and the '
+    + '**notes file** keeps hand-written lines. See [the release page](https://github.com/softoblivion/frame-notes/'
+    + 'releases) for details.\n\n---\n\n### Changes\n\n- Timeline markers keep their labels when zoomed out.\n'
+    + '- The notes file keeps hand-written lines in their original order; `<b>` stays text.\n\n### Fixes\n\n'
+    + '- Stepping at 59.94 fps lands on every frame.';
   let update = {
     stage: 'up_to_date', current: VERSION, latest: VERSION, notes: null, size: null, published_at: null,
     progress: 0, message: 'Frame Notes is up to date', checked_at: Date.now() / 1000, can_apply: false,
   };
   let downloading = false;
+  let failNext = params.get('fail') === '1';
   const setUpdate = (patch) => {
     update = { ...update, ...patch };
     dispatch('update', { ...update });
@@ -225,8 +230,8 @@ export function createMock(dispatch) {
     setUpdate({ stage: 'checking', message: 'Checking for updates' });
     later(() => {
       if (wantUpdate) {
-        setUpdate({ stage: 'available', latest: '1.1.0', notes: RELEASE_NOTES, size: 12_640_000,
-          published_at: Date.now() / 1000 - 86400, message: 'Frame Notes 1.1.0 is available',
+        setUpdate({ stage: 'available', latest: '1.4.0', notes: RELEASE_NOTES, size: 12_640_000,
+          published_at: Date.now() / 1000 - 86400, message: 'Frame Notes 1.4.0 is available',
           checked_at: Date.now() / 1000 });
         if (settings.auto_download_updates) download();
       } else {
@@ -235,12 +240,16 @@ export function createMock(dispatch) {
     }, 700);
   }
   function download() {
-    if (downloading || update.stage !== 'available') return;
+    if (downloading || !['available', 'error'].includes(update.stage) || !update.latest) return;
     downloading = true;
     const t0 = performance.now();
     const tick = () => {
       const p = Math.min(1, (performance.now() - t0) / 3000);
-      if (p < 1) {
+      if (failNext && p >= 0.4) {
+        failNext = false;
+        downloading = false;
+        setUpdate({ stage: 'error', progress: null, can_apply: false, message: 'The download failed: connection lost' });
+      } else if (p < 1) {
         setUpdate({ stage: 'downloading', progress: p,
           message: `Downloading Frame Notes ${update.latest}… ${Math.round(p * 100)}%` });
         later(tick, 150);
@@ -432,7 +441,9 @@ export function createMock(dispatch) {
       return reply({ ...update });
     },
     apply_update() {
-      return reply(update.stage === 'ready' && update.can_apply);
+      const ok = update.stage === 'ready' && update.can_apply;
+      if (ok) later(() => dispatch('toast', { message: 'The app would restart now (not in the browser mock)' }), 400);
+      return reply(ok);
     },
   };
 }

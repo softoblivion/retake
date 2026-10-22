@@ -182,7 +182,7 @@ profile:
 
 | Path | Content |
 |---|---|
-| `settings.json` | window placement, recent files with their last frame and frame-rate override, panel state, update settings |
+| `settings.json` | window position, recent files with their last frame and frame-rate override, panel state, update settings |
 | `logs\` | `app.log` |
 | `updates\` | downloaded app updates and `apply.log` |
 
@@ -194,7 +194,8 @@ The app checks GitHub Releases on every launch in the background and then every 
 check is retried later with a growing wait, up to an hour, and nothing is checked while there is no network
 connection. A new version is downloaded automatically (*Download updates automatically* in the version popover, on
 by default) or on **Download**, verified by byte size and SHA-256 against
-the release's `SHA256SUMS`. A downloaded version is installed only by **Restart to update**: the downloaded exe waits for the app to exit,
+the release's `SHA256SUMS`. When a newer version is found, a window opens with its release notes and the buttons
+**Install** and **Later**; **Later** closes it and the version label at the right of the header opens it again. A downloaded version is installed only by **Restart to update**: the downloaded exe waits for the app to exit,
 keeps the old file as `FrameNotes.exe.old` until the new one has started, and relaunches it. If anything fails
 the current exe stays untouched. Every release ships two assets: `FrameNotes.exe` and `SHA256SUMS`. Release notes
 live in [`docs/releases/`](docs/releases/).

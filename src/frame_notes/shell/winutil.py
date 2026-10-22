@@ -1,4 +1,4 @@
-"""Windows helpers: clipboard text, Explorer selection, message box, virtual screen. ctypes only, no extra packages."""
+"""Windows helpers: clipboard text, Explorer selection, message box, screen metrics. ctypes only, no extra packages."""
 
 from __future__ import annotations
 
@@ -24,6 +24,14 @@ SM_XVIRTUALSCREEN = 76
 SM_YVIRTUALSCREEN = 77
 SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
+MONITOR_DEFAULTTONEAREST = 2
+MONITOR_DEFAULTTOPRIMARY = 1
+
+
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD)]
+
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -43,6 +51,11 @@ if _IS_WINDOWS:
     _user32.GetSystemMetrics.restype = ctypes.c_int
     _user32.MessageBoxW.argtypes = [wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT]
     _user32.MessageBoxW.restype = ctypes.c_int
+
+    _user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+    _user32.MonitorFromPoint.restype = wintypes.HANDLE
+    _user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_MonitorInfo)]
+    _user32.GetMonitorInfoW.restype = wintypes.BOOL
 
     _kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
     _kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
@@ -140,3 +153,25 @@ def dpi_scale() -> float:
     except (AttributeError, OSError):
         return 1.0
     return dpi / 96.0 if dpi else 1.0
+
+
+def work_area(x: Optional[float] = None, y: Optional[float] = None) -> Optional[tuple[int, int, int, int]]:
+    """(left, top, width, height) of the work area (monitor minus taskbar) in physical pixels, or None when unknown.
+
+    With a point (physical pixels) the monitor nearest to it is used, else the primary monitor.
+    """
+    if not _IS_WINDOWS:
+        return None
+    if x is None or y is None:
+        monitor = _user32.MonitorFromPoint(wintypes.POINT(0, 0), MONITOR_DEFAULTTOPRIMARY)
+    else:
+        monitor = _user32.MonitorFromPoint(wintypes.POINT(int(x), int(y)), MONITOR_DEFAULTTONEAREST)
+    if not monitor:
+        return None
+    info = _MonitorInfo()
+    info.cbSize = ctypes.sizeof(_MonitorInfo)
+    if not _user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return None
+    rect = info.rcWork
+    width, height = rect.right - rect.left, rect.bottom - rect.top
+    return (rect.left, rect.top, width, height) if width > 0 and height > 0 else None

@@ -20,7 +20,7 @@ from .paths import atomic_write_json
 MAX_RECENT = 20
 
 DEFAULTS: dict[str, Any] = {
-    "window": {"x": None, "y": None, "width": 1280, "height": 800, "maximized": False},
+    "window": {"x": None, "y": None},  # position only: the window has a fixed size (docs/ARCHITECTURE.md, section 11)
     "last_dir": "",
     "recent": [],  # [{"path": str, "last_frame": int, "opened_at": int}], newest first, at most 20
     "fps_overrides": {},  # {absolute video path: fps}
@@ -30,6 +30,7 @@ DEFAULTS: dict[str, Any] = {
 
 # Keys written by older versions that no longer mean anything: dropped silently on load and never written back.
 RETIRED_KEYS = ("update_check_interval",)
+RETIRED_WINDOW_KEYS = ("width", "height", "maximized")  # written up to 1.3.0, when the window could be resized
 
 
 def _path_key(path: Path | str) -> str:
@@ -121,6 +122,8 @@ class Settings:
             self.data = _merge(DEFAULTS, loaded)
             for key in RETIRED_KEYS:
                 self.data.pop(key, None)
+            for key in RETIRED_WINDOW_KEYS:
+                self.data["window"].pop(key, None)
             self.data["recent"] = _clean_recent(self.data["recent"])
             self.data["fps_overrides"] = _clean_overrides(self.data["fps_overrides"])
 
