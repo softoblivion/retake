@@ -34,7 +34,7 @@ from frame_notes.shell.server import MediaServer  # noqa: E402
 
 CONTRACT_METHODS = {
     "ready", "open_video", "get_state", "set_fps", "set_last_frame", "add_note", "update_note", "remove_note",
-    "notes_text", "copy_notes_text", "readable_text", "copy_readable_text", "reveal",
+    "notes_text", "copy_notes_text", "readable_text", "copy_readable_text", "copy_text", "reveal",
     "reveal_recent", "delete_notes", "forget_recent", "set_setting", "log",
     "update_status", "check_updates", "download_update", "apply_update",
 }
@@ -519,6 +519,18 @@ class CallTests(BridgeCase):
         self.pump.set_ready()
         self.drain()
         self.assertIn(("toast", {"message": "Readable notes copied"}), self.events())
+
+    def test_copy_text(self) -> None:
+        self.assertIsNone(self.bridge.copy_text("0:01:12:05"))  # needs no open video
+        self.assertEqual(self.clipboard, ["0:01:12:05"])
+        for bad in (None, 5, "", "  ", "x" * 201):
+            with self.subTest(text=bad), self.assertRaises(BridgeError) as ctx:
+                self.bridge.copy_text(bad)
+            self.assertEqual(str(ctx.exception), "Invalid text.")
+        self.assertEqual(self.clipboard, ["0:01:12:05"])
+        self.pump.set_ready()
+        self.drain()
+        self.assertEqual([e for e in self.events() if e[0] == "toast"], [])  # the page shows its own toast
 
     def test_set_setting(self) -> None:
         state = self.bridge.set_setting("notes_panel_open", False)

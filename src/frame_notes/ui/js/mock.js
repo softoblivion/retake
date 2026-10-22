@@ -365,6 +365,15 @@ export function createMock(dispatch) {
       later(() => dispatch('toast', { message: 'Readable notes copied' }));
       return reply(null);
     },
+    async copy_text(text) {
+      if (typeof text !== 'string' || !text.trim() || text.length > 200) return fail('Invalid text.');
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        console.info(text);
+      }
+      return reply(null);
+    },
     reveal_recent(path) {
       const r = recent.find((x) => x.path === path);
       if (!r) return fail('File not found.');

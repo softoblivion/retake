@@ -83,7 +83,7 @@
           <svg id="overlay" aria-hidden="true"></svg>
 
           <div id="note-editor" class="note-editor" hidden>
-            <div class="ne-head"><span class="ne-kind badge"></span><span class="ne-tc mono"></span></div>
+            <div class="ne-head"><span class="ne-kind badge"></span><button type="button" class="tc ne-tc mono" title="Click to copy"></button></div>
             <div class="ne-slot"></div>
           </div>
 
@@ -118,9 +118,9 @@
             <button type="button" class="tp-btn" data-act="last" title="Last frame (End)" aria-label="Last frame"></button>
           </div>
           <div class="tp-time">
-            <span id="tc-current" class="tc-current mono"></span>
+            <button type="button" id="tc-current" class="tc tc-current mono" title="Click to copy"></button>
             <span class="tc-sep muted">/</span>
-            <span id="tc-duration" class="tc-duration mono muted"></span>
+            <button type="button" id="tc-duration" class="tc tc-duration mono muted" title="Click to copy"></button>
             <span id="frame-num" class="frame-num mono muted"></span>
           </div>
           <div class="spacer"></div>

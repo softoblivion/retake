@@ -18,6 +18,23 @@ html, body {
 .muted { color: var(--ink-3); }
 .spacer { flex: 1 1 auto; }
 
+/* A timecode that copies itself on click. Size, weight and colour come from the place it sits in; the padding is
+   cancelled by the margin so the text does not move. user-select: text keeps a drag over it selectable. */
+.tc {
+  margin: 0 -4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--r-m);
+  background: none;
+  line-height: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: text;
+}
+.tc:hover { background: var(--bg-4); }
+.tc:empty { display: none; }
+
 button, input, select { font: inherit; color: inherit; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

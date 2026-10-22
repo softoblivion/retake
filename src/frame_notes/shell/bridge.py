@@ -41,6 +41,7 @@ ALLOWED_SETTINGS = {"auto_download_updates": bool, "notes_panel_open": bool}
 SETTING_DEFAULTS = (("auto_download_updates", True), ("notes_panel_open", True))
 LOG_LEVELS = {"debug": logging.DEBUG, "info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 MAX_UI_LOG_CHARS = 2000
+MAX_COPY_TEXT = 200  # copy_text() carries timecodes, not documents
 COALESCED_EVENTS = frozenset({"state"})
 _DIALOG_OPEN_FALLBACK = 10  # value of webview.FileDialog.OPEN, used when pywebview cannot be imported
 
@@ -594,6 +595,16 @@ class Bridge:
         except OSError as exc:
             raise BridgeError(str(exc) or "Could not copy to the clipboard.") from None
         self._toast("Readable notes copied")
+        return None
+
+    @_api
+    def copy_text(self, text):
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_COPY_TEXT:
+            raise BridgeError("Invalid text.")
+        try:
+            self._clipboard(text)
+        except OSError as exc:
+            raise BridgeError(str(exc) or "Could not copy to the clipboard.") from None
         return None
 
     @_api

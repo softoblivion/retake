@@ -22,6 +22,8 @@ function isKey(e, code, char) {
 export function initKeys({ player, composer, timeline, actions }) {
   document.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || isTyping(e.target)) return;
+    // A focused timecode control copies on Enter / Space; those keys are not shortcuts there.
+    if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.closest('.tc')) return;
 
     if (actions.helpOpen()) {
       if (e.key === 'Escape' || e.key === '?') {

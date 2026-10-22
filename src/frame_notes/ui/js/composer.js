@@ -44,6 +44,7 @@ export class Composer {
 
     document.addEventListener('pointerdown', (e) => this.onOutside(e), true);
     app.on('layout', () => this.place());
+    app.on('tc-copied', () => this.focus()); // copying a timecode must not end the typing
   }
 
   get active() {

@@ -75,6 +75,7 @@ Windows 11 and on up-to-date Windows 10). No installer, no admin rights.
 | **Three note types** | FIX (correct something), ADD (something is missing), REMOVE (take something out), bound to `1` / `2` / `3`. Each has its own marker colour on the timeline and its own tag in the file. |
 | **Region on the frame** | While a note is being written, drag a rectangle on the video or click to put a point. The frame is saved as a PNG with the mark drawn on it into `<name>_notes\frames\` next to the video, and the mark reappears over the video whenever the note is selected. |
 | **Frame-accurate** | Seeks land on frame centres; the current frame and its timecode are shown next to the total duration. Arrow keys step one frame, `Shift` + arrows ten. |
+| **Click a timecode to copy it** | The current timecode, the duration and the timecode of every note are buttons: a click puts the text on the clipboard (`0:01:12:05`), ready for the time field of After Effects or Premiere. `Enter` or `Space` does the same on a focused timecode. |
 | **Mini timeline** | Ruler with timecodes, playhead, one marker per note with the first words of its text. Hover shows the full note and its frame image; click seeks; wheel zooms, `Shift` + wheel pans. |
 | **Notes list** | Every note as `timecode  TYPE  text` with a thumbnail; select with `↑` / `↓` (the video follows), edit with `F2`, remove with `Delete`. |
 | **Automatic save** | The notes file and its readable version are rewritten after every change with an atomic replace. No Save button, nothing to lose when the window closes. |
@@ -163,7 +164,8 @@ the text file) and writes the readable version; nothing in the notes changes.
 Timecodes follow the After Effects timeline display: `h:mm:ss:ff`, frames counted from zero, two digits (three at
 100 fps and above). Integer rates and 23.976 use non-drop-frame timecode with `:`; 29.97 and 59.94 use drop-frame
 with `;` (`0;00;12;07`), the same as After Effects applies to NTSC footage by default. Typing the timecode into the
-AE or Premiere time field lands on the frame the note was made on.
+AE or Premiere time field lands on the frame the note was made on. Click any timecode in the app to copy it, so
+there is nothing to type.
 
 ## Supported video
 

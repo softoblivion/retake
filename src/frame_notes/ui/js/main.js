@@ -14,7 +14,7 @@ import { initUpdate } from './update.js';
 import { initEmpty } from './empty.js';
 import { initRecentMenu } from './recent.js';
 import { initKeys } from './keys.js';
-import { toast, showError, hideError, guard } from './ui.js';
+import { toast, showError, hideError, guard, initTimecodeCopy } from './ui.js';
 import { ICONS } from './icons.js';
 
 const $ = (id) => document.getElementById(id);
@@ -174,6 +174,7 @@ initHeader({ actions, recentMenu });
 const update = initUpdate({ actions });
 initEmpty({ actions, recentMenu });
 initKeys({ player, composer, timeline, actions });
+initTimecodeCopy();
 
 // Transport row.
 const tcCurrent = $('tc-current');

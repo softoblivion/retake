@@ -1,6 +1,7 @@
 // Notes panel on the right: one row per note (timecode, type, text, thumbnail), selection, inline edit.
 
 import { app, el } from './app.js';
+import { timecodeButton } from './ui.js';
 
 export class NotesPanel {
   constructor({ root, composer, onPick }) {
@@ -41,7 +42,7 @@ export class NotesPanel {
       row.dataset.id = n.id;
       row.setAttribute('role', 'option');
       const head = el('div', 'np-head');
-      head.append(el('span', 'np-tc mono', n.timecode || ''), el('span', `badge k-${n.kind}`, n.kind));
+      head.append(timecodeButton(n.timecode || '', 'np-tc'), el('span', `badge k-${n.kind}`, n.kind));
       if (n.region && !n.image_url) head.append(el('span', 'np-region muted', n.region.shape));
       row.append(head);
       if (n.id === editId) {

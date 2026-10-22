@@ -4,7 +4,7 @@
 
 const CALLS = [
   'ready', 'open_video', 'get_state', 'set_fps', 'set_last_frame', 'add_note', 'update_note', 'remove_note',
-  'notes_text', 'copy_notes_text', 'readable_text', 'copy_readable_text', 'reveal',
+  'notes_text', 'copy_notes_text', 'readable_text', 'copy_readable_text', 'copy_text', 'reveal',
   'reveal_recent', 'delete_notes', 'forget_recent', 'set_setting', 'log',
   'update_status', 'check_updates', 'download_update', 'apply_update',
 ];
