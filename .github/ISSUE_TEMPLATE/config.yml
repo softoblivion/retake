@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Download the latest release
+    url: https://github.com/softoblivion/frame-notes/releases/latest
+    about: The current exe and its checksums.
+  - name: User guide
+    url: https://github.com/softoblivion/frame-notes/blob/dev/docs/USER_GUIDE.md
+    about: Usage, settings, data folder, updates, FAQ.
