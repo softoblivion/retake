@@ -19,3 +19,12 @@ dist/
 
 # Runtime data when run from source
 frame-notes_data/
+
+# .NET build output
+bin/
+obj/
+*.user
+.vs/
+
+# Runtime data when run from source
+retake_data/

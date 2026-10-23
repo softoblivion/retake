@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console test runner for the core: no test framework, plain asserts, exit code 0 on success. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Retake.Tests</RootNamespace>
+    <AssemblyName>Retake.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Retake.Core\Retake.Core.csproj" />
+  </ItemGroup>
+</Project>
