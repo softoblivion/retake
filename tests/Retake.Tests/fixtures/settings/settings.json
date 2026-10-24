@@ -1,0 +1,31 @@
+{
+  "window": {
+    "x": 120,
+    "y": -30
+  },
+  "last_dir": "D:\\clips é\\sub",
+  "recent": [
+    {
+      "path": "D:\\clips\\v2.mp4",
+      "last_frame": 1999,
+      "opened_at": 1760001999
+    },
+    {
+      "path": "D:\\clips\\v1.mp4",
+      "last_frame": 42,
+      "opened_at": 1760000042
+    },
+    {
+      "path": "D:\\clips\\v0.mp4",
+      "last_frame": 0,
+      "opened_at": 1760000000
+    }
+  ],
+  "fps_overrides": {
+    "d:\\clips\\v1.mp4": 29.97,
+    "d:\\clips\\v0.mp4": 24.0,
+    "d:\\clips\\v2.mp4": 23.976
+  },
+  "auto_download_updates": false,
+  "notes_panel_open": false
+}
