@@ -1,0 +1,6 @@
+# Vendored library sources are compiled as they are (C# 5, no nullable annotations); the compiler treats them as
+# generated code, so the project's nullable context and analyzers do not apply to them.
+root = false
+
+[*.cs]
+generated_code = true

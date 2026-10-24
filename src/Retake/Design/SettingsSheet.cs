@@ -42,14 +42,15 @@ namespace Retake.Design
         readonly Prefs prefs;
         readonly Func<int, bool> fits;
 
-        public SettingsSheet(ShellWindow window) : this(window.Prefs, window.StepFits, step => window.ApplyScale(step))
+        public SettingsSheet(ShellWindow window) : this(window.Prefs, window.StepFits, step => window.ApplyScale(step), window.UpdatesRow)
         {
             window.ScaleApplied += () => ScaleControl.Select(Array.IndexOf(Scale.Steps, prefs.UiScale), true);
         }
 
         /// <param name="fits">Whether a Scale step fits the current monitor.</param>
         /// <param name="applyScale">Applies a Scale step to the window.</param>
-        public SettingsSheet(Prefs prefs, Func<int, bool> fits, Action<int> applyScale)
+        /// <param name="updatesRow">The updater's status row, shown above the automatic-download switch; null without an updater (the gallery).</param>
+        public SettingsSheet(Prefs prefs, Func<int, bool> fits, Action<int> applyScale, FrameworkElement? updatesRow = null)
         {
             this.prefs = prefs;
             this.fits = fits;
@@ -80,7 +81,8 @@ namespace Retake.Design
 
             var body = new StackPanel();
             body.Children.Add(Group("Appearance", Row(ThemeLabel, ThemeHint, ThemeControl), Row(ScaleLabel, ScaleHint, ScaleControl)));
-            body.Children.Add(Group("Updates", Row(AutoLabel, AutoHint, AutoControl)));
+            var autoRow = Row(AutoLabel, AutoHint, AutoControl);
+            body.Children.Add(updatesRow == null ? Group("Updates", autoRow) : Group("Updates", updatesRow, autoRow));
             body.Children.Add(Group("Review", Row(AuthorLabel, AuthorHint, AuthorControl)));
             Sheet = new Sheet(Title, body, CloseTip);
             Refresh();
@@ -127,14 +129,17 @@ namespace Retake.Design
         }
 
         /// <summary>A settings row: label (label role) over a hint (caption role, ink-3), the control on the right.</summary>
-        public static FrameworkElement Row(string label, string hint, FrameworkElement control)
+        public static FrameworkElement Row(string label, string hint, FrameworkElement control) =>
+            Row(Typography.Text(label, Typography.Label), Typography.Text(hint, Typography.Caption, "ink-3"), control);
+
+        /// <summary>A settings row over text blocks the caller keeps and changes (the updater's status line and last check).</summary>
+        public static FrameworkElement Row(TextBlock label, TextBlock small, FrameworkElement control)
         {
             var row = new Grid { MinHeight = 28, Margin = new Thickness(14, 9, 14, 9) };
             row.ColumnDefinitions.Add(new ColumnDefinition());
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-            text.Children.Add(Typography.Text(label, Typography.Label));
-            TextBlock small = Typography.Text(hint, Typography.Caption, "ink-3");
+            text.Children.Add(label);
             small.Margin = new Thickness(0, 2, 0, 0);
             small.TextWrapping = TextWrapping.Wrap;
             text.Children.Add(small);
