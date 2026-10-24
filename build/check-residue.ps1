@@ -1,6 +1,6 @@
 # Residue check: fails when anything of the 1.x engine (the Python application on pywebview / WebView2, packed by
-# PyInstaller) is left in the tracked tree. Reads the tracked paths (git ls-files) and the working-tree text of every
-# tracked text file; run first by build\build.ps1.
+# PyInstaller) is left in the tracked tree. Reads the paths of the tracked files and of the untracked files that are
+# not ignored (git ls-files) and the working-tree text of every one of them; run first by build\build.ps1.
 # Exit code 0: no hit. Exit code 1: every hit is listed as "<path>:<line>: <term>" (or "<path>: <rule>" for a path).
 # Windows PowerShell 5.1 compatible; the script text is ASCII on purpose.
 #   -Root <dir>   repository to check (default: the folder above build\)
@@ -48,7 +48,8 @@ function Exception-For($path) { foreach ($e in $exceptions) { if ($path -match $
 # ---- tracked files ----
 $savedEncoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
-try { $tracked = @(& git -C $Root -c core.quotepath=false ls-files) } finally { [Console]::OutputEncoding = $savedEncoding }
+# Tracked files and the untracked files a commit would take (not ignored), so a new file is checked before it is added.
+try { $tracked = @(& git -C $Root -c core.quotepath=false ls-files --cached --others --exclude-standard | Sort-Object -Unique) } finally { [Console]::OutputEncoding = $savedEncoding }
 if ($LASTEXITCODE -ne 0) { throw "git ls-files failed in $Root" }
 
 $hits = New-Object Collections.Generic.List[string]
