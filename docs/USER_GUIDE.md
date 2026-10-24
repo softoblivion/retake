@@ -174,5 +174,7 @@ closes it, and the version label at the right of the header opens it again.
 
 A downloaded version is installed only by **Restart to update**: the downloaded exe waits for the app to exit,
 keeps the old file as `FrameNotes.exe.old` until the new one has started, and relaunches it. If anything fails the
-current exe stays untouched. Every release ships two assets: `FrameNotes.exe` and `SHA256SUMS`. Release notes:
+current exe stays untouched. The next version of this app is **Retake** (2.0.0, a new build in the same place): this
+version finds it as the asset `Retake.exe` next to `SHA256SUMS` and installs it the same way, keeping the file name
+and the data folder beside it. Release notes:
 [`releases/`](releases/).

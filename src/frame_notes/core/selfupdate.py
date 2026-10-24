@@ -19,7 +19,10 @@ from ..vendor.selfupdate import (
 from .paths import AppPaths
 
 REPO = "softoblivion/frame-notes"
-ASSET_NAME = "FrameNotes.exe"
+# The asset of the next line of the application (Retake, version 2.0.0 and later). A release of this line is
+# still published as FrameNotes.exe so that 1.4.0 finds it; this version looks for the new name from here on, so
+# the move to the new build happens through the normal update (download, verify, apply mode of the new exe).
+ASSET_NAME = "Retake.exe"
 APP_NAME = "Frame Notes"
 RELEASE_URL_ENV = "FRAME_NOTES_RELEASE_URL"
 LOGGER_NAME = "frame_notes.selfupdate"
