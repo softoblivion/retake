@@ -28,3 +28,6 @@ obj/
 
 # Runtime data when run from source
 retake_data/
+
+# The pinned libmpv build, fetched by build/fetch-libmpv.ps1
+build/libmpv/

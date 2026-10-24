@@ -67,6 +67,9 @@ namespace Retake.Design.Controls
 
         public bool ShowFocus { get => showFocus; set { showFocus = value; Ring(false); } }
 
+        /// <summary>The placeholder shown while the field is empty.</summary>
+        public string Placeholder { get => hint.Text; set => hint.Text = value ?? ""; }
+
         protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e) { base.OnGotKeyboardFocus(e); Ring(true); }
         protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e) { base.OnLostKeyboardFocus(e); Ring(true); }
 

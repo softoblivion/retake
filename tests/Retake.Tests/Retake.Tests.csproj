@@ -9,6 +9,13 @@
     <ProjectReference Include="..\..\src\Retake.Core\Retake.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The pure parts of the application (no WPF): frame formulas, timeline rules, region geometry, window place. -->
+    <Compile Include="..\..\src\Retake\Player\FrameMath.cs" Link="Linked\FrameMath.cs" />
+    <Compile Include="..\..\src\Retake\Views\RegionMath.cs" Link="Linked\RegionMath.cs" />
+    <Compile Include="..\..\src\Retake\Views\TimelineMath.cs" Link="Linked\TimelineMath.cs" />
+    <Compile Include="..\..\src\Retake\Views\WindowPlace.cs" Link="Linked\WindowPlace.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Reference files written by the 1.x core; copied beside the test executable. -->
     <None Include="fixtures\**\*" Exclude="fixtures\generate.py;fixtures\README.md" CopyToOutputDirectory="PreserveNewest" LinkBase="" />
   </ItemGroup>
