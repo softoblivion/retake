@@ -9,8 +9,7 @@ namespace Retake.Update
     internal static class UpdateSetup
     {
         /// <summary>GitHub owner/name whose Releases are checked.</summary>
-        // The repository's name before its rename to softoblivion/retake; switched together with the rename.
-        internal const string Repository = "softoblivion/frame-notes";
+        internal const string Repository = "softoblivion/retake";
 
         /// <summary>The release asset a build is published as; also what the 1.x line searches a release for.</summary>
         internal const string AssetName = "Retake.exe";

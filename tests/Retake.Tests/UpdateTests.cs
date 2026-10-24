@@ -47,7 +47,7 @@ namespace Retake.Tests
         public static void SetupValues(TestEnv t)
         {
             UpdateConfig c = UpdateSetup.Config(t.Combine("updates"), t.Combine("Retake.exe"));
-            Check.Equal("softoblivion/frame-notes", c.Repo);
+            Check.Equal("softoblivion/retake", c.Repo);
             Check.Equal("Retake.exe", c.AssetName);
             Check.Equal("Retake", c.AppName);
             Check.Equal(AppVersion.Version, c.Version);
@@ -75,7 +75,7 @@ namespace Retake.Tests
         {
             var updater = new Updater(UpdateSetup.Config(t.Combine("updates"), t.Combine("Retake.exe")), null);
             Check.Equal(t.Combine("updates", "Retake-2.0.1.exe"), updater.FileFor("2.0.1"));
-            Check.Equal("https://github.com/softoblivion/frame-notes/releases/latest", updater.ReleasePage);
+            Check.Equal("https://github.com/softoblivion/retake/releases/latest", updater.ReleasePage);
             Check.Equal(AppVersion.Version, updater.Status.Current);
         }
 
