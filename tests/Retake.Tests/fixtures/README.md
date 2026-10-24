@@ -1,14 +1,11 @@
 # Round-trip fixtures
 
-Reference files written by the Frame Notes 1.4.0 core. `RoundTripTests.cs` runs the operations of each
-`scenarios/<name>/ops.json` through the C# core on a copy of `in/` and requires the result to equal `expected/`
-byte for byte. `settings/settings.json` is a settings file of the same core.
+Reference files written by the core of the 1.x line (release 1.4.0). `RoundTripTests.cs` runs the operations of
+each `scenarios/<name>/ops.json` through the C# core on a copy of `in/` and requires the result to equal
+`expected/` byte for byte. `settings/settings.json` is a settings file of the same core.
 
-`generate.py` regenerates every file from a checkout that still holds the Python core (`src/frame_notes`):
-
-```
-py -3.14 -I tests/Retake.Tests/fixtures/generate.py
-```
+The files are stored as they are. Their generator is not part of this repository: it runs the operations through
+the 1.x Python core, so it needs the source tree of tag `v1.4.1`.
 
 Scenarios:
 
