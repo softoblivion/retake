@@ -1,24 +1,27 @@
 # End-to-end test of the hand-off from the last Frame Notes 1.x release to Retake: a copy of the 1.4.1 exe in a scratch
 # folder with spaces in its path, with a 1.x data folder (recent list, window position), updates itself through a
-# local release server into the exe built here. The 1.4.1 updater runs headless from its source tree
-# (build\e2e-handoff.py); the swap and everything after it is the real Retake.exe.
+# local release server into the exe built here. Two modes for the 1.4.1 side: with -Driver, the 1.4.1 updater runs
+# headless from its source tree through a driver script kept outside this repository; without it, the real 1.4.1
+# window is driven. The swap and everything after it is the real Retake.exe.
 # Asserts: the file at the 1.x path (FrameNotes.exe) is the served Retake.exe (hash equal) and starts from there;
 # libmpv is extracted into retake_data\bin\ (the pinned hash); retake_data\settings.json carries the recent list and
 # the window position over; FrameNotes.exe.old and the download are gone; no console window; the review window opens
 # the recent video.
 # Exit code 0: every assert passed. Windows PowerShell 5.1 compatible; the script text is ASCII on purpose.
 #   -OldExe <path>   the 1.4.1 exe (the build of tag v1.4.1; the script copies it, never changes it)
-#   -OldSource <dir> a checkout of tag v1.4.1 (git worktree add <dir> v1.4.1), or its src folder (the folder that holds
-#                    the frame_notes package); the headless updater runs from it with the python on PATH
+#   -Driver <path>   headless mode: the Python driver of the 1.4.1 updater (not part of this repository; it takes
+#                    <1.4.1 src folder> <application folder> <release document URL>), run with the python on PATH
+#   -OldSource <dir> headless mode: a checkout of tag v1.4.1 (git worktree add <dir> v1.4.1), or its src folder (the
+#                    folder that holds the frame_notes package), from which the driver runs the 1.4.1 updater
 #   -Exe <path>      the Retake exe to serve (default: release\Retake.exe of build\build.ps1)
 #   -Tag <vX.Y.Z>    the release tag to serve (default: v + the version in src\Retake\Version.cs)
 #   -Port <n> (default 8766)   -Keep: leave the scratch folder   -Captures <dir>: PNGs of the updated window
-#   -Real            drive the real 1.4.1 window instead of the headless updater: it opens its update sheet by itself,
-#                    the script presses Install through UI Automation (the desktop must be free for about a minute)
+# Without -Driver the real 1.4.1 window is driven: it opens its update sheet by itself and the script presses Install
+# through UI Automation, with a mouse click while the desktop is idle (the desktop must be free for about a minute).
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$OldExe, [Parameter(Mandatory = $true)][string]$OldSource,
-    [string]$Exe, [string]$Tag, [int]$Port = 8766, [switch]$Keep, [string]$Captures, [switch]$Real
+    [Parameter(Mandatory = $true)][string]$OldExe, [string]$Driver, [string]$OldSource,
+    [string]$Exe, [string]$Tag, [int]$Port = 8766, [switch]$Keep, [string]$Captures
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,11 +29,17 @@ $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'e2e-common.ps1')
 if (!$Exe) { $Exe = Join-Path $root 'release\Retake.exe' }
 if (!$Tag) { $Tag = 'v' + (Current-Version $root).N }
-if (Test-Path -LiteralPath (Join-Path $OldSource 'src\frame_notes\__init__.py')) { $OldSource = Join-Path $OldSource 'src' }
-foreach ($p in @($OldExe, $Exe, (Join-Path $OldSource 'frame_notes\__init__.py'))) { if (!(Test-Path -LiteralPath $p)) { throw "not found: $p" } }
+$Real = -not $Driver
+$needed = @($OldExe, $Exe)
+if (!$Real) {
+    if (!$OldSource) { throw '-OldSource (a checkout of tag v1.4.1) is required with -Driver' }
+    if (Test-Path -LiteralPath (Join-Path $OldSource 'src\frame_notes\__init__.py')) { $OldSource = Join-Path $OldSource 'src' }
+    $needed += @($Driver, (Join-Path $OldSource 'frame_notes\__init__.py'))
+    $python = (Get-Command python -ErrorAction Stop).Source
+}
+foreach ($p in $needed) { if (!(Test-Path -LiteralPath $p)) { throw "not found: $p" } }
 $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue)
 if (!$ffmpeg) { throw 'ffmpeg is needed to make the test video' }
-$python = (Get-Command python -ErrorAction Stop).Source
 
 $scratch = Join-Path $env:TEMP ('retake-handoff-e2e-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 $serve = Join-Path $scratch 'serve'
@@ -82,10 +91,10 @@ try {
         Press-Element $install
         if ($Captures) { Start-Sleep -Seconds 2; [void](Save-ScreenCapture (Join-Path $Captures 'handoff-141-after-click.png')) }
     } else {
-        $driver = Start-Process -FilePath $python -ArgumentList @('-I', "`"$(Join-Path $PSScriptRoot 'e2e-handoff.py')`"", "`"$OldSource`"", "`"$app`"", "`"$($base)latest.json`"") -PassThru -NoNewWindow
-        [void]$driver.Handle   # keeps the process handle, so ExitCode is readable after the exit (Windows PowerShell 5.1)
-        $driver.WaitForExit()
-        Check ($driver.ExitCode -eq 0) 'the 1.4.1 updater checked, downloaded, verified and started the apply mode'
+        $headless = Start-Process -FilePath $python -ArgumentList @('-I', "`"$Driver`"", "`"$OldSource`"", "`"$app`"", "`"$($base)latest.json`"") -PassThru -NoNewWindow
+        [void]$headless.Handle   # keeps the process handle, so ExitCode is readable after the exit (Windows PowerShell 5.1)
+        $headless.WaitForExit()
+        Check ($headless.ExitCode -eq 0) 'the 1.4.1 updater checked, downloaded, verified and started the apply mode'
     }
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while ($clock.Elapsed.TotalSeconds -lt 90 -and $fresh -eq $null) {

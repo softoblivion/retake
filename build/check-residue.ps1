@@ -39,7 +39,7 @@ $exceptions = @(
     @{ Path = '^src/Retake\.Core/Paths\.cs$'; Allowed = @('frame-notes_data') },                      # the legacy import
     @{ Path = '^src/Retake/Update/LegacyUpdates\.cs$'; Allowed = @('frame-notes_data') },             # the 1.x updates folder
     @{ Path = '^tests/Retake\.Tests/(PathsSettingsTests|UpdateTests)\.cs$'; Allowed = @('frame-notes_data', 'FrameNotes.exe') },
-    @{ Path = '^build/e2e-handoff\.(ps1|py)$'; Allowed = '*' },                                       # the hand-off test from 1.4.1
+    @{ Path = '^build/e2e-handoff\.ps1$'; Allowed = '*' },                                           # the hand-off test from 1.4.1
     @{ Path = '^build/check-residue\.ps1$'; Allowed = '*' },                                          # this list
     @{ Path = '^src/Retake/Design/themes\.json$'; Allowed = '*' }                                     # the one theme file
 )
