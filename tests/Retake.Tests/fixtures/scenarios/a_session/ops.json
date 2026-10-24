@@ -1,0 +1,101 @@
+{
+ "video": "promo.mp4",
+ "ops": [
+  {
+   "op": "open"
+  },
+  {
+   "op": "add",
+   "frame": 307,
+   "kind": "FIX",
+   "text": "logo\tflickers\nnow ",
+   "region": {
+    "shape": "rect",
+    "x0": 0.54,
+    "y0": 0.36,
+    "x1": 0.88,
+    "y1": 0.8
+   },
+   "image": "one"
+  },
+  {
+   "op": "add",
+   "frame": 307,
+   "kind": "FIX",
+   "text": "same frame, point",
+   "region": {
+    "shape": "point",
+    "x0": 0.5,
+    "y0": 0.25
+   },
+   "image": "two"
+  },
+  {
+   "op": "add",
+   "frame": 1000,
+   "kind": "ADD",
+   "text": "h\u00e9llo \u00fcn\u00efcode \u2014 text \u00b7 \u65e5\u672c\u8a9e"
+  },
+  {
+   "op": "add",
+   "frame": 1565,
+   "kind": "REMOVE",
+   "text": "last"
+  },
+  {
+   "op": "add",
+   "frame": 2000,
+   "kind": "ADD",
+   "text": "rounding",
+   "region": {
+    "shape": "rect",
+    "x0": 0.2345,
+    "y0": 0.0005,
+    "x1": 0.9995,
+    "y1": 0.12349999999999
+   },
+   "image": "four"
+  },
+  {
+   "op": "add",
+   "frame": 2001,
+   "kind": "FIX",
+   "text": "",
+   "region": {
+    "shape": "point",
+    "x0": 0.5,
+    "y0": 1.0
+   }
+  },
+  {
+   "op": "set_fps",
+   "fps": 29.97
+  },
+  {
+   "op": "update",
+   "note": 4,
+   "text": "edited \u00b7 text",
+   "region": {
+    "shape": "rect",
+    "x0": 0.9,
+    "y0": 0.9,
+    "x1": 0.1,
+    "y1": 0.2
+   },
+   "image": "three"
+  },
+  {
+   "op": "update",
+   "note": 1,
+   "region": null
+  },
+  {
+   "op": "remove",
+   "note": 3
+  },
+  {
+   "op": "set_fps",
+   "fps": null
+  }
+ ]
+}

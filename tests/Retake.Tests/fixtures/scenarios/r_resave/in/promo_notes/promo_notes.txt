@@ -1,0 +1,9 @@
+# Frame Notes 1
+# source: promo.mp4
+# fps: 25
+# duration: 0:01:32:10
+0:00:12:07	FIX	logo flickers now	rect 0.540,0.360 0.880,0.800	0-00-12-07_FIX.png
+0:00:12:07	FIX	same frame, point
+0:00:40:00	ADD	héllo ünïcode — text · 日本語
+0:01:20:00	ADD	edited · text	rect 0.100,0.200 0.900,0.900	0-01-20-00_ADD.png
+0:01:20:01	FIX		point 0.500,1.000

@@ -1,0 +1,14 @@
+{
+ "video": "promo.mp4",
+ "ops": [
+  {
+   "op": "open"
+  },
+  {
+   "op": "add",
+   "frame": 10,
+   "kind": "ADD",
+   "text": "after the move"
+  }
+ ]
+}

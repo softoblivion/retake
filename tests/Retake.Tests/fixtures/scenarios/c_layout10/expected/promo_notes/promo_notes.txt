@@ -1,0 +1,6 @@
+# Frame Notes 1
+# source: promo.mp4
+# fps: 25
+# duration: 0:01:32:10
+0:00:12:07	FIX	logo	rect 0.100,0.100 0.200,0.200	0-00-12-07_FIX.png
+0:00:40:00	ADD	subtitle

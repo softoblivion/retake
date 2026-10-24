@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The engine-free core: paths, settings, timecode, notes file, probe, session. No WPF, no packages. -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Retake.Core</RootNamespace>
+    <AssemblyName>Retake.Core</AssemblyName>
+  </PropertyGroup>
+</Project>

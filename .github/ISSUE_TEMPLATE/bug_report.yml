@@ -44,5 +44,5 @@ body:
     id: log
     attributes:
       label: Log
-      description: The last lines of `frame-notes_data\logs\app.log` next to `FrameNotes.exe`, if relevant.
+      description: The last lines of `retake_data\logs\app.log` next to `Retake.exe`, if relevant.
       render: text

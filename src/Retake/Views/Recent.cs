@@ -1,0 +1,252 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
+using Retake.Core;
+using Retake.Design;
+using Retake.Design.Controls;
+
+namespace Retake.Views
+{
+    /// <summary>One entry of the recent list as the views show it, read from the settings and the notes folder.</summary>
+    public sealed class RecentItem
+    {
+        public string Path = "", Name = "", Folder = "";
+        public int LastFrame;
+        public bool Exists, IsOpen;
+        /// <summary>Note and image counts of its data file; null when it has no notes folder.</summary>
+        public NotesSummary? Summary;
+        public bool HasNotesFolder;
+
+        public static List<RecentItem> Read(Settings settings, string? openPath)
+        {
+            var list = new List<RecentItem>();
+            foreach (RecentEntry e in settings.Recent)
+            {
+                var item = new RecentItem
+                {
+                    Path = e.Path,
+                    Name = System.IO.Path.GetFileName(e.Path),
+                    Folder = System.IO.Path.GetDirectoryName(e.Path) ?? "",
+                    LastFrame = e.LastFrame,
+                    Exists = File.Exists(e.Path),
+                    IsOpen = openPath != null && string.Equals(System.IO.Path.GetFullPath(openPath), System.IO.Path.GetFullPath(e.Path), StringComparison.OrdinalIgnoreCase),
+                };
+                try
+                {
+                    item.Summary = NotesLayout.NotesSummaryFor(e.Path);
+                    item.HasNotesFolder = Directory.Exists(NotesLayout.NotesDirFor(e.Path));
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException)
+                {
+                    item.Summary = null;
+                }
+                list.Add(item);
+            }
+            return list;
+        }
+
+        /// <summary>"frame 307 · 3 notes · 2 frames", "frame 0 · no notes", "Video not found".</summary>
+        public string Meta()
+        {
+            string where = Exists ? Copy.FrameLabel + LastFrame.ToString(CultureInfo.InvariantCulture) : Copy.RecentMissing;
+            if (Summary == null) return where;
+            string notes = Summary.Notes == 0 ? "no notes" : Copy.Notes(Summary.Notes);
+            return where + " · " + notes + (Summary.Frames > 0 ? " · " + Copy.Frames(Summary.Frames) : "");
+        }
+    }
+
+    /// <summary>A row of the recent list: the name, the folder under it, the position and counts on the right. Right click opens its menu.</summary>
+    public sealed class RecentRow : Pressable
+    {
+        readonly PlateVisual plate = new PlateVisual(PlateKind.Bare) { Radius = 10 };
+        public readonly RecentItem Item;
+
+        public event Action<RecentRow>? Menu;
+
+        public RecentRow(RecentItem item, double width)
+        {
+            Item = item;
+            ScalesOnPress = false;
+            Width = width;
+            HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            AutomationProperties.SetName(this, item.Name);
+            AutomationProperties.SetAutomationId(this, "Recent-" + item.Name);
+            AutomationProperties.SetItemStatus(this, item.Meta());
+            Tip.Set(this, item.Exists ? Copy.RecentRowTip : Copy.RecentMissingTip);
+            var grid = new Grid { Margin = new Thickness(10, 5, 10, 6) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var names = new StackPanel();
+            TextBlock name = Typography.Text(item.Name, Typography.Label, item.Exists ? "ink-1" : "ink-3");
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            TextBlock folder = Typography.Text(item.Folder, Typography.Caption, "ink-3");
+            folder.TextTrimming = TextTrimming.CharacterEllipsis;
+            names.Children.Add(name);
+            names.Children.Add(folder);
+            grid.Children.Add(names);
+            TextBlock meta = Typography.Text(item.Meta(), Typography.Caption, "ink-3");
+            meta.Margin = new Thickness(12, 0, 0, 0);
+            Grid.SetColumn(meta, 1);
+            grid.Children.Add(meta);
+            Content = new Grid { Children = { plate, grid } };
+            Opacity = item.Exists ? 1 : 0.7;
+            MouseRightButtonUp += (s, e) => { e.Handled = true; Menu?.Invoke(this); };
+            PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift)) { e.Handled = true; Menu?.Invoke(this); }
+            };
+            Refresh(false);
+        }
+
+        protected override void Apply(double hover, double press, double focus, bool animate)
+        {
+            GlassButton.To(plate, PlateVisual.HoverProperty, Item.IsOpen ? 0.6 : hover, animate, Motion.D1);
+            GlassButton.To(plate, PlateVisual.RingProperty, focus, animate, Motion.D1);
+        }
+    }
+
+    /// <summary>What the recent-entry menu asks the window to do.</summary>
+    public interface IRecentActions
+    {
+        void OpenPath(string path);
+        void Reveal(RecentItem item);
+        /// <summary>Deletes the notes of a video; returns false when it was refused (the reason is shown).</summary>
+        bool DeleteNotes(RecentItem item);
+        void Forget(RecentItem item);
+    }
+
+    /// <summary>
+    /// The menu of a recent entry: Open, Show in Explorer, Delete notes (the entry turns into the question with
+    /// the counts and needs a second click; leaving it for 3 s or Esc resets it), Remove from recent.
+    /// </summary>
+    public static class RecentMenu
+    {
+        public static PopMenu Build(RecentItem item, IRecentActions actions)
+        {
+            var menu = new PopMenu(220);
+            MenuEntry open = menu.Add(Copy.MenuOpen, Icons.Video, null, null, () => actions.OpenPath(item.Path));
+            open.IsEnabled = item.Exists;
+            MenuEntry reveal = menu.Add(Copy.MenuReveal, Icons.Folder, null, item.HasNotesFolder ? NotesLayout.NotesDirFor(item.Path) : item.Path, () => actions.Reveal(item));
+            reveal.IsEnabled = item.Exists || item.HasNotesFolder;
+            MenuEntry? delete = null;
+            bool asked = false;
+            var reset = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            delete = menu.Add(Copy.MenuDelete, Icons.Trash, null, Copy.MenuDeleteTip, () =>
+            {
+                if (!asked)
+                {
+                    asked = true;
+                    delete!.Label = Question(item);
+                    delete.Danger = true;
+                    return;
+                }
+                reset.Stop();
+                menu.Close();
+                actions.DeleteNotes(item);
+            });
+            delete.KeepsMenuOpen = true;
+            delete.IsEnabled = item.Summary != null || item.HasNotesFolder;
+            AutomationProperties.SetAutomationId(delete, "DeleteNotes");
+            reset.Tick += (s, e) =>
+            {
+                reset.Stop();
+                asked = false;
+                delete.Label = Copy.MenuDelete;
+                delete.Danger = false;
+            };
+            delete.MouseLeave += (s, e) => { if (asked) { reset.Stop(); reset.Start(); } };
+            delete.MouseEnter += (s, e) => reset.Stop();
+            menu.AddSeparator();
+            menu.Add(Copy.MenuForget, Icons.X, null, Copy.MenuForgetTip, () => actions.Forget(item));
+            return menu;
+        }
+
+        static string Question(RecentItem item)
+        {
+            int n = item.Summary?.Notes ?? 0, f = item.Summary?.Frames ?? 0;
+            if (n == 0 && f == 0) return Copy.DeleteAskEmpty;
+            return string.Format(CultureInfo.InvariantCulture, Copy.DeleteAsk, Copy.Notes(n), Copy.Frames(f));
+        }
+    }
+
+    /// <summary>
+    /// The start screen without a video: a drop target card (title, hint, the one primary button) and the recent
+    /// list under it. While the player starts, the button waits.
+    /// </summary>
+    public sealed class EmptyState : Grid
+    {
+        protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new PanePeer(this);
+
+        public readonly GlassButton OpenButton;
+        readonly StackPanel recent = new StackPanel();
+        readonly TextBlock recentHead;
+        readonly ScrollViewer recentScroll;
+        const double ListWidth = 560;
+
+        public event Action<RecentRow>? RowMenu;
+        public event Action<string>? OpenPath;
+
+        public EmptyState()
+        {
+            AutomationProperties.SetAutomationId(this, "EmptyState");
+            var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 70, 0, 0), Width = ListWidth };
+            var card = new Grid { Height = 190 };
+            card.Children.Add(new ShadowLayer("card-drop", 22));
+            card.Children.Add(new SurfaceVisual(22, "card-rim", null, "card-fill"));
+            var dash = new System.Windows.Shapes.Rectangle { RadiusX = 16, RadiusY = 16, StrokeThickness = 1.5, StrokeDashArray = new System.Windows.Media.DoubleCollection { 4, 4 }, Margin = new Thickness(8), IsHitTestVisible = false };
+            dash.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "T.stroke-2");
+            card.Children.Add(dash);
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            FrameworkElement glyph = Icons.Make(Icons.Video, 30);
+            glyph.HorizontalAlignment = HorizontalAlignment.Center;
+            glyph.SetResourceReference(TextBlock.ForegroundProperty, "T.ink-3");
+            inner.Children.Add(glyph);
+            TextBlock title = Typography.Text(Copy.EmptyTitle, Typography.Title);
+            title.HorizontalAlignment = HorizontalAlignment.Center;
+            title.Margin = new Thickness(0, 10, 0, 0);
+            inner.Children.Add(title);
+            TextBlock hint = Typography.Text(Copy.EmptyHint, Typography.Caption, "ink-3");
+            hint.HorizontalAlignment = HorizontalAlignment.Center;
+            hint.Margin = new Thickness(0, 4, 0, 14);
+            inner.Children.Add(hint);
+            OpenButton = new GlassButton(Copy.EmptyButton, Icons.Folder, ButtonKind.Tinted, ButtonSize.M) { HorizontalAlignment = HorizontalAlignment.Center };
+            Tip.Set(OpenButton, Copy.EmptyButtonTip);
+            AutomationProperties.SetAutomationId(OpenButton, "OpenVideo");
+            inner.Children.Add(OpenButton);
+            card.Children.Add(inner);
+            column.Children.Add(card);
+            recentHead = Typography.Text(Copy.RecentHeading, Typography.Section, "ink-3");
+            recentHead.Margin = new Thickness(12, 22, 0, 6);
+            column.Children.Add(recentHead);
+            recentScroll = new ScrollViewer { Content = recent, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, MaxHeight = 330 };
+            AutomationProperties.SetAutomationId(recent, "RecentList");
+            column.Children.Add(recentScroll);
+            Children.Add(column);
+        }
+
+        public void SetBusy(bool busy)
+        {
+            OpenButton.Busy = busy;
+            Tip.Set(OpenButton, busy ? Copy.Loading : Copy.EmptyButtonTip);
+        }
+
+        public void SetRecent(IList<RecentItem> items)
+        {
+            recent.Children.Clear();
+            foreach (RecentItem item in items)
+            {
+                var row = new RecentRow(item, ListWidth - 12);
+                row.Click += (s, e) => { if (item.Exists) OpenPath?.Invoke(item.Path); };
+                row.Menu += r => RowMenu?.Invoke(r);
+                recent.Children.Add(row);
+            }
+            recentHead.Visibility = recentScroll.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+}

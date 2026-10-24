@@ -1,0 +1,10 @@
+﻿# Frame Notes 1
+# source: promo.mp4
+# fps: 29.97
+# duration: 0;01;32;10
+
+0;00;12;07	FIX	logo é	rect 0.100,0.100 0.200,0.200	0-00-12-07_FIX.png
+hand written line
+0;01;00;02	REMOVE	drop frame minute	point 0.500,0.500
+0;99;99;99	FIX	bad timecode
+# trailing comment
