@@ -253,6 +253,7 @@ namespace Retake.Views
             window.StateChanged += (s, e) => { if (window.WindowState == WindowState.Minimized && edit != null) CancelEdit(); };
 
             window.Activated += (s, e) => Video.ReclaimFocus();
+            window.Deactivated += (s, e) => reverseHeld = false;
             window.SourceInitialized += (s, e) => RestorePosition();
             window.Loaded += (s, e) =>
             {
@@ -800,7 +801,8 @@ namespace Retake.Views
             reverseHeld = true;
             if (playing) player.Pause();
             var clock = Stopwatch.StartNew();
-            while (reverseHeld && videoLoaded && player.Frame > 0)
+            // The key's own state is read too: a release that lands in another window must not leave the steps running.
+            while (reverseHeld && videoLoaded && player.Frame > 0 && Keyboard.IsKeyDown(Key.J))
             {
                 clock.Restart();
                 player.Step(-1);
@@ -809,6 +811,7 @@ namespace Retake.Views
                 if (wait > 0) await Task.Delay(wait);
             }
             reverseHeld = false;
+            Trace();
         }
 
         // --- keyboard -------------------------------------------------------------------------------------------

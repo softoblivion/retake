@@ -140,8 +140,6 @@ namespace Retake.Views
 
         void Publish() => AutomationProperties.SetItemStatus(this, view.Start.ToString("0.###", CultureInfo.InvariantCulture) + " " + view.Span.ToString("0.###", CultureInfo.InvariantCulture));
 
-        double Width0 => ActualWidth;
-
         // --- drawing ------------------------------------------------------------------------------------------
 
         protected override void OnRender(DrawingContext dc)
