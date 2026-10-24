@@ -1,0 +1,44 @@
+{
+ "video": "dummy.mp4",
+ "ops": [
+  {
+   "op": "open"
+  },
+  {
+   "op": "set_fps",
+   "fps": 120
+  },
+  {
+   "op": "add",
+   "frame": 125,
+   "kind": "ADD",
+   "text": "three digit frames",
+   "region": {
+    "shape": "rect",
+    "x0": 0.54,
+    "y0": 0.36,
+    "x1": 0.88,
+    "y1": 0.8
+   },
+   "image": "x"
+  },
+  {
+   "op": "add",
+   "frame": 14399,
+   "kind": "FIX",
+   "text": "last frame of a minute"
+  },
+  {
+   "op": "add",
+   "frame": 14400,
+   "kind": "FIX",
+   "text": "first frame of the next minute",
+   "region": {
+    "shape": "point",
+    "x0": 0.5,
+    "y0": 0.25
+   },
+   "image": "z"
+  }
+ ]
+}

@@ -1,0 +1,6 @@
+# Frame Notes 1
+# source: dummy.mp4
+# fps: 29.97
+0;00;04;05	ADD	three digit frames	rect 0.540,0.360 0.880,0.800	0-00-04-05_ADD.png
+0;01;00;02	REMOVE	first frame after a dropped minute start	point 0.500,0.250	0-01-00-02_REMOVE.png
+0;04;00;08	FIX	x

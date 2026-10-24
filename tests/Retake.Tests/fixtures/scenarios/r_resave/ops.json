@@ -1,0 +1,12 @@
+{
+ "video": "promo.mp4",
+ "ops": [
+  {
+   "op": "open"
+  },
+  {
+   "op": "set_fps",
+   "fps": null
+  }
+ ]
+}

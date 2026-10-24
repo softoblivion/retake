@@ -8,4 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Retake.Core\Retake.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Reference files written by the 1.x core; copied beside the test executable. -->
+    <None Include="fixtures\**\*" Exclude="fixtures\generate.py;fixtures\README.md" CopyToOutputDirectory="PreserveNewest" LinkBase="" />
+  </ItemGroup>
 </Project>
