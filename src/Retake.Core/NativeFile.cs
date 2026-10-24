@@ -26,5 +26,44 @@ namespace Retake.Core
             if (mapped == null) mapped = new IOException("The file could not be moved (Win32 error " + error + ")");
             throw mapped;
         }
+
+        private const uint ReparseTagMountPoint = 0xA0000003;
+        private const uint ReparseTagSymlink = 0xA000000C;
+        private const uint ReparsePointAttribute = 0x400;
+        private static readonly IntPtr InvalidHandle = new IntPtr(-1);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct FindData
+        {
+            public uint FileAttributes;
+            public uint CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh;
+            public uint SizeHigh, SizeLow;
+            public uint Reserved0;
+            public uint Reserved1;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string FileName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+            public string AlternateFileName;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr FindFirstFileW(string fileName, out FindData data);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FindClose(IntPtr handle);
+
+        /// <summary>
+        /// True when <paramref name="path"/> is a symbolic link or a junction (not followed). Other reparse points, such
+        /// as the placeholders of a cloud sync folder, count as ordinary files and folders.
+        /// </summary>
+        public static bool IsLink(string path)
+        {
+            FindData data;
+            IntPtr handle = FindFirstFileW(path.TrimEnd('\\'), out data);
+            if (handle == InvalidHandle) return false;
+            FindClose(handle);
+            if ((data.FileAttributes & ReparsePointAttribute) == 0) return false;
+            return data.Reserved0 == ReparseTagSymlink || data.Reserved0 == ReparseTagMountPoint;
+        }
     }
 }

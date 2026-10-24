@@ -402,6 +402,33 @@ namespace Retake.Tests
             Check.True(File.Exists(t.Combine("promo_notes")));
         }
 
+        [Test("notes.delete_and_migrate_refuse_a_junction_in_place_of_the_folder")]
+        public static void JunctionInPlaceOfTheFolderIsRefused(TestEnv t)
+        {
+            string video = MakeVideo(t);
+            string real = t.Combine("elsewhere");
+            Fx.WriteText(Path.Combine(real, "promo_notes.txt"), Data);
+            Fx.WriteBytes(Path.Combine(real, "a.png"), new byte[] { 1 });
+            var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c mklink /J \"" + t.Combine("promo_notes") + "\" \"" + real + "\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+            };
+            using (var process = System.Diagnostics.Process.Start(psi)!)
+            {
+                process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+                Check.Equal(0, process.ExitCode, "mklink /J");
+            }
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            Check.Equal("The notes folder promo_notes holds other files. Delete it by hand.", ex.Message);
+            Check.False(NotesLayout.MigrateLayout(video), "images behind a junction are not moved");
+            Check.Equal(new[] { "a.png", "promo_notes.txt" }, Fx.Names(real));
+            Directory.Delete(t.Combine("promo_notes")); // removes the junction only
+            Check.True(File.Exists(Path.Combine(real, "a.png")));
+        }
+
         [Test("notes.migrate_layout_moves_images_then_data_file")]
         public static void MigrateLayout(TestEnv t)
         {

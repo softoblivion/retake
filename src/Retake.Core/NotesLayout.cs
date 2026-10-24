@@ -145,7 +145,7 @@ namespace Retake.Core
             {
                 var info = new DirectoryInfo(path);
                 if (!info.Exists) return false;
-                return (info.Attributes & FileAttributes.ReparsePoint) == 0;
+                return !NativeFile.IsLink(path);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
@@ -156,7 +156,7 @@ namespace Retake.Core
         private static bool IsPlainFile(string path)
         {
             var info = new FileInfo(path);
-            return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0;
+            return info.Exists && !NativeFile.IsLink(path);
         }
 
         private static bool Exists(string path)
