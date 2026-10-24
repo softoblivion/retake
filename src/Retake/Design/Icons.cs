@@ -17,7 +17,8 @@ namespace Retake.Design
         public const string Gear = "gear", Minimize = "min", Close = "close", X = "x", Plus = "plus", Minus = "minus", Check = "check",
             Warn = "warn", Info = "info", Error = "error", Retry = "retry", Folder = "folder", Open = "open", Play = "play", Stop = "stop",
             Trash = "trash", Chevron = "chevron", ChevronDown = "chevronDown", Down = "down", Clock = "clock", Video = "video",
-            File = "file", Export = "export", Copy = "copy", Note = "note";
+            File = "file", Export = "export", Copy = "copy", Note = "note", Pause = "pause", StepBack = "stepBack",
+            StepForward = "stepForward", First = "first", Last = "last", Keyboard = "keyboard", Panel = "panel";
 
         static readonly Dictionary<string, string> Data = new Dictionary<string, string>
         {
@@ -46,6 +47,13 @@ namespace Retake.Design
             [Export] = "M12 14V3.5 M8 7.5l4-4 4 4 M4.5 13.5V17a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-3.5",
             [Copy] = "M11.1 8.5h5.8a2.6 2.6 0 0 1 2.6 2.6v5.8a2.6 2.6 0 0 1-2.6 2.6h-5.8a2.6 2.6 0 0 1-2.6-2.6v-5.8a2.6 2.6 0 0 1 2.6-2.6Z M15.5 8.5V6.6a2.1 2.1 0 0 0-2.1-2.1H6.6a2.1 2.1 0 0 0-2.1 2.1v6.8a2.1 2.1 0 0 0 2.1 2.1h1.9",
             [Note] = "M6.5 4.5h11a2 2 0 0 1 2 2v7.2l-5.8 5.8H6.5a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z M13.7 19.5v-4a1.8 1.8 0 0 1 1.8-1.8h4 M8.5 9h7 M8.5 12.5h4",
+            [Pause] = "M8.6 6.2v11.6 M15.4 6.2v11.6",
+            [StepBack] = "M14.5 6.5 9 12l5.5 5.5",
+            [StepForward] = "M9.5 6.5 15 12l-5.5 5.5",
+            [First] = "M7 6.5v11 M17 6.5 11.5 12l5.5 5.5",
+            [Last] = "M17 6.5v11 M7 6.5l5.5 5.5L7 17.5",
+            [Keyboard] = "M4.5 6.5h15a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16V8a1.5 1.5 0 0 1 1.5-1.5Z M7 10.3h.1 M10.3 10.3h.1 M13.7 10.3h.1 M17 10.3h.1 M8.5 13.8h7",
+            [Panel] = "M5.5 5h13a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5v-9A2.5 2.5 0 0 1 5.5 5Z M15 5v14",
         };
 
         static readonly HashSet<string> Filled = new HashSet<string> { Play };

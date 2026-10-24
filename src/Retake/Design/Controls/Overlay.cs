@@ -28,6 +28,8 @@ namespace Retake.Design.Controls
         HoverCard? card;
 
         public event Action<bool>? SheetChanged;
+        /// <summary>Raised when a menu opens (true) or closes (false).</summary>
+        public event Action<bool>? MenuChanged;
 
         public OverlayHost()
         {
@@ -96,6 +98,7 @@ namespace Retake.Design.Controls
             Canvas.SetLeft(next, Math.Round(x));
             Canvas.SetTop(next, Math.Round(y));
             next.Appear(up);
+            MenuChanged?.Invoke(true);
         }
 
         public void CloseMenu()
@@ -104,17 +107,24 @@ namespace Retake.Design.Controls
             if (m == null) return;
             menu = null;
             m.Disappear(() => floatLayer.Children.Remove(m));
+            MenuChanged?.Invoke(false);
         }
 
         public bool MenuOpen => menu != null;
 
-        internal void ShowCard(HoverCard next, FrameworkElement anchor)
+        internal void ShowCard(HoverCard next, FrameworkElement anchor) => ShowCard(next, anchor, new Rect(anchor.RenderSize));
+
+        /// <summary>
+        /// Shows a hover card above an area of an element (below it when there is no room), for content drawn
+        /// by the element itself (the markers of a timeline). One card at a time.
+        /// </summary>
+        public void ShowCard(HoverCard next, FrameworkElement relativeTo, Rect area)
         {
             HideCard();
             card = next;
             floatLayer.Children.Add(next);
             next.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Rect at = anchor.TransformToVisual(floatLayer).TransformBounds(new Rect(anchor.RenderSize));
+            Rect at = relativeTo.TransformToVisual(floatLayer).TransformBounds(area);
             Size size = next.DesiredSize;
             double x = Math.Max(8, Math.Min(ActualWidth - size.Width - 8, at.Left + at.Width / 2 - size.Width / 2));
             double y = at.Top - 8 - size.Height;
@@ -125,7 +135,7 @@ namespace Retake.Design.Controls
             Motion.To(next, OpacityProperty, 1, Motion.D1);
         }
 
-        internal void HideCard()
+        public void HideCard()
         {
             if (card == null) return;
             floatLayer.Children.Remove(card);
@@ -255,11 +265,23 @@ namespace Retake.Design.Controls
         {
             var e = new MenuEntry(label, icon, key, danger);
             if (tip != null) Tip.Set(e, tip);
-            e.Click += (s, a) => { Picked?.Invoke(); run?.Invoke(); };
+            e.Click += (s, a) => { if (!e.KeepsMenuOpen) Picked?.Invoke(); run?.Invoke(); };
             if (list.Children.Count > 0 && !(list.Children[list.Children.Count - 1] is Border)) e.Margin = new Thickness(0, 1, 0, 0);
             list.Children.Add(e);
             return e;
         }
+
+        /// <summary>Adds an element of the caller's own (a row with two lines, a field) to the list.</summary>
+        public void AddElement(FrameworkElement element)
+        {
+            if (list.Children.Count > 0 && !(list.Children[list.Children.Count - 1] is Border)) element.Margin = new Thickness(0, 1, 0, 0);
+            list.Children.Add(element);
+        }
+
+        public bool HasEntries => list.Children.Count > 0;
+
+        /// <summary>Closes the menu as a pick of an entry does.</summary>
+        public void Close() => Picked?.Invoke();
 
         public void AddSeparator()
         {
@@ -294,8 +316,11 @@ namespace Retake.Design.Controls
     public sealed class MenuEntry : Pressable
     {
         readonly PlateVisual plate = new PlateVisual(PlateKind.Bare) { Radius = 10 };
-        readonly bool danger;
-        bool pinHover;
+        readonly TextBlock text;
+        bool danger, pinHover;
+
+        /// <summary>True for an entry that asks first: its click leaves the menu open (the caller changes the label).</summary>
+        public bool KeepsMenuOpen;
 
         public MenuEntry(string label, string? icon, string? key, bool danger)
         {
@@ -308,14 +333,16 @@ namespace Retake.Design.Controls
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition());
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (icon != null)
+            if (icon != null && icon.Length == 0)
+                row.Children.Add(new Border { Width = 15, Margin = new Thickness(0, 0, 8, 0) }); // keeps the label in line with the entries that have an icon
+            else if (icon != null)
             {
                 FrameworkElement ic = Icons.Make(icon, 15);
                 ic.Margin = new Thickness(0, 0, 8, 0);
                 ic.SetResourceReference(TextBlock.ForegroundProperty, danger ? "T.rose-ink" : "T.ink-3");
                 row.Children.Add(ic);
             }
-            TextBlock text = Typography.Text(label, Typography.Body, null);
+            text = Typography.Text(label, Typography.Body, null);
             Grid.SetColumn(text, 1);
             row.Children.Add(text);
             if (key != null)
@@ -331,6 +358,20 @@ namespace Retake.Design.Controls
         }
 
         public bool PinHover { get => pinHover; set { pinHover = value; Refresh(false); } }
+
+        /// <summary>The visible label (an entry that asks first shows its question here).</summary>
+        public string Label
+        {
+            get => text.Text;
+            set { text.Text = value; AutomationProperties.SetName(this, value); }
+        }
+
+        /// <summary>Danger ink (rose) on or off.</summary>
+        public bool Danger
+        {
+            get => danger;
+            set { danger = value; SetResourceReference(ForegroundProperty, danger ? "T.rose-ink" : "T.ink-1"); }
+        }
 
         protected override void Apply(double hover, double press, double focus, bool animate)
         {

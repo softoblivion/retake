@@ -333,7 +333,7 @@ namespace Retake.Design
             // An open sheet over the veil with a toast, in a frame the size of a small window.
             var frame = new Grid { Height = 600, ClipToBounds = true };
             frame.Children.Add(new Scene());
-            TextBlock behind = Typography.Text(Program.EmptyBody, Typography.Body, "ink-3");
+            TextBlock behind = Typography.Text(Views.Copy.EmptyTitle, Typography.Body, "ink-3");
             behind.HorizontalAlignment = HorizontalAlignment.Center;
             frame.Children.Add(behind);
             var veil = new Rectangle();

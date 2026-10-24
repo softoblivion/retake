@@ -7,6 +7,9 @@
     <AssemblyName>Retake</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>Retake.Program</StartupObject>
+    <!-- libmpv is a 64-bit DLL. -->
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Retake.Core\Retake.Core.csproj" />
@@ -17,4 +20,54 @@
     <!-- The two themes; the single source of every colour of the window. -->
     <EmbeddedResource Include="Design\themes.json" LogicalName="Retake.Design.themes.json" />
   </ItemGroup>
+
+  <!--
+    libmpv: when build\libmpv\libmpv-2.dll exists (build\fetch-libmpv.ps1), the build packs it with GZip into
+    obj\ and embeds the packed DLL and its SHA-256. Without it the exe still builds; its real player then reports
+    that libmpv is not bundled, and the fake player mode works.
+  -->
+  <PropertyGroup>
+    <LibmpvSource>$(MSBuildThisFileDirectory)..\..\build\libmpv\libmpv-2.dll</LibmpvSource>
+    <LibmpvPacked>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)libmpv/libmpv-2.dll.gz</LibmpvPacked>
+    <LibmpvHash>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)libmpv/libmpv-2.dll.sha256</LibmpvHash>
+  </PropertyGroup>
+
+  <UsingTask TaskName="PackLibmpv" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Packed ParameterType="System.String" Required="true" />
+      <Hash ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Packed)));
+        using (var sha = SHA256.Create())
+        using (var input = File.OpenRead(Source))
+        {
+            File.WriteAllText(Hash, BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "").ToLowerInvariant());
+        }
+        using (var input = File.OpenRead(Source))
+        using (var output = File.Create(Packed))
+        using (var gz = new GZipStream(output, CompressionLevel.Optimal))
+        {
+            input.CopyTo(gz, 1 << 20);
+        }
+        Log.LogMessage(MessageImportance.High, "Packed " + Source + " into " + Packed);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="PackLibmpvTarget" BeforeTargets="PrepareForBuild" Condition="Exists('$(LibmpvSource)')" Inputs="$(LibmpvSource)" Outputs="$(LibmpvPacked);$(LibmpvHash)">
+    <PackLibmpv Source="$(LibmpvSource)" Packed="$(LibmpvPacked)" Hash="$(LibmpvHash)" />
+  </Target>
+
+  <Target Name="EmbedLibmpv" BeforeTargets="PrepareForBuild" AfterTargets="PackLibmpvTarget" Condition="Exists('$(LibmpvSource)')">
+    <ItemGroup>
+      <EmbeddedResource Include="$(LibmpvPacked)" LogicalName="Retake.libmpv-2.dll.gz" WithCulture="false" Type="Non-Resx" />
+      <EmbeddedResource Include="$(LibmpvHash)" LogicalName="Retake.libmpv-2.dll.sha256" WithCulture="false" Type="Non-Resx" />
+    </ItemGroup>
+  </Target>
 </Project>
