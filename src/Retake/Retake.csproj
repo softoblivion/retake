@@ -5,8 +5,12 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Retake</RootNamespace>
     <AssemblyName>Retake</AssemblyName>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>Retake.Program</StartupObject>
+    <!-- The exe icon, written from the Retake mark by build\make-icon.ps1. -->
+    <ApplicationIcon>$(MSBuildThisFileDirectory)..\..\build\icon.ico</ApplicationIcon>
+    <!-- app.manifest with the version of Version.cs, written by the StampVersion target below. -->
+    <ApplicationManifest>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)version/app.manifest</ApplicationManifest>
+    <Copyright>Copyright (C) 2026 softoblivion. GPL-3.0.</Copyright>
     <!-- libmpv is a 64-bit DLL. -->
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
@@ -25,6 +29,63 @@
     <!-- The two themes; the single source of every colour of the window. -->
     <EmbeddedResource Include="Design\themes.json" LogicalName="Retake.Design.themes.json" />
   </ItemGroup>
+
+  <!--
+    Version: Version.cs is the only place of the version. Before the build the StampVersion task reads it and writes
+    obj\version\AssemblyInfo.g.cs (assembly, file and product version, title, product, copyright: the exe's version
+    resource) and obj\version\app.manifest (app.manifest with assemblyIdentity version="x.y.z.0"). Files are
+    rewritten only when their text changes, so an unchanged version keeps the build incremental.
+  -->
+  <UsingTask TaskName="StampVersion" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <VersionFile ParameterType="System.String" Required="true" />
+      <Manifest ParameterType="System.String" Required="true" />
+      <OutDir ParameterType="System.String" Required="true" />
+      <Product ParameterType="System.String" Required="true" />
+      <Copyright ParameterType="System.String" Required="true" />
+      <Version ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Match m = Regex.Match(File.ReadAllText(VersionFile), "Version\\s*=\\s*\"(\\d+\\.\\d+\\.\\d+)\"");
+        if (!m.Success) { Log.LogError("No version \"x.y.z\" in " + VersionFile); return false; }
+        Version = m.Groups[1].Value;
+        string four = Version + ".0";
+        string manifest = File.ReadAllText(Manifest);
+        Regex identity = new Regex("(<assemblyIdentity\\b[^>]*?\\bversion=\")[^\"]*(\")");
+        if (!identity.IsMatch(manifest)) { Log.LogError("No assemblyIdentity version in " + Manifest); return false; }
+        manifest = identity.Replace(manifest, "${1}" + four + "${2}", 1);
+        string info =
+            "// Written by the build from Version.cs; do not edit.\n" +
+            "[assembly: System.Reflection.AssemblyTitle(\"" + Product + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyProduct(\"" + Product + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyCopyright(\"" + Copyright + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyVersion(\"" + four + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyFileVersion(\"" + four + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyInformationalVersion(\"" + Version + "\")]\n";
+        Directory.CreateDirectory(OutDir);
+        var utf8 = new UTF8Encoding(false);
+        foreach (var file in new[] { new[] { "AssemblyInfo.g.cs", info }, new[] { "app.manifest", manifest } })
+        {
+            string path = Path.Combine(OutDir, file[0]);
+            if (!File.Exists(path) || File.ReadAllText(path) != file[1]) File.WriteAllText(path, file[1], utf8);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="StampVersionTarget" BeforeTargets="PrepareForBuild">
+    <StampVersion VersionFile="$(MSBuildProjectDirectory)\Version.cs" Manifest="$(MSBuildProjectDirectory)\app.manifest" OutDir="$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)version" Product="$(AssemblyName)" Copyright="$(Copyright)">
+      <Output TaskParameter="Version" PropertyName="RetakeVersion" />
+    </StampVersion>
+    <ItemGroup>
+      <Compile Include="$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)version/AssemblyInfo.g.cs" />
+    </ItemGroup>
+    <Message Importance="High" Text="Retake $(RetakeVersion)" />
+  </Target>
 
   <!--
     libmpv: when build\libmpv\libmpv-2.dll exists (build\fetch-libmpv.ps1), the build packs it with GZip into

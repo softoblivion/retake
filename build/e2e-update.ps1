@@ -1,8 +1,8 @@
 # End-to-end test of Retake's self-update against a local HTTP server, run before every release that touches the
-# update path. Builds version N (src\Retake\Version.cs) and N+1 from copies of the sources, writes SHA256SUMS with
-# build\write-sums.ps1, serves N+1, its SHA256SUMS and a GitHub "latest release" document (latest.json) from
-# 127.0.0.1, points RETAKE_RELEASE_URL at it, runs N from a scratch folder with spaces in its path and presses the
-# sheet's button through UI Automation. Two runs:
+# update path. Version N is the release build (release\Retake.exe of build\build.ps1, the version of
+# src\Retake\Version.cs); N+1 is built by build\build.ps1 -Version from a copy of the sources. Serves N+1, its
+# SHA256SUMS and a GitHub "latest release" document (latest.json) from 127.0.0.1, points RETAKE_RELEASE_URL at it,
+# runs N from a scratch folder with spaces in its path and presses the sheet's button through UI Automation. Two runs:
 #   auto     automatic download on (the default): the sheet opens by itself, the download finishes, "Restart to update"
 #   install  automatic download off: the sheet opens at "Install", the click downloads and restarts by itself
 # Asserts per run: the sheet opens with the new version and its notes; N+1 runs from the same path (file hash equal
@@ -11,9 +11,12 @@
 # values, other files are untouched); the "Updated to v<N+1>" toast and the pill "v<N+1>" are shown.
 # Exit code 0: every assert passed. Windows PowerShell 5.1 compatible; the script text is ASCII on purpose.
 #   -Mode auto|install|both (default both)   -Port <n> (default 8765)   -Keep: leave the scratch folder
-#   -Captures <dir>   save PNGs of the sheet and of the updated window there
+#   -Exe <path>       version N (default: release\Retake.exe; its version must be the one of Version.cs)
+#   -Scale <n>        the Scale setting of the runs (100, 125, 150, 175, 200; default 100)
+#   -Captures <dir>   save PNGs of the sheet and of the updated window there (names end in -<scale>)
 [CmdletBinding()]
-param([ValidateSet('auto', 'install', 'both')][string]$Mode = 'both', [int]$Port = 8765, [switch]$Keep, [string]$Captures)
+param([ValidateSet('auto', 'install', 'both')][string]$Mode = 'both', [int]$Port = 8765, [switch]$Keep, [string]$Captures,
+    [string]$Exe, [ValidateSet(100, 125, 150, 175, 200)][int]$Scale = 100)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -29,7 +32,10 @@ $serve = Join-Path $scratch 'serve'
 New-Item -ItemType Directory -Force -Path $serve | Out-Null
 
 # ---- builds ----
-$exeN = Build-Retake $root $scratch $n
+if (!$Exe) { $Exe = Join-Path $root 'release\Retake.exe' }
+if (!(Test-Path -LiteralPath $Exe)) { throw "version $n not found: $Exe (run build\build.ps1 first)" }
+if ((Exe-Version $Exe) -ne $n) { throw "$Exe is version $(Exe-Version $Exe), not $n" }
+$exeN = $Exe
 $exeN1 = Build-Retake $root $scratch $n1
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'write-sums.ps1') -Exe $exeN1 -OutDir $serve | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'write-sums.ps1 failed' }
@@ -53,7 +59,7 @@ try {
         $exe = Join-Path $folder $asset; Copy-Item -LiteralPath $exeN -Destination $exe
         [IO.File]::WriteAllText((Join-Path $data 'keep.txt'), 'user data', (New-Object Text.UTF8Encoding $false))
         $autoValue = if ($run -eq 'install') { 'false' } else { 'true' }
-        $settingsText = "{`"recent`": [], `"auto_download_updates`": $autoValue, `"theme`": `"sky`", `"author`": `"E2E Tester`", `"ui_scale`": 100}`n"
+        $settingsText = "{`"recent`": [], `"auto_download_updates`": $autoValue, `"theme`": `"sky`", `"author`": `"E2E Tester`", `"ui_scale`": $Scale}`n"
         [IO.File]::WriteAllText((Join-Path $data 'settings.json'), $settingsText, (New-Object Text.UTF8Encoding $false))
         $old = Start-Process -FilePath $exe -WorkingDirectory $folder -PassThru
         $button = if ($run -eq 'install') { 'Install' } else { 'Restart to update' }
@@ -62,7 +68,7 @@ try {
         if ($target -eq $null) { Stop-Process -Id $old.Id -Force -ErrorAction SilentlyContinue; continue }
         Check ((Find-Element $old.Id "Retake $n1") -ne $null) "the sheet is titled 'Retake $n1'"
         Check ((Find-Element $old.Id 'What is new') -ne $null) 'the sheet shows the release notes'
-        if ($Captures) { [void](Save-WindowCapture $old.Id (Join-Path $Captures "sheet-$run.png")) }
+        if ($Captures) { Start-Sleep -Milliseconds 600; [void](Save-WindowCapture $old.Id (Join-Path $Captures "sheet-$run-$Scale.png")) }
         Invoke-Element $target
         # Watch for console processes under the app's processes until the new instance runs.
         $consoles = @(); $fresh = $null; $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -79,7 +85,7 @@ try {
         $toast = Wait-Until { Find-Element $fresh.ProcessId "Updated to v$n1" } 15
         Check ($toast -ne $null) "the new instance shows 'Updated to v$n1'"
         Check ((Wait-Until { Find-Element $fresh.ProcessId "v$n1" } 10) -ne $null) "the pill shows v$n1"
-        if ($Captures) { [void](Save-WindowCapture $fresh.ProcessId (Join-Path $Captures "updated-$run.png")) }
+        if ($Captures) { [void](Save-WindowCapture $fresh.ProcessId (Join-Path $Captures "updated-$run-$Scale.png")) }
         Check ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -eq $hashN1) "the exe at the path is the served $n1 (hash equal)"
         Check ((Wait-Until { -not (Test-Path -LiteralPath "$exe.old") } 15) -eq $true) "$asset.old is gone within 15 s"
         Check ($consoles.Count -eq 0) "no console window ($($consoles -join ', '))"

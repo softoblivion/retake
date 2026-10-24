@@ -76,8 +76,8 @@ function Find-Element($processId, $name, $controlType = $null, [switch]$Enabled)
     }
     return $null
 }
-# The first element named $name inside a top-level window whose name starts with $windowName (any process: a
-# WebView2 window belongs to a child of the process that was started).
+# The first element named $name inside a top-level window whose name starts with $windowName (any process: the page
+# of the 1.4.1 window belongs to a child of the process that was started).
 function Find-InWindow($windowName, $name) {
     $nameCondition = New-Object Windows.Automation.PropertyCondition ([Windows.Automation.AutomationElement]::NameProperty, $name)
     foreach ($w in [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children, [Windows.Automation.Condition]::TrueCondition)) {
@@ -92,7 +92,7 @@ function Find-InWindow($windowName, $name) {
     return $null
 }
 
-# Saves the whole primary screen as a PNG (for windows PrintWindow cannot render, such as WebView2 content).
+# Saves the whole primary screen as a PNG (for windows PrintWindow cannot render, such as the 1.4.1 page).
 function Save-ScreenCapture($path) {
     $bounds = [Windows.Forms.Screen]::PrimaryScreen.Bounds
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
@@ -119,7 +119,7 @@ function Idle-Seconds() {
     return ([Environment]::TickCount - [int]$info.Time) / 1000.0
 }
 
-# Presses an element: the Invoke pattern when it has one; otherwise (web content of a WebView2 window has none) a real
+# Presses an element: the Invoke pattern when it has one; otherwise (the web page of the 1.4.1 window has none) a real
 # mouse click at its centre, only while the machine has been idle for 3 s, so a user who is typing is never disturbed.
 function Press-Element($element) {
     try { Invoke-Element $element; return } catch { }
@@ -161,24 +161,19 @@ function Processes-Under($folder) {
     @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($folder, [StringComparison]::OrdinalIgnoreCase) })
 }
 
-# Builds Retake with another version number from a copy of the sources (the working tree and its Version.cs stay
-# untouched; every version gets its own obj and bin). Returns the path of the built exe.
+# Builds Retake with another version number through build\build.ps1 -Version (a copy of the sources; the working tree
+# and its Version.cs stay untouched). Returns the path of the built exe in <scratch>\build-<version>.
 function Build-Retake($root, $scratch, $version) {
-    $copy = Join-Path $scratch "src-$version"
-    New-Item -ItemType Directory -Force -Path $copy | Out-Null
-    & robocopy (Join-Path $root 'src') (Join-Path $copy 'src') /E /XD bin obj /NFL /NDL /NJH /NJS /NP | Out-Null
-    Copy-Item -LiteralPath (Join-Path $root 'Directory.Build.props') -Destination $copy
-    $libmpv = Join-Path $root 'build\libmpv'
-    if (Test-Path -LiteralPath $libmpv) { New-Item -ItemType Directory -Force -Path (Join-Path $copy 'build') | Out-Null; & robocopy $libmpv (Join-Path $copy 'build\libmpv') /E /NFL /NDL /NJH /NJS /NP | Out-Null }
-    $versionFile = Join-Path $copy 'src\Retake\Version.cs'
-    $text = Get-Content -LiteralPath $versionFile -Raw
-    $current = [regex]::Match($text, 'Version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
-    if (!$current) { throw 'Version not found in src\Retake\Version.cs' }
-    [IO.File]::WriteAllText($versionFile, $text.Replace("""$current""", """$version"""), (New-Object Text.UTF8Encoding $false))
-    & dotnet build (Join-Path $copy 'src\Retake\Retake.csproj') -c Release --nologo -v q | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "build of $version failed" }
-    return (Join-Path $copy 'src\Retake\bin\Release\Retake.exe')
+    $out = Join-Path $scratch "build-$version"
+    $saved = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $lines = @(& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'build\build.ps1') -Version $version -OutDir $out) }
+    finally { $ErrorActionPreference = $saved }
+    if ($LASTEXITCODE -ne 0) { $lines | Out-Host; throw "build of $version failed" }
+    return $lines[-1]
 }
+
+# The version of a built exe (its product version, x.y.z).
+function Exe-Version($exe) { return (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion }
 
 function Current-Version($root) {
     $m = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'src\Retake\Version.cs') -Raw), 'Version\s*=\s*"(\d+)\.(\d+)\.(\d+)"')

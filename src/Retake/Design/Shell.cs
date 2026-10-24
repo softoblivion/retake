@@ -68,10 +68,22 @@ namespace Retake.Design
         }
     }
 
-    /// <summary>The placeholder app glyph: a rounded square in --accent-grad with a play mark, glowing in --glyph-glow.</summary>
+    /// <summary>
+    /// The Retake mark on a 20 x 20 grid: a rounded square in --accent-grad, a play mark in --hero-ink and a note dot
+    /// in --note-fix, glowing in --glyph-glow in the title bar. The one source of the app icon: build\make-icon.ps1
+    /// reads the three paths and their tokens from here (Crystal Black values) to write build\icon.ico and
+    /// docs\assets\icon.svg.
+    /// </summary>
     sealed class AppGlyph : FrameworkElement, IThemed
     {
-        static readonly Geometry Mark = Freeze(Geometry.Parse("M8.2 6.4v7.2a.6.6 0 0 0 .9.5l5.6-3.6a.6.6 0 0 0 0-1L9.1 5.9a.6.6 0 0 0-.9.5Z"));
+        public const string PlatePath = "M7 1.5h6a5.5 5.5 0 0 1 5.5 5.5v6a5.5 5.5 0 0 1-5.5 5.5H7A5.5 5.5 0 0 1 1.5 13V7A5.5 5.5 0 0 1 7 1.5Z";
+        public const string MarkPath = "M7.3 6.9v7.4a.65.65 0 0 0 1 .55l5.75-3.7a.65.65 0 0 0 0-1.1L8.3 6.35a.65.65 0 0 0-1 .55Z";
+        public const string DotPath = "M12.3 5.7a2.15 2.15 0 1 0 4.3 0a2.15 2.15 0 1 0 -4.3 0Z";
+        public const string PlateToken = "accent-grad", MarkToken = "hero-ink", DotToken = "note-fix";
+
+        static readonly Geometry Plate = Freeze(Geometry.Parse(PlatePath));
+        static readonly Geometry Mark = Freeze(Geometry.Parse(MarkPath));
+        static readonly Geometry Dot = Freeze(Geometry.Parse(DotPath));
 
         public AppGlyph()
         {
@@ -92,8 +104,9 @@ namespace Retake.Design
 
         protected override void OnRender(DrawingContext dc)
         {
-            dc.DrawRoundedRectangle(Themes.Brush("accent-grad"), null, new Rect(1.5, 1.5, 17, 17), 5.5, 5.5);
-            dc.DrawGeometry(Themes.Brush("hero-ink"), null, Mark);
+            dc.DrawGeometry(Themes.Brush(PlateToken), null, Plate);
+            dc.DrawGeometry(Themes.Brush(MarkToken), null, Mark);
+            dc.DrawGeometry(Themes.Brush(DotToken), null, Dot);
         }
     }
 

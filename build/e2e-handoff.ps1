@@ -8,8 +8,9 @@
 # the recent video.
 # Exit code 0: every assert passed. Windows PowerShell 5.1 compatible; the script text is ASCII on purpose.
 #   -OldExe <path>   the 1.4.1 exe (the build of tag v1.4.1; the script copies it, never changes it)
-#   -OldSource <dir> the src folder of the 1.4.1 Python tree (the folder that holds the frame_notes package)
-#   -Exe <path>      the Retake exe to serve (default: src\Retake\bin\Release\Retake.exe)
+#   -OldSource <dir> a checkout of tag v1.4.1 (git worktree add <dir> v1.4.1), or its src folder (the folder that holds
+#                    the frame_notes package); the headless updater runs from it with the python on PATH
+#   -Exe <path>      the Retake exe to serve (default: release\Retake.exe of build\build.ps1)
 #   -Tag <vX.Y.Z>    the release tag to serve (default: v + the version in src\Retake\Version.cs)
 #   -Port <n> (default 8766)   -Keep: leave the scratch folder   -Captures <dir>: PNGs of the updated window
 #   -Real            drive the real 1.4.1 window instead of the headless updater: it opens its update sheet by itself,
@@ -23,8 +24,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'e2e-common.ps1')
-if (!$Exe) { $Exe = Join-Path $root 'src\Retake\bin\Release\Retake.exe' }
+if (!$Exe) { $Exe = Join-Path $root 'release\Retake.exe' }
 if (!$Tag) { $Tag = 'v' + (Current-Version $root).N }
+if (Test-Path -LiteralPath (Join-Path $OldSource 'src\frame_notes\__init__.py')) { $OldSource = Join-Path $OldSource 'src' }
 foreach ($p in @($OldExe, $Exe, (Join-Path $OldSource 'frame_notes\__init__.py'))) { if (!(Test-Path -LiteralPath $p)) { throw "not found: $p" } }
 $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue)
 if (!$ffmpeg) { throw 'ffmpeg is needed to make the test video' }
@@ -96,8 +98,8 @@ try {
     Check ($fresh -ne $null) 'Retake starts from the 1.x path (FrameNotes.exe)'
     if ($fresh -eq $null) { throw 'Retake did not start' }
     Check ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -eq $hashServed) 'the file at the 1.x path is the served Retake.exe (hash equal)'
-    $window = Wait-Until { Find-Element $fresh.ProcessId 'v2.0.0' } 30
-    Check ($window -ne $null) 'the review window is up (pill v2.0.0)'
+    $window = Wait-Until { Find-Element $fresh.ProcessId $Tag } 30
+    Check ($window -ne $null) "the review window is up (pill $Tag)"
     $retakeData = Join-Path $app 'retake_data'
     Check (Test-Path -LiteralPath $retakeData -PathType Container) 'retake_data\ is created beside the exe'
     if ($libmpvHash) {
