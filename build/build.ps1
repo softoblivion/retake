@@ -4,8 +4,10 @@
 #   2. the pinned libmpv in build\libmpv\ verified, or restored when it is missing (build\fetch-libmpv.ps1);
 #   3. the test runner built and run (tests\Retake.Tests, RETAKE_HOME in a scratch folder);
 #   4. src\Retake built in Release with MSBuild warnings as errors: the version, the assembly and file versions and
-#      the manifest's assemblyIdentity come from src\Retake\Version.cs, the icon from build\icon.ico, libmpv embedded;
-#   5. the release assets written by build\write-sums.ps1 and the exe's version resource checked against Version.cs.
+#      the manifest's assemblyIdentity come from src\Retake\Version.cs, the icon from build\icon.ico, libmpv embedded,
+#      deterministic source paths (the exe records no path of the build machine);
+#   5. the exe's version resource checked against Version.cs and the exe checked for paths of this machine, then the
+#      release assets written by build\write-sums.ps1.
 # Windows PowerShell 5.1 compatible; the script text is ASCII on purpose. Details: docs\BUILD.md.
 #   -Version <x.y.z>  build another version from a copy of the sources in a scratch folder (end-to-end update tests):
 #                     the working tree and its Version.cs stay unchanged, steps 2 and 3 are skipped, and the assets
@@ -79,7 +81,9 @@ if (!$Version) {
 $expected = Version-Of (Join-Path $sources 'src\Retake\Version.cs')
 Write-Host "== Retake $expected"
 $project = Join-Path $sources 'src\Retake\Retake.csproj'
-$properties = @()
+# Deterministic source paths: the exe records its PDB as /_/src/..., not as a path of this machine.
+$properties = @('-p:ContinuousIntegrationBuild=true')
+if ($Version) { $properties += "-p:PathMap=$sources\=/_/" }   # the copy is not a git checkout: no source root of its own
 if ($Version -and (Test-Path -LiteralPath $libmpv)) { $properties += "-p:LibmpvSource=$libmpv" }
 Invoke-Native 'The build of Retake' { dotnet build $project -c Release --nologo -v q -warnaserror @properties }
 $built = Join-Path $sources 'src\Retake\bin\Release\Retake.exe'
@@ -88,6 +92,10 @@ $built = Join-Path $sources 'src\Retake\bin\Release\Retake.exe'
 $info = (Get-Item -LiteralPath $built).VersionInfo
 if ($info.ProductVersion -ne $expected -or $info.FileVersion -ne "$expected.0") {
     throw "The exe's version resource ($($info.ProductVersion) / $($info.FileVersion)) does not match $expected"
+}
+$text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($built))
+foreach ($local in @($root, $sources) | Select-Object -Unique) {
+    if ($text.IndexOf($local, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "The exe holds a path of this machine: $local" }
 }
 $sums = (& powershell -NoProfile -ExecutionPolicy Bypass -File (Script 'write-sums.ps1') -Exe $built -OutDir $OutDir | Select-Object -Last 1)
 if ($LASTEXITCODE -ne 0) { throw 'write-sums.ps1 failed' }
