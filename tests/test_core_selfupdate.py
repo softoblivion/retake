@@ -40,7 +40,7 @@ class BuildUpdaterTest(unittest.TestCase):
         updater = selfupdate.build_updater(paths, __version__, on_status)
         cfg = updater.config
         self.assertEqual(cfg.repo, "softoblivion/frame-notes")
-        self.assertEqual(cfg.asset_name, "FrameNotes.exe")
+        self.assertEqual(cfg.asset_name, "Retake.exe")
         self.assertEqual(cfg.app_name, "Frame Notes")
         self.assertEqual(cfg.version, __version__)
         self.assertEqual(cfg.updates_dir, str(paths.updates_dir))
@@ -55,7 +55,7 @@ class BuildUpdaterTest(unittest.TestCase):
 
     def test_constants_and_reexports(self) -> None:
         self.assertEqual(selfupdate.REPO, "softoblivion/frame-notes")
-        self.assertEqual(selfupdate.ASSET_NAME, "FrameNotes.exe")
+        self.assertEqual(selfupdate.ASSET_NAME, "Retake.exe")
         self.assertEqual(selfupdate.APP_NAME, "Frame Notes")
         self.assertEqual(selfupdate.RELEASE_URL_ENV, "FRAME_NOTES_RELEASE_URL")
         self.assertEqual(selfupdate.APPLY_FLAG, "--apply-update")
