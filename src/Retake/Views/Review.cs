@@ -196,6 +196,7 @@ namespace Retake.Views
             Video.Overlay.Drop += OnDrop;
             Video.Overlay.KeyForward += OnKey;
             Video.Overlay.PreviewKeyUp += (s, e) => OnKeyUp(e);
+            Video.Overlay.PreviewTextInput += (s, e) => OnText(e);
             Video.Overlay.Region.Drawn += OnRegionDrawn;
             Video.Overlay.Composer.Commit += () => _ = Commit();
             Video.Overlay.Composer.Cancel += CancelEdit;
@@ -830,7 +831,14 @@ namespace Retake.Views
             {
                 if (key == Key.Enter) { e.Handled = true; _ = Commit(); }
                 else if (key == Key.Escape) { e.Handled = true; CancelEdit(); }
-                else Video.Overlay.Composer.FocusField();
+                else if (key == Key.Back)
+                {
+                    e.Handled = true;
+                    TextField field = Video.Overlay.Composer.Field;
+                    if (field.Text.Length == 0) { if (edit.Region != null) SetEditRegion(null); }
+                    else field.Text = field.Text.Substring(0, field.Text.Length - 1);
+                }
+                else Video.Overlay.SetTyping(true);
                 return;
             }
             if ((mods & ModifierKeys.Control) != 0 && (mods & ModifierKeys.Alt) == 0)
@@ -886,6 +894,18 @@ namespace Retake.Views
 
         void OnText(TextCompositionEventArgs e)
         {
+            if (edit != null && !IsTyping() && e.Text.Length > 0 && !char.IsControl(e.Text[0]))
+            {
+                // The overlay could not take the activation (another program held the foreground): the typing
+                // reaches the main window, so it goes into the note field here instead of being lost.
+                TextField field = Video.Overlay.Composer.Field;
+                int at = field.CaretIndex;
+                field.Text = field.Text.Insert(at, e.Text);
+                field.CaretIndex = at + e.Text.Length;
+                e.Handled = true;
+                Video.Overlay.SetTyping(true);
+                return;
+            }
             if (e.Text != "?" || IsTyping() || edit != null) return;
             if ((DateTime.UtcNow - keyMapToggled).TotalMilliseconds < 500) { e.Handled = true; return; }
             OverlayHost overlay = window.Root.Overlay;
