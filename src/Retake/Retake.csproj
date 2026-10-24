@@ -11,4 +11,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Retake.Core\Retake.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Static per-weight font files, read through pack://application:,,,/fonts/#Sora. -->
+    <Resource Include="fonts\*.ttf" />
+    <!-- The two themes; the single source of every colour of the window. -->
+    <EmbeddedResource Include="Design\themes.json" LogicalName="Retake.Design.themes.json" />
+  </ItemGroup>
 </Project>
