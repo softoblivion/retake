@@ -1,1 +1,7 @@
 * -text
+# Recorded with CRLF line ends by the 1.x core: stored with LF, checked out with CRLF, so the working tree holds them
+# byte for byte as recorded.
+scenarios/*/ops.json text eol=crlf
+scenarios/c_layout10/in/promo_notes.txt text eol=crlf
+scenarios/c_layout10/expected/promo_notes/promo_notes.txt text eol=crlf
+scenarios/d_layout10_extra_lines/in/promo_notes.txt text eol=crlf
