@@ -8,27 +8,27 @@ using System.Windows.Threading;
 
 namespace Retake.Design.Controls
 {
-    public enum ToastLevel { Info, Success, Warning, Error }
-
     /// <summary>
     /// A toast: a pill (min 38 px) on the near-opaque --solid-tint under --toast-tint (--toast-error-tint for
     /// errors), hairline, bevel, --shadow-m; a 24 px round icon in the level's fill and ink, the text in the
     /// body role at medium weight, an optional action. A click anywhere on it closes it (the action runs first).
     /// Info and success close after 3 s, warning and error after 10 s; the timer waits while the pointer rests
-    /// on the toast.
+    /// on the toast. A sticky toast has no timer and stays until it is clicked (see <see cref="ToastTiming"/>).
     /// </summary>
     public sealed class Toast : Grid
     {
         public readonly ToastLevel Level;
         public readonly string Message;
+        public readonly bool Sticky;
         readonly TranslateTransform shift = new TranslateTransform();
-        readonly DispatcherTimer timer;
+        readonly DispatcherTimer? timer;
         internal Action<Toast>? Dismissed;
 
-        public Toast(ToastLevel level, string text, string? actionLabel = null, Action? action = null)
+        public Toast(ToastLevel level, string text, string? actionLabel = null, Action? action = null, bool sticky = false)
         {
             Level = level;
             Message = text;
+            Sticky = sticky;
             MinHeight = 38;
             Background = Brushes.Transparent;
             Cursor = Cursors.Hand;
@@ -60,18 +60,23 @@ namespace Retake.Design.Controls
                 row.Children.Add(b);
             }
             Children.Add(row);
-            timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(level == ToastLevel.Info || level == ToastLevel.Success ? 3 : 10) };
-            timer.Tick += (s, e) => Close();
+            TimeSpan? lifetime = ToastTiming.Lifetime(level, sticky);
+            if (lifetime.HasValue)
+            {
+                timer = new DispatcherTimer { Interval = lifetime.Value };
+                timer.Tick += (s, e) => Close();
+                MouseEnter += (s, e) => timer.Stop();
+                MouseLeave += (s, e) => { if (IsHitTestVisible) timer.Start(); };
+            }
             MouseLeftButtonUp += (s, e) => Close();
-            MouseEnter += (s, e) => timer.Stop();
-            MouseLeave += (s, e) => { if (IsHitTestVisible) timer.Start(); };
         }
 
-        public TimeSpan Lifetime => timer.Interval;
+        /// <summary>How long the toast stays; null for a sticky toast.</summary>
+        public TimeSpan? Lifetime => timer?.Interval;
 
         internal void Enter()
         {
-            timer.Start();
+            timer?.Start();
             if (!Motion.Enabled) return;
             Opacity = 0;
             shift.Y = 16;
@@ -80,13 +85,13 @@ namespace Retake.Design.Controls
         }
 
         /// <summary>Restarts the timer (the same text raised again).</summary>
-        internal void Renew() { timer.Stop(); timer.Start(); }
+        internal void Renew() { if (timer == null) return; timer.Stop(); timer.Start(); }
 
         public void Close()
         {
             if (!IsHitTestVisible) return;
             IsHitTestVisible = false;
-            timer.Stop();
+            timer?.Stop();
             Motion.To(shift, TranslateTransform.YProperty, 8, Motion.D2);
             Motion.To(this, OpacityProperty, 0, Motion.D2, null, () => Dismissed?.Invoke(this));
         }
@@ -104,11 +109,12 @@ namespace Retake.Design.Controls
             Margin = new Thickness(16, 0, 16, 16);
         }
 
-        public Toast Show(ToastLevel level, string text, string? actionLabel = null, Action? action = null)
+        /// <param name="sticky">No timer: the toast stays until it is clicked (a notice the user must not miss, such as "ready to restart").</param>
+        public Toast Show(ToastLevel level, string text, string? actionLabel = null, Action? action = null, bool sticky = false)
         {
             foreach (UIElement child in Children)
                 if (child is Toast same && same.Message == text && same.IsHitTestVisible) { same.Renew(); return same; }
-            var toast = new Toast(level, text, actionLabel, action) { Margin = new Thickness(0, 6, 0, 0) };
+            var toast = new Toast(level, text, actionLabel, action, sticky) { Margin = new Thickness(0, 6, 0, 0) };
             toast.Dismissed = t => Children.Remove(t);
             Children.Add(toast);
             int live = 0;

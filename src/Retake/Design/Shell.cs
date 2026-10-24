@@ -216,6 +216,12 @@ namespace Retake.Design
         public Size LogicalSize { get; private set; } = Scale.Ladder[0];
         public event Action? ScaleApplied;
 
+        /// <summary>Raised when the version pill is clicked; the updater decides what it opens.</summary>
+        public event Action? PillClicked;
+
+        /// <summary>The status row of the Updates group of Settings (status line, last check, action), set by the updater before Settings first opens.</summary>
+        public FrameworkElement? UpdatesRow { get; set; }
+
         public ShellWindow(Prefs prefs, string title = "Retake")
         {
             Prefs = prefs;
@@ -233,8 +239,8 @@ namespace Retake.Design
             bar.Gear.Click += (s, e) => ToggleSettings();
             bar.MinimizeButton.Click += (s, e) => WindowState = WindowState.Minimized;
             bar.CloseButton.Click += (s, e) => Close();
-            bar.Pill.Click += (s, e) => Root.Toasts.Show(ToastLevel.Info, "Updates are not set up in this build");
-            Root.Overlay.SheetChanged += open => bar.Gear.IsSource = open;
+            bar.Pill.Click += (s, e) => PillClicked?.Invoke();
+            Root.Overlay.SheetChanged += open => bar.Gear.IsSource = open && settings != null && Root.Overlay.CurrentSheet == settings.Sheet;
             PreviewKeyDown += OnKey;
             PreviewMouseDown += (s, e) => Root.Overlay.PressAnywhere(e.OriginalSource as DependencyObject);
             Themes.Changed += UpdateFrame;
@@ -334,6 +340,15 @@ namespace Retake.Design
         {
             if (e.Key == Key.Escape && Root.Overlay.Escape()) { e.Handled = true; return; }
             if (e.Key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control) { ToggleSettings(); e.Handled = true; }
+        }
+
+        /// <summary>Opens the Settings sheet out of the version pill (the pill's way to the Updates group); nothing happens when Settings is already open.</summary>
+        public void OpenSettings()
+        {
+            settings ??= new SettingsSheet(this);
+            if (Root.Overlay.CurrentSheet == settings.Sheet) return;
+            settings.Refresh();
+            Root.Overlay.OpenSheet(settings.Sheet, Root.TitleBar.Pill);
         }
 
         /// <summary>Opens the Settings sheet out of the gear, or closes it.</summary>

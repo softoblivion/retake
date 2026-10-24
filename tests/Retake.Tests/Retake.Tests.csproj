@@ -14,6 +14,14 @@
     <Compile Include="..\..\src\Retake\Views\RegionMath.cs" Link="Linked\RegionMath.cs" />
     <Compile Include="..\..\src\Retake\Views\TimelineMath.cs" Link="Linked\TimelineMath.cs" />
     <Compile Include="..\..\src\Retake\Views\WindowPlace.cs" Link="Linked\WindowPlace.cs" />
+    <!-- The self-update wiring without WPF: the version, the setup values, the tooltips, the toast timing and the
+         vendored library (compiled as generated code, see src\Retake\vendor\.editorconfig). -->
+    <Compile Include="..\..\src\Retake\Version.cs" Link="Linked\Version.cs" />
+    <Compile Include="..\..\src\Retake\Update\UpdateSetup.cs" Link="Linked\UpdateSetup.cs" />
+    <Compile Include="..\..\src\Retake\Update\UpdateCopy.cs" Link="Linked\UpdateCopy.cs" />
+    <Compile Include="..\..\src\Retake\Update\LegacyUpdates.cs" Link="Linked\LegacyUpdates.cs" />
+    <Compile Include="..\..\src\Retake\Design\Controls\ToastTiming.cs" Link="Linked\ToastTiming.cs" />
+    <Compile Include="..\..\src\Retake\vendor\selfupdate-dotnet\*.cs" Link="Linked\selfupdate-dotnet\%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <!-- Reference files written by the 1.x core; copied beside the test executable. -->

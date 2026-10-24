@@ -343,7 +343,7 @@ namespace Retake.Design
             var settings = new SettingsSheet(copy, fits, s => { });
             settings.Sheet.Margin = new Thickness(0, 18, 0, 0);
             frame.Children.Add(settings.Sheet);
-            var toast = new Toast(ToastLevel.Info, "Updates are not set up in this build") { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 16) };
+            var toast = new Toast(ToastLevel.Info, "Updated to v2.0.1") { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 16) };
             frame.Children.Add(toast);
             var clip = new RectangleGeometry(new Rect(0, 0, 1196, 600), 18, 18);
             frame.Clip = clip;
@@ -394,12 +394,13 @@ namespace Retake.Design
 
             // Toasts.
             var toasts = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 18, 0, 0) };
-            toasts.Children.Add(Caption("Toasts: info and success close after 3 s, warning and error after 10 s"));
+            toasts.Children.Add(Caption("Toasts: info and success close after 3 s, warning and error after 10 s; a sticky toast stays until it is clicked"));
             var list = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             list.Children.Add(new Toast(ToastLevel.Success, "Notes exported") { Margin = new Thickness(0, 0, 12, 0) });
             list.Children.Add(new Toast(ToastLevel.Warning, "The clip has no audio") { Margin = new Thickness(0, 0, 12, 0) });
             list.Children.Add(new Toast(ToastLevel.Error, "The video could not be opened", "Try again", null));
             toasts.Children.Add(list);
+            toasts.Children.Add(new Toast(ToastLevel.Success, "Retake 2.0.1 is ready", "Restart", null, sticky: true) { Margin = new Thickness(0, 12, 0, 0), HorizontalAlignment = HorizontalAlignment.Left });
             block.Children.Add(toasts);
             return block;
         }

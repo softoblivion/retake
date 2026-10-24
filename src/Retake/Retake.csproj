@@ -11,8 +11,13 @@
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
+  <!--
+    One exe: the self-update replaces a single file, so the core's sources are compiled into Retake.exe instead of
+    being referenced as Retake.Core.dll (which the exe could not start without). The core project stays a project of
+    its own for the tests.
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\Retake.Core\Retake.Core.csproj" />
+    <Compile Include="..\Retake.Core\**\*.cs" Exclude="..\Retake.Core\obj\**;..\Retake.Core\bin\**" Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <!-- Static per-weight font files, read through pack://application:,,,/fonts/#Sora. -->
