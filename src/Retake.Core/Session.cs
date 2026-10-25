@@ -10,7 +10,7 @@ namespace Retake.Core
 {
     /// <summary>
     /// The review session: one open video, its notes in memory and the notes folder on disk. Owns probing the video,
-    /// loading and saving the data file and the readable export, the note images and the frame rate choice; the 1.0
+    /// loading and saving the data file, the note images, the notes package and the frame rate choice; the 1.0
     /// layout is moved into the notes folder on open. Every mutation writes the files and then calls the change callback
     /// with the new state. All public methods are serialised with one lock; the callback runs while the lock is held, so
     /// it must only hand the state over (for example enqueue it).
@@ -393,18 +393,22 @@ namespace Retake.Core
                 if (clean.Length == 0) throw new SessionException(NoText);
                 var note = new Note(Note.NewId(new HashSet<string>(_notes.Select(n => n.Id))), frame, kind, clean);
                 note.Order = _nextOrder;
+                string? imageError = null;
                 if (frame.HasValue)
                 {
                     note.Region = CheckRegion(region);
                     if (note.Region != null && imagePng != null && imagePng.Length > 0)
                     {
-                        note.Image = NotesLayout.ImageName(note, tb, TakenImages(null));
-                        WriteImage(note.Image, imagePng);
+                        // An image that cannot be written does not cost the note: it is kept without the image.
+                        string name = NotesLayout.ImageName(note, tb, TakenImages(null));
+                        imageError = TryWriteImage(name, imagePng);
+                        if (imageError == null) note.Image = name;
                     }
                 }
                 _nextOrder++;
                 _notes.Add(note);
-                return Finish(WriteNotes());
+                string? writeError = WriteNotes();
+                return Finish(imageError ?? writeError);
             }
         }
 
@@ -441,6 +445,7 @@ namespace Retake.Core
                 bool regionChanged = !SameRegion(newRegion, note.Region);
                 bool imageGiven = newRegion != null && imagePng != null && imagePng.Length > 0;
                 if (!kindChanged && !textChanged && !regionChanged && !imageGiven) return GetState();
+                if (imageGiven && note.Image != null && !NotesLayout.IsPlainName(note.Image)) throw new SessionException("The image name is not valid");
 
                 string? oldImage = note.Image;
                 bool dropOldImage = false;
@@ -461,8 +466,9 @@ namespace Retake.Core
                 {
                     if (imageGiven)
                     {
-                        note.Image = NotesLayout.ImageName(note, tb, TakenImages(note));
-                        error = TryWriteImage(note.Image, imagePng!);
+                        string name = NotesLayout.ImageName(note, tb, TakenImages(note));
+                        error = TryWriteImage(name, imagePng!);
+                        if (error == null) note.Image = name;
                     }
                 }
                 else if (kindChanged && NotesLayout.IsPlainName(oldImage))
@@ -476,7 +482,7 @@ namespace Retake.Core
                 note.Region = newRegion;
                 if (newText != null) note.Text = newText;
                 string? writeError = WriteNotes();
-                if (dropOldImage)
+                if (dropOldImage && !UsedByOther(oldImage, note))
                 {
                     DeleteImage(oldImage);
                     PruneImagesDir();
@@ -519,10 +525,14 @@ namespace Retake.Core
             {
                 RequireVideo();
                 Note note = Find(noteId);
+                if (Tb() == null) throw new SessionException(RateUnknownEditing);
                 _notes.Remove(note);
                 string? error = WriteNotes();
-                DeleteImage(note.Image);
-                PruneImagesDir();
+                if (!UsedByOther(note.Image, note))
+                {
+                    DeleteImage(note.Image);
+                    PruneImagesDir();
+                }
                 Finish(error);
             }
         }
@@ -551,6 +561,7 @@ namespace Retake.Core
                     images.Add(new KeyValuePair<string, string>(NotesFile.FramesDirName + "/" + note.Image, file));
                 }
                 byte[] text = new UTF8Encoding(false).GetBytes(BuildNotesFile().RenderReadable().Replace("\n", "\r\n"));
+                int packed = 0;
                 try
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(zip)!);
@@ -562,12 +573,15 @@ namespace Retake.Core
                             using (Stream target = notesEntry.Open()) target.Write(text, 0, text.Length);
                             foreach (KeyValuePair<string, string> image in images)
                             {
-                                ZipArchiveEntry entry = archive.CreateEntry(image.Key, CompressionLevel.NoCompression);
-                                using (Stream target = entry.Open())
-                                using (var source = new FileStream(image.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                                // An image another program holds without sharing is left out of the package, not fatal.
+                                FileStream? source = OpenImage(image.Value);
+                                if (source == null) continue;
+                                using (source)
                                 {
-                                    source.CopyTo(target);
+                                    ZipArchiveEntry entry = archive.CreateEntry(image.Key, CompressionLevel.NoCompression);
+                                    using (Stream target = entry.Open()) source.CopyTo(target);
                                 }
+                                packed++;
                             }
                         }
                         stream.Flush(true);
@@ -580,8 +594,22 @@ namespace Retake.Core
                     Log.Error("cannot write " + zip, ex);
                     throw new SessionException("The notes could not be packed into " + zip);
                 }
-                Log.Info("packed " + _notes.Count + " notes and " + images.Count + " frames into " + zip);
-                return new PackResult { Path = zip, Notes = _notes.Count, Frames = images.Count };
+                Log.Info("packed " + _notes.Count + " notes and " + packed + " frames into " + zip);
+                return new PackResult { Path = zip, Notes = _notes.Count, Frames = packed };
+            }
+        }
+
+        /// <summary>An image file opened for reading, or null (logged) when it cannot be read.</summary>
+        private static FileStream? OpenImage(string path)
+        {
+            try
+            {
+                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            }
+            catch (Exception ex) when (IsFileError(ex))
+            {
+                Log.Warning("image left out of the package: " + path + ": " + ex.Message);
+                return null;
             }
         }
 
@@ -678,12 +706,13 @@ namespace Retake.Core
             string old = note.Image!;
             string newName = NotesLayout.ImageName(note, tb, TakenImages(note));
             bool sameFile = string.Equals(old, newName, StringComparison.OrdinalIgnoreCase);
+            bool shared = UsedByOther(old, note);
             if (bytes != null && bytes.Length > 0)
             {
                 string? error = TryWriteImage(newName, bytes);
                 if (error != null) return error;
                 note.Image = newName;
-                if (!sameFile) DeleteImage(old);
+                if (!sameFile && !shared) DeleteImage(old);
                 return null;
             }
             if (string.Equals(old, newName, StringComparison.Ordinal)) return null;
@@ -692,7 +721,12 @@ namespace Retake.Core
             if (source == null || target == null) return null;
             try
             {
-                if (File.Exists(source)) NativeFile.Replace(source, target);
+                // A file that another note of a hand-edited file also names is copied, not taken away from it.
+                if (File.Exists(source))
+                {
+                    if (shared) File.Copy(source, target, true);
+                    else NativeFile.Replace(source, target);
+                }
             }
             catch (Exception ex) when (IsFileError(ex))
             {
@@ -717,6 +751,13 @@ namespace Retake.Core
             }
             if (error != null) throw new SessionException(error);
             return data;
+        }
+
+        /// <summary>True when a note other than <paramref name="self"/> names the same image file (a hand-edited file).</summary>
+        private bool UsedByOther(string? name, Note self)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return _notes.Any(n => !ReferenceEquals(n, self) && string.Equals(n.Image, name, StringComparison.OrdinalIgnoreCase));
         }
 
         private List<string> TakenImages(Note? exclude)

@@ -222,16 +222,25 @@ namespace Retake.Views
         /// <summary>
         /// Saves the note being written: the frame image first (a new region, or a region drawn in a new type's
         /// colour), then the core. A note needs text: Enter on an empty field keeps the editor open and asks for it;
-        /// a press elsewhere (<paramref name="fromPress"/>) drops an empty new note and reverts an emptied edit.
+        /// <paramref name="dropEmpty"/> (a press elsewhere, another video, closing) drops an empty new note and reverts
+        /// an emptied edit. A save already running is returned, so every action that saves first waits for it.
         /// </summary>
-        async Task Commit(bool fromPress = false)
+        Task Commit(bool dropEmpty = false)
         {
-            if (edit == null || saving || player == null) return;
-            Edit e = edit;
+            if (commitTask != null && !commitTask.IsCompleted) return commitTask;
+            if (edit == null || saving || player == null) return Task.CompletedTask;
+            commitTask = CommitNow(dropEmpty);
+            return commitTask;
+        }
+
+        async Task CommitNow(bool dropEmpty)
+        {
+            Edit e = edit!;
+            IPlayer player = this.player!;
             string text = Video.Overlay.Composer.Text;
             if (Retake.Core.Note.NormalizeText(text).Length == 0)
             {
-                if (fromPress) CancelEdit();
+                if (dropEmpty) CancelEdit();
                 else Video.Overlay.Composer.AskForText();
                 return;
             }
@@ -304,7 +313,13 @@ namespace Retake.Views
         async Task MoveNote(string id, int target)
         {
             NoteState? n = Note(id);
-            if (n == null || !n.Frame.HasValue || player == null || saving || edit != null || target == n.Frame.Value) return;
+            if (n == null || !n.Frame.HasValue || player == null || target == n.Frame.Value) return;
+            if (saving || edit != null)
+            {
+                // Refused while another note is saved or written: the playhead goes back to where the note stays.
+                player.SeekFrame(n.Frame.Value);
+                return;
+            }
             saving = true;
             byte[]? png = null;
             string? imageError = null;
@@ -373,9 +388,9 @@ namespace Retake.Views
         /// </summary>
         async Task Pack()
         {
-            if (state.Video == null || packing) return;
-            if (edit != null) await Commit();
-            if (state.Notes.Count == 0) return;
+            if (state.Video == null || packing || state.Timecode == null) return;
+            await Commit(true);
+            if (state.Notes.Count == 0 || edit != null) return;
             packing = true;
             doneButton.Busy = true;
             ShowDone();

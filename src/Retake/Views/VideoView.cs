@@ -129,7 +129,18 @@ namespace Retake.Views
         public bool Wanted { get => wanted; set { wanted = value; Place(); } }
 
         /// <summary>Hides the overlay for a while (a sheet or a menu covers the video) without forgetting <see cref="Wanted"/>.</summary>
-        public bool Suspended { get => hidden; set { if (hidden == value) return; hidden = value; Place(); } }
+        public bool Suspended
+        {
+            get => hidden;
+            set
+            {
+                if (hidden == value) return;
+                hidden = value;
+                Place();
+                // A note started while a menu was closing could not take the keyboard while the overlay was hidden.
+                if (!value && typing && IsVisible) { Activate(); Composer.FocusField(); }
+            }
+        }
 
         public bool Typing => typing;
 

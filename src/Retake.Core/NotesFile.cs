@@ -185,7 +185,7 @@ namespace Retake.Core
             return note;
         }
 
-        /// <summary>The text of the notes file: header, notes sorted by (frame, order), the extra lines; LF line ends and a trailing newline.</summary>
+        /// <summary>The text of the notes file: header, general notes by order, frame notes by (frame, order), the extra lines; LF line ends and a trailing newline.</summary>
         public string Render()
         {
             TimecodeBase tb = Timecode.BaseFor(Fps);

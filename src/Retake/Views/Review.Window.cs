@@ -33,11 +33,16 @@ namespace Retake.Views
         /// </summary>
         void UpdateCover()
         {
+            // Nothing covers: the overlay shows and the video comes back, also when the video changed meanwhile.
+            if (!window.Root.Overlay.Covering)
+            {
+                Video.Overlay.Suspended = false;
+                if (Video.Frozen) Video.Thaw();
+                return;
+            }
             if (Video.IsFake || !videoLoaded || mpv == null) return;
-            bool cover = window.Root.Overlay.Covering;
-            Video.Overlay.Suspended = cover;
-            if (cover && !Video.Frozen && !freezing) _ = Freeze(null);
-            else if (!cover && Video.Frozen) Video.Thaw();
+            Video.Overlay.Suspended = true;
+            if (!Video.Frozen && !freezing) _ = Freeze(null);
         }
 
         /// <summary>
@@ -55,7 +60,8 @@ namespace Retake.Views
 
         /// <summary>
         /// Takes the still of the video window off the UI thread and puts it in place; <paramref name="then"/> runs
-        /// once it is there, or after 300 ms at the latest (a busy player), so a sheet never waits long.
+        /// once it is there, or after 300 ms at the latest (a busy player), so a sheet never waits long. When the
+        /// opening it was taken for did not happen after all (its anchor went away), the video comes back.
         /// </summary>
         async Task Freeze(Action? then)
         {
@@ -66,25 +72,27 @@ namespace Retake.Views
             }
             freezing = true;
             RawFrame? raw = null;
-            var clock = Stopwatch.StartNew();
-            Task<RawFrame> grab = mpv!.GrabWindow();
             bool late = false;
+            var clock = Stopwatch.StartNew();
             try
             {
+                Task<RawFrame> grab = mpv!.GrabWindow();
                 if (then != null && await Task.WhenAny(grab, Task.Delay(300)) != grab)
                 {
                     late = true;
-                    then();
+                    Action open = then;
                     then = null;
+                    open();
                 }
                 raw = await grab;
             }
             catch (Exception ex) { Log.Warning("still of the video failed: " + ex.Message); }
+            finally { freezing = false; }
             Log.Info("still: " + (raw == null ? "none" : raw.Width + "x" + raw.Height + " " + raw.Format + " stride " + raw.Stride) + " in " + clock.ElapsedMilliseconds + " ms" + (late ? " (late)" : ""));
-            freezing = false;
             bool wanted = then != null || window.Root.Overlay.Covering;
             if (wanted && videoLoaded && !Video.Frozen) Video.Freeze(VideoView.Picture(raw));
             then?.Invoke();
+            if (!window.Root.Overlay.Covering) UpdateCover();
         }
 
         // --- window ---------------------------------------------------------------------------------------------
@@ -106,7 +114,7 @@ namespace Retake.Views
             closing = true;
             try
             {
-                if (edit != null) await Commit(true);
+                await Commit(true);
                 // Full screen keeps the place the window returns to; that place is what is saved.
                 Point place = window.NormalTopLeft;
                 if (window.WindowState == WindowState.Normal && WindowPlace.Savable(place.X, place.Y))

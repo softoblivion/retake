@@ -131,7 +131,8 @@ namespace Retake.Core
             if (name == "." || name == "..") return false;
             if (name!.IndexOf('/') >= 0 || name.IndexOf('\\') >= 0) return false;
             if (name.Length >= 2 && name[1] == ':') return false;
-            return true;
+            // A name from a hand-edited file may hold characters no file name can have (Path.Combine would throw).
+            return name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
         }
 
         /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -38,7 +39,9 @@ namespace Retake.Design.Controls
         Sheet? sheet;
         FrameworkElement? sheetOrigin;
         FrameworkElement? menu;
-        int serial, closing;
+        // Sheets and menus whose close animation is still running; the content stays covered until they are gone.
+        readonly HashSet<FrameworkElement> closing = new HashSet<FrameworkElement>();
+        int serial;
         bool covering;
 
         public event Action<bool>? SheetChanged;
@@ -74,7 +77,7 @@ namespace Retake.Design.Controls
 
         void UpdateCovering()
         {
-            bool now = sheet != null || menu != null || closing > 0;
+            bool now = sheet != null || menu != null || closing.Count > 0;
             if (now == covering) return;
             covering = now;
             CoverChanged?.Invoke(now);
@@ -92,13 +95,15 @@ namespace Retake.Design.Controls
 
         void OpenSheetNow(Sheet next, FrameworkElement? origin)
         {
-            if (sheet != null) RemoveSheet(sheet);
+            if (sheet != null && sheet != next) RemoveSheet(sheet);
             CloseMenu();
             sheet = next;
             sheetOrigin = origin;
             next.CloseRequested = () => CloseSheet();
             next.MaxHeight = Math.Max(120, ActualHeight - TopInset - BottomInset);
-            sheetLayer.Children.Add(next);
+            // A sheet that is reopened while its close animation runs is still in the layer: it is taken back as it is.
+            closing.Remove(next);
+            if (next.Parent != sheetLayer) sheetLayer.Children.Add(next);
             veil.Visibility = Visibility.Visible;
             Motion.To(veil, OpacityProperty, 1, Motion.D3);
             UpdateCovering();
@@ -113,9 +118,14 @@ namespace Retake.Design.Controls
             Sheet? s = sheet;
             if (s == null) return;
             sheet = null;
-            closing++;
+            closing.Add(s);
             Motion.To(veil, OpacityProperty, 0, Motion.D2, null, () => { if (sheet == null) veil.Visibility = Visibility.Collapsed; });
-            s.Close(OriginRect(s, sheetOrigin), () => { RemoveSheet(s); closing--; UpdateCovering(); });
+            s.Close(OriginRect(s, sheetOrigin), () =>
+            {
+                if (!closing.Remove(s)) return; // reopened meanwhile
+                if (sheet != s) RemoveSheet(s);
+                UpdateCovering();
+            });
             sheetOrigin?.Focus();
             SheetChanged?.Invoke(false);
         }
@@ -170,8 +180,8 @@ namespace Retake.Design.Controls
             FrameworkElement? m = menu;
             if (m == null) return;
             menu = null;
-            closing++;
-            ((IPopup)m).Disappear(() => { floatLayer.Children.Remove(m); closing--; UpdateCovering(); });
+            closing.Add(m);
+            ((IPopup)m).Disappear(() => { floatLayer.Children.Remove(m); if (closing.Remove(m)) UpdateCovering(); });
             MenuChanged?.Invoke(false);
         }
 
@@ -208,6 +218,7 @@ namespace Retake.Design.Controls
         public readonly IconButton CloseButton;
         public readonly ScrollViewer Scroller;
         internal Action? CloseRequested;
+        Action? closed;
 
         public Sheet(string title, UIElement body, string closeTip, double width = 560)
         {
@@ -233,13 +244,21 @@ namespace Retake.Design.Controls
             panel.Children.Add(content);
             panel.Clip = clip;
             Children.Add(panel);
-            SizeChanged += (s, e) => { clip.BeginAnimation(RectangleGeometry.RectProperty, null); clip.Rect = new Rect(e.NewSize); clip.RadiusX = clip.RadiusY = 28; };
+            SizeChanged += (s, e) =>
+            {
+                // A size change stops the clip's animation; a close that was running ends at once instead of never.
+                clip.BeginAnimation(RectangleGeometry.RectProperty, null);
+                clip.Rect = new Rect(e.NewSize);
+                clip.RadiusX = clip.RadiusY = 28;
+                EndClose();
+            };
         }
 
         internal void FocusFirst() => Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => MoveFocus(new TraversalRequest(FocusNavigationDirection.First))));
 
         internal void Open(Rect? from)
         {
+            closed = null;
             IsHitTestVisible = true;
             var full = new Rect(RenderSize);
             clip.RadiusX = clip.RadiusY = 28;
@@ -255,14 +274,23 @@ namespace Retake.Design.Controls
         internal void Close(Rect? to, Action done)
         {
             IsHitTestVisible = false;
-            if (!Motion.Enabled) { done(); return; }
+            closed = done;
+            if (!Motion.Enabled) { EndClose(); return; }
             var full = new Rect(RenderSize);
             Rect end = to ?? Shrink(full, 0.94);
             var a = new RectAnimation(clip.Rect, end, Motion.D2) { EasingFunction = Motion.EaseInOut };
-            a.Completed += (s, e) => done();
+            a.Completed += (s, e) => EndClose();
             clip.BeginAnimation(RectangleGeometry.RectProperty, a);
             content.BeginAnimation(OpacityProperty, new DoubleAnimation(0, Motion.D1));
             shadow.BeginAnimation(OpacityProperty, new DoubleAnimation(0, Motion.D1));
+        }
+
+        /// <summary>Runs the close callback once (the animation ended, or a size change stopped it).</summary>
+        void EndClose()
+        {
+            Action? done = closed;
+            closed = null;
+            done?.Invoke();
         }
 
         static Rect Shrink(Rect r, double k) => new Rect(r.X + r.Width * (1 - k) / 2, r.Y + r.Height * (1 - k) / 2, r.Width * k, r.Height * k);

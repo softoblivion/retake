@@ -495,6 +495,114 @@ namespace Retake.Tests
             Check.Equal(new[] { "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
         }
 
+        [Test("session.pack_leaves_out_an_image_it_cannot_read")]
+        public static void PackLeavesOutAnUnreadableImage(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(307, "FIX", "held", SessionCase.Rect(), SessionCase.Png);
+            c.Session.AddNote(2000, "ADD", "free", SessionCase.Rect(), PngB);
+            string zip = c.Path_("dummy_notes", "dummy_notes.zip");
+            using (new FileStream(c.Path_("dummy_notes", "frames", "0-00-12-07_FIX.png"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                PackResult result = c.Session.Pack();
+                Check.Equal(2, result.Notes);
+                Check.Equal(1, result.Frames, "the held image is left out");
+            }
+            using (var archive = new ZipArchive(File.OpenRead(zip), ZipArchiveMode.Read))
+            {
+                Check.Equal(new[] { "notes.txt", "frames/0-01-20-00_ADD.png" }, archive.Entries.Select(e => e.FullName).ToList());
+            }
+        }
+
+        // --- review fixes ------------------------------------------------------------------------------------------------
+
+        [Test("session.an_image_name_with_characters_no_file_can_have_is_not_a_plain_name")]
+        public static void ImageNameWithInvalidCharacters(TestEnv t)
+        {
+            Check.False(NotesLayout.IsPlainName("a|b.png"));
+            Check.False(NotesLayout.IsPlainName("a\"b.png"));
+            Check.False(NotesLayout.IsPlainName("a<b>.png"));
+            Check.True(NotesLayout.IsPlainName("0-00-12-07_FIX.png"));
+            var c = new SessionCase(t);
+            string video = c.MakeVideo();
+            Fx.WriteText(c.Path_("promo_notes", "promo_notes.txt"),
+                "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n0:00:12:07\tFIX\tlogo\trect 0.1,0.1 0.2,0.2\tbad|name.png\n");
+            SessionState data = c.Session.Open(video);
+            Check.Equal("bad|name.png", data.Notes[0].Image);
+            Check.Null(data.Notes[0].ImagePath, "a name that is not plain is never joined to a folder");
+            Check.Equal(0, c.Session.Pack().Frames);
+        }
+
+        [Test("session.add_note_keeps_the_note_when_its_image_cannot_be_written")]
+        public static void AddNoteKeepsTheNoteWithoutItsImage(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(null, "FIX", "first", null, null);
+            Directory.CreateDirectory(c.Path_("dummy_notes", "frames", "0-00-12-07_FIX.png")); // a folder in the place of the image
+            c.Events.Clear();
+            SessionException ex = Check.Throws<SessionException>(() => c.Session.AddNote(307, "FIX", "typed text", SessionCase.Rect(), SessionCase.Png));
+            Check.Contains("The image could not be saved", ex.Message);
+            Check.Equal(1, c.Events.Count, "the state is published before the error");
+            NoteState kept = c.Events[0].Notes[1];
+            Check.Equal("typed text", kept.Text);
+            Check.Null(kept.Image);
+            Check.NotNull(kept.Region);
+            Check.Contains("0:00:12:07\tFIX\ttyped text\trect 0.540,0.360 0.880,0.800\n", NotesTxt(c));
+        }
+
+        [Test("session.update_note_names_a_first_image_only_once_it_is_written")]
+        public static void UpdateNoteNamesAFirstImageOnlyWhenWritten(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            string id = c.Session.AddNote(307, "FIX", "logo", null, null).Notes[0].Id;
+            Directory.CreateDirectory(c.Path_("dummy_notes", "frames", "0-00-12-07_FIX.png"));
+            Check.Throws<SessionException>(() => c.Session.UpdateNote(id, null, SessionCase.Rect(), false, SessionCase.Png));
+            NoteState n = c.Session.GetState().Notes[0];
+            Check.NotNull(n.Region, "the region is kept");
+            Check.Null(n.Image, "no name of a file that does not exist");
+            Check.Contains("0:00:12:07\tFIX\tlogo\trect 0.540,0.360 0.880,0.800\n", NotesTxt(c));
+        }
+
+        [Test("session.an_image_two_notes_share_stays_for_the_other_note")]
+        public static void SharedImageStaysForTheOtherNote(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo();
+            Fx.WriteText(c.Path_("promo_notes", "promo_notes.txt"),
+                "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n"
+                + "0:00:12:07\tFIX\tone\trect 0.1,0.1 0.2,0.2\tshared.png\n"
+                + "0:00:13:00\tADD\ttwo\trect 0.1,0.1 0.2,0.2\tshared.png\n"
+                + "0:00:14:00\tREMOVE\tthree\trect 0.1,0.1 0.2,0.2\tshared.png\n");
+            Fx.WriteBytes(c.Path_("promo_notes", "frames", "shared.png"), SessionCase.Png);
+            SessionState data = c.Session.Open(video);
+            string one = data.Notes[0].Id, two = data.Notes[1].Id, three = data.Notes[2].Id;
+            c.Session.MoveNote(one, 400, null);
+            Check.True(File.Exists(c.Path_("promo_notes", "frames", "shared.png")), "a move copies a shared image");
+            Check.True(File.Exists(c.Path_("promo_notes", "frames", "0-00-16-00_FIX.png")));
+            c.Session.UpdateNote(two, kind: "FIX");
+            Check.True(File.Exists(c.Path_("promo_notes", "frames", "shared.png")), "a kind change copies a shared image");
+            c.Session.RemoveNote(two);
+            Check.True(File.Exists(c.Path_("promo_notes", "frames", "shared.png")), "removing one user keeps the file for the last one");
+            Check.Equal("shared.png", c.Session.GetState().Notes.First(n => n.Id == three).Image);
+            c.Session.RemoveNote(three);
+            Check.False(File.Exists(c.Path_("promo_notes", "frames", "shared.png")), "the last user takes the file with it");
+        }
+
+        [Test("session.remove_note_needs_a_known_rate")]
+        public static void RemoveNoteNeedsAKnownRate(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo("raw.avi", real: false);
+            Fx.WriteText(c.Path_("raw_notes", "raw_notes.txt"), "# Frame Notes 1\n# source: raw.avi\n# fps: 5000\n0:00:00:01\tFIX\tkept\n");
+            SessionState data = c.Session.Open(video);
+            Check.Null(data.Timecode, "the rate of the file is not usable");
+            Check.Throws<SessionException>(() => c.Session.RemoveNote(data.Notes[0].Id));
+            Check.Equal(1, c.Session.GetState().Notes.Count);
+        }
+
         [Test("session.pack_failure_is_reported_and_removes_the_part_file")]
         public static void PackFailure(TestEnv t)
         {

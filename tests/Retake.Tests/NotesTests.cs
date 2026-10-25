@@ -491,7 +491,7 @@ namespace Retake.Tests
             Check.Equal(1, result.Frames);
             Check.False(Directory.Exists(folder));
             Check.Equal(new[] { "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
-            // a package alone (and nothing foreign) is application content too
+            // a package beside a file the app does not write is still refused as a whole
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { 1 });
             Fx.WriteText(Path.Combine(folder, "promo_notes.txt"), Data);
             Fx.WriteBytes(Path.Combine(folder, "other.zip"), new byte[] { 1 });

@@ -31,6 +31,7 @@ namespace Retake.Design.Controls
         readonly Grid frame = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         readonly Border slot = new Border { Margin = new Thickness(Pad) };
         IntPtr hwnd;
+        bool gone;
 
         /// <param name="owner">The main window.</param>
         /// <param name="root">The scaled root of the main window: positions are given in its logical coordinates.</param>
@@ -56,12 +57,14 @@ namespace Retake.Design.Controls
                 long style = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
                 SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(style));
             };
-            owner.Closed += (s, e) => Close();
+            Closed += (s, e) => gone = true;
+            owner.Closed += (s, e) => { if (!gone) Close(); };
         }
 
         /// <summary>Creates the native window ahead of the first use, so the first tooltip shows without a delay.</summary>
         public void Prepare()
         {
+            if (gone) return;
             if (Owner == null && owner.IsLoaded) Owner = owner;
             new WindowInteropHelper(this).EnsureHandle();
         }
@@ -76,7 +79,7 @@ namespace Retake.Design.Controls
         public void ShowAt(FrameworkElement content, Point topLeft, FrameworkElement? coordinates = null)
         {
             FrameworkElement root = coordinates ?? this.root;
-            if (!owner.IsVisible || PresentationSource.FromVisual(root) == null) return;
+            if (gone || !owner.IsVisible || owner.WindowState == WindowState.Minimized || PresentationSource.FromVisual(root) == null) return;
             if (Owner == null) Owner = owner;
             slot.Child = content;
             double f = root.LayoutTransform is ScaleTransform st ? st.ScaleX : 1;
@@ -98,7 +101,7 @@ namespace Retake.Design.Controls
         /// <summary>Hides the element (when it is still the one shown).</summary>
         public void HideIf(FrameworkElement? content)
         {
-            if (content != null && slot.Child != content) return;
+            if (gone || (content != null && slot.Child != content)) return;
             if (IsVisible) Hide();
             slot.Child = null;
         }

@@ -86,6 +86,7 @@ namespace Retake.Views
         string? selectedId;
         Edit? edit;
         bool starting, saving, closing, closed, reverseHeld, freezing, packing;
+        Task? commitTask;
         DateTime keyMapToggled;
         readonly DispatcherTimer settle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
 
@@ -386,7 +387,8 @@ namespace Retake.Views
                 else pendingOpen = path;
                 return;
             }
-            if (edit != null) await Commit();
+            if (edit != null) await Commit(true);
+            if (edit != null) return;
             SessionState st;
             try { st = session.Open(path); }
             catch (SessionException ex)
@@ -442,6 +444,7 @@ namespace Retake.Views
             ShowTime();
             if (start > 0) player!.SeekFrame(start);
             AutomationProperties.SetItemStatus(Video, Video.FrameBox.ToString());
+            UpdateCover();
         }
 
         void OnFailed(string message)
