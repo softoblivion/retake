@@ -76,7 +76,7 @@ namespace Retake.Tests
     /// <summary>Port of tests/test_core_session.py.</summary>
     public static class SessionTests
     {
-        private static readonly string Dot = " " + (char)0xB7 + " ";
+        private static readonly string Em = " " + (char)0x2014 + " ";
 
         private static void AssertCounts(KindCounts c, int fix, int add, int remove)
         {
@@ -105,7 +105,7 @@ namespace Retake.Tests
             Check.Equal(video, v.FilePath);
             Check.Equal(c.Clips, v.Dir);
             Check.Equal(c.Path_("promo_notes", "promo_notes.txt"), v.NotesPath);
-            Check.Equal(c.Path_("promo_notes", "promo_notes.md"), v.ExportPath);
+            Check.Equal(c.Path_("promo_notes", "promo_notes.zip"), v.PackagePath);
             Check.Equal(c.Path_("promo_notes", "frames"), v.ImagesDir);
             Check.Equal(25, data.Timecode!.Base);
             Check.Equal(false, data.Timecode.Drop);
@@ -231,11 +231,10 @@ namespace Retake.Tests
             Check.False(Directory.Exists(c.Path_("dummy_notes", "frames")));
             Check.Equal(c.Text("dummy_notes", "dummy_notes.txt"), c.Session.NotesText());
             Check.True(File.Exists(video));
-            Check.Equal("# dummy.mp4\n\n25 fps" + Dot + "FIX 1" + Dot + "ADD 0" + Dot + "REMOVE 0\n\n- **0:00:12:07**" + Dot + "FIX" + Dot + "logo flickers now\n",
-                c.Text("dummy_notes", "dummy_notes.md"));
-            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal("dummy.mp4\n\n0:00:12:07 FIX" + Em + "logo flickers now\n", c.Session.ReadableText());
+            Check.Equal(new[] { "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
             Check.Equal(c.Path_("dummy_notes"), data.Video!.NotesDir);
-            Check.Equal(c.Path_("dummy_notes", "dummy_notes.md"), data.Video.ExportPath);
+            Check.Equal(c.Path_("dummy_notes", "dummy_notes.zip"), data.Video.PackagePath);
             Check.Equal(c.Path_("dummy_notes", "frames"), data.Video.ImagesDir);
             Check.True(notesFile.Length > 0);
         }
@@ -297,8 +296,8 @@ namespace Retake.Tests
             Check.Equal("# Frame Notes 1\n# source: dummy.mp4\n# fps: 25\n", c.Text("dummy_notes", "dummy_notes.txt"));
             Check.Equal(0, c.Events[c.Events.Count - 1].Notes.Count);
             Check.Equal(2, c.Events.Count);
-            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
-            Check.EndsWith("REMOVE 0\n\nNo notes.\n", c.Text("dummy_notes", "dummy_notes.md"));
+            Check.Equal(new[] { "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal("dummy.mp4\n\nNo notes.\n", c.Session.ReadableText());
         }
 
         [Test("test_core_session.NotesTest.test_update_text_region_and_image")]
@@ -498,11 +497,9 @@ namespace Retake.Tests
             Check.True(logs.Any(l => l.StartsWith("INFO moved the notes of promo.mp4", StringComparison.Ordinal)));
             string folder = c.Path_("promo_notes");
             Check.Equal(new[] { "promo.mp4", "promo_notes" }, c.ClipNames());
-            Check.Equal(new[] { "frames", "promo_notes.md", "promo_notes.txt" }, Fx.Names(folder));
+            Check.Equal(new[] { "frames", "promo_notes.txt" }, Fx.Names(folder));
             Check.Equal(Legacy, Fx.ReadText(Path.Combine(folder, "promo_notes.txt")));
             Check.Equal(SessionCase.Png, File.ReadAllBytes(Path.Combine(folder, "frames", "0-00-12-07_FIX.png")));
-            string export = Fx.ReadText(Path.Combine(folder, "promo_notes.md"));
-            Check.Contains("- **0:00:12:07**" + Dot + "FIX" + Dot + "logo\n  ![](frames/0-00-12-07_FIX.png)\n", export);
             Check.Equal(Path.Combine(folder, "frames", "0-00-12-07_FIX.png"), data.Notes[0].ImagePath);
             // a second open finds the new layout and moves nothing
             Check.True(c.Session.Open(video).Notes.Count > 0);
@@ -514,7 +511,7 @@ namespace Retake.Tests
             var c = new SessionCase(t);
             string video = MakeLegacy(c, false);
             c.Session.Open(video);
-            Check.Equal(new[] { "promo_notes.md", "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
+            Check.Equal(new[] { "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
             string other = c.MakeVideo("other.mp4");
             Fx.WriteBytes(c.Path_("other_notes", "a.png"), SessionCase.Png);
             SessionState data = c.Session.Open(other);
@@ -568,15 +565,13 @@ namespace Retake.Tests
             Check.True(File.Exists(c.Path_("promo_notes", "0-00-12-07_FIX.png")));
         }
 
-        [Test("test_core_session.LayoutTest.test_readable_text_leaves_images_out")]
-        public static void ReadableTextLeavesImagesOut(TestEnv t)
+        [Test("session.readable_text_is_plain_text_without_images")]
+        public static void ReadableTextIsPlain(TestEnv t)
         {
             var c = new SessionCase(t);
+            Check.Equal("", c.Session.ReadableText());
             c.Session.Open(MakeLegacy(c));
-            string text = c.Session.ReadableText();
-            Check.NotContains("![]", text);
-            Check.Contains("- **0:00:40:00**" + Dot + "ADD" + Dot + "subtitle\n", text);
-            Check.Contains("![](frames/", c.Text("promo_notes", "promo_notes.md"));
+            Check.Equal("promo.mp4\n\n0:00:12:07 FIX" + Em + "logo\n0:00:40:00 ADD" + Em + "subtitle\n", c.Session.ReadableText());
         }
 
         [Test("session.set_last_frame_saves_the_settings_at_most_every_two_seconds")]

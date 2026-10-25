@@ -11,7 +11,7 @@ namespace Retake.Core
         /// <summary>The note kinds, in the order the summaries list them.</summary>
         public static readonly string[] Kinds = { "FIX", "ADD", "REMOVE" };
 
-        public Note(string id, int frame, string kind, string text)
+        public Note(string id, int? frame, string kind, string text)
         {
             Id = id;
             Frame = frame;
@@ -22,8 +22,11 @@ namespace Retake.Core
         /// <summary>8 lowercase hex characters; not written to the file.</summary>
         public string Id { get; set; }
 
-        /// <summary>Zero-based frame number.</summary>
-        public int Frame { get; set; }
+        /// <summary>Zero-based frame number; null for a general note about the whole video.</summary>
+        public int? Frame { get; set; }
+
+        /// <summary>True for a general note (no frame, no region, no image).</summary>
+        public bool IsGeneral { get { return Frame == null; } }
 
         /// <summary>One of <see cref="Kinds"/>.</summary>
         public string Kind { get; set; }
@@ -37,7 +40,7 @@ namespace Retake.Core
         /// <summary>File name of the frame image inside the frames folder (no path), or null.</summary>
         public string? Image { get; set; }
 
-        /// <summary>Creation sequence; breaks ties between notes on one frame.</summary>
+        /// <summary>Creation sequence; orders the general notes and breaks ties between notes on one frame.</summary>
         public int Order { get; set; }
 
         /// <summary>One-line form of a note text: tabs, line breaks and the Unicode line separators become spaces, ends stripped.</summary>

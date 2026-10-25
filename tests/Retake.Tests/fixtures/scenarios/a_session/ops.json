@@ -60,7 +60,7 @@
    "op": "add",
    "frame": 2001,
    "kind": "FIX",
-   "text": "",
+   "text": "point at the edge",
    "region": {
     "shape": "point",
     "x0": 0.5,

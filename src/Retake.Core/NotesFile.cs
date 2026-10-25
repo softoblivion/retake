@@ -25,7 +25,11 @@ namespace Retake.Core
         /// <summary>Name of the frame images folder inside the notes folder.</summary>
         public const string FramesDirName = "frames";
 
-        private static readonly string Separator = " " + (char)0xB7 + " ";
+        /// <summary>The timecode column of a general note.</summary>
+        private const string GeneralMark = "-";
+
+        /// <summary>Separator between the kind and the text in the readable text: U+2014 with a space on each side.</summary>
+        private static readonly string Dash = " " + (char)0x2014 + " ";
 
         private static readonly Regex VersionPattern = new Regex(@"\A#\s*Frame Notes\s+([0-9]+)\s*\z", RegexOptions.CultureInvariant);
         private static readonly Regex HeaderPattern = new Regex(@"\A#\s*([A-Za-z_]+)\s*:\s*(.*)\z", RegexOptions.CultureInvariant);
@@ -52,9 +56,10 @@ namespace Retake.Core
         /// <summary>Lines that did not parse, written back after the notes.</summary>
         public List<string> Extra { get; private set; } = new List<string>();
 
-        private static IEnumerable<Note> Sorted(IEnumerable<Note> notes)
+        /// <summary>The order of notes everywhere: general notes by order, then frame notes by (frame, order).</summary>
+        internal static IEnumerable<Note> Sorted(IEnumerable<Note> notes)
         {
-            return notes.OrderBy(n => n.Frame).ThenBy(n => n.Order);
+            return notes.OrderBy(n => n.Frame.HasValue ? 1 : 0).ThenBy(n => n.Frame ?? 0).ThenBy(n => n.Order);
         }
 
         /// <summary>Parses the text of a notes file (a leading byte order mark and CRLF line ends are accepted). Throws <see cref="NotesFormatException"/> when the header, the source or the frame rate is missing or invalid, or the format is newer.</summary>
@@ -128,12 +133,30 @@ namespace Retake.Core
         {
             string[] columns = line.Split('\t');
             if (columns.Length < 2 || columns.Length > 5) return null;
-            int frame;
-            try { frame = Timecode.TimecodeToFrame(columns[0], tb); }
-            catch (FormatException) { return null; }
+            int? frame;
+            if (Py.Strip(columns[0]) == GeneralMark)
+            {
+                frame = null;
+            }
+            else
+            {
+                try { frame = Timecode.TimecodeToFrame(columns[0], tb); }
+                catch (FormatException) { return null; }
+            }
             string kind = Py.Strip(columns[1]).ToUpperInvariant();
             if (Array.IndexOf(Note.Kinds, kind) < 0) return null;
             string body = columns.Length > 2 ? columns[2] : "";
+            if (frame == null)
+            {
+                // A general note has no region and no image: a filled 4th or 5th column keeps the line as it is.
+                for (int i = 3; i < columns.Length; i++)
+                {
+                    if (Py.Strip(columns[i]).Length > 0) return null;
+                }
+                var general = new Note(Note.NewId(takenIds), null, kind, Note.NormalizeText(body));
+                general.Order = order;
+                return general;
+            }
             Region? region = null;
             string? image = null;
             if (columns.Length >= 4 && Py.Strip(columns[3]).Length > 0)
@@ -155,7 +178,7 @@ namespace Retake.Core
             {
                 image = Py.Strip(columns[4]);
             }
-            var note = new Note(Note.NewId(takenIds), frame, kind, Note.NormalizeText(body));
+            var note = new Note(Note.NewId(takenIds), frame.Value, kind, Note.NormalizeText(body));
             note.Region = region;
             note.Image = image;
             note.Order = order;
@@ -177,12 +200,15 @@ namespace Retake.Core
             {
                 var columns = new List<string>
                 {
-                    Timecode.FrameToTimecode(note.Frame, tb),
+                    note.Frame.HasValue ? Timecode.FrameToTimecode(note.Frame.Value, tb) : GeneralMark,
                     note.Kind,
                     Note.NormalizeText(note.Text),
                 };
-                if (note.Region != null) columns.Add(note.Region.ToText());
-                if (!string.IsNullOrEmpty(note.Image)) columns.Add(note.Image!);
+                if (note.Frame.HasValue)
+                {
+                    if (note.Region != null) columns.Add(note.Region.ToText());
+                    if (!string.IsNullOrEmpty(note.Image)) columns.Add(note.Image!);
+                }
                 lines.Add(string.Join("\t", columns));
             }
             lines.AddRange(Extra);
@@ -190,32 +216,40 @@ namespace Retake.Core
         }
 
         /// <summary>
-        /// The readable export: heading, summary line, one list item per note (Markdown). <paramref name="images"/>
-        /// false leaves the image lines out (the clipboard copy). Lines that did not parse are not exported.
+        /// The readable text for chats: the source, a "General" block with one line per general note, one line per frame note.
+        /// Plain text without Markdown or a summary line. Lines that did not parse are not exported.
         /// </summary>
-        public string RenderReadable(bool images = true)
+        public string RenderReadable()
         {
             TimecodeBase tb = Timecode.BaseFor(Fps);
             List<Note> notes = Sorted(Notes).ToList();
-            var summary = new List<string> { Timecode.FormatFps(Fps) + " fps" };
-            if (DurationFrames.HasValue) summary.Add(Timecode.FrameToTimecode(DurationFrames.Value, tb));
-            foreach (string kind in Note.Kinds) summary.Add(kind + " " + notes.Count(n => n.Kind == kind).ToString(CultureInfo.InvariantCulture));
-            var lines = new List<string> { "# " + Note.NormalizeText(Source), "", string.Join(Separator, summary), "" };
-            if (notes.Count == 0) lines.Add("No notes.");
-            foreach (Note note in notes)
+            var lines = new List<string> { Note.NormalizeText(Source), "" };
+            if (notes.Count == 0)
             {
-                var parts = new List<string> { "**" + Timecode.FrameToTimecode(note.Frame, tb) + "**", note.Kind };
-                string text = Note.NormalizeText(note.Text);
-                if (text.Length > 0) parts.Add(text);
-                lines.Add("- " + string.Join(Separator, parts));
-                if (images && !string.IsNullOrEmpty(note.Image) && NotesLayout.IsPlainName(note.Image))
+                lines.Add("No notes.");
+            }
+            else
+            {
+                List<Note> general = notes.Where(n => n.IsGeneral).ToList();
+                List<Note> framed = notes.Where(n => !n.IsGeneral).ToList();
+                if (general.Count > 0)
                 {
-                    string target = FramesDirName + "/" + note.Image;
-                    if (note.Image!.IndexOfAny(new[] { ' ', '(', ')', '<', '>' }) >= 0) target = "<" + target + ">";
-                    lines.Add("  ![](" + target + ")");
+                    lines.Add("General");
+                    foreach (Note note in general) lines.Add(ReadableLine(note.Kind, note.Text));
+                    if (framed.Count > 0) lines.Add("");
+                }
+                foreach (Note note in framed)
+                {
+                    lines.Add(Timecode.FrameToTimecode(note.Frame!.Value, tb) + " " + ReadableLine(note.Kind, note.Text));
                 }
             }
             return string.Join("\n", lines) + "\n";
+        }
+
+        private static string ReadableLine(string kind, string text)
+        {
+            string clean = Note.NormalizeText(text);
+            return clean.Length > 0 ? kind + Dash + clean : kind;
         }
     }
 }

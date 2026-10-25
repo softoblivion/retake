@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 
@@ -94,10 +95,9 @@ namespace Retake.Core
                     throw new SessionException("The video file cannot be read");
                 }
 
-                bool migrated;
                 try
                 {
-                    migrated = NotesLayout.MigrateLayout(path);
+                    NotesLayout.MigrateLayout(path);
                 }
                 catch (NotesLayoutException ex)
                 {
@@ -169,11 +169,7 @@ namespace Retake.Core
                 _settings.TouchRecent(path, _lastFrame);
                 _settings.LastDir = Path.GetDirectoryName(path) ?? "";
                 SaveSettings();
-                if (migrated && exists)
-                {
-                    string? error = WriteExport();
-                    if (error != null) Log.Warning(error);
-                }
+                if (exists) NotesLayout.RemoveLegacyExport(path);
                 Log.Info("opened " + path + " (fps " + (_fps.HasValue ? Timecode.FormatFps(_fps.Value) : "unknown") + ", " + notes.Count + " notes)");
                 return GetState();
             }
@@ -280,7 +276,7 @@ namespace Retake.Core
 
         private static IEnumerable<Note> SortedNotes(IEnumerable<Note> notes)
         {
-            return notes.OrderBy(n => n.Frame).ThenBy(n => n.Order);
+            return NotesFile.Sorted(notes);
         }
 
         /// <summary>The current state (the same object shape as the change callback receives).</summary>
@@ -304,7 +300,7 @@ namespace Retake.Core
                     {
                         Id = note.Id,
                         Frame = note.Frame,
-                        Timecode = tb != null ? Retake.Core.Timecode.FrameToTimecode(note.Frame, tb) : "",
+                        Timecode = (tb != null && note.Frame.HasValue) ? Retake.Core.Timecode.FrameToTimecode(note.Frame.Value, tb) : "",
                         Kind = note.Kind,
                         Text = note.Text,
                         Region = note.Region != null ? note.Region.Normalized() : null,
@@ -327,7 +323,7 @@ namespace Retake.Core
                     FpsSource = _fpsSource,
                     NotesDir = NotesLayout.NotesDirFor(video),
                     NotesPath = NotesLayout.NotesPathFor(video),
-                    ExportPath = NotesLayout.ExportPathFor(video),
+                    PackagePath = NotesLayout.PackagePathFor(video),
                     ImagesDir = NotesLayout.ImagesDirFor(video),
                     LastFrame = _lastFrame,
                 };
@@ -346,13 +342,13 @@ namespace Retake.Core
             }
         }
 
-        /// <summary>The readable export without the image lines, for the clipboard ("" like <see cref="NotesText"/>).</summary>
+        /// <summary>The readable text of the notes, for the clipboard and the package ("" like <see cref="NotesText"/>).</summary>
         public string ReadableText()
         {
             lock (_lock)
             {
                 if (_video == null || _fps == null) return "";
-                return BuildNotesFile().RenderReadable(false);
+                return BuildNotesFile().RenderReadable();
             }
         }
 
@@ -370,27 +366,41 @@ namespace Retake.Core
 
         // --- mutations ----------------------------------------------------------------------------------------------
 
+        private const string RateUnknownAdding = "The frame rate is unknown. Choose it before adding notes";
+        private const string RateUnknownEditing = "The frame rate is unknown. Choose it before editing notes";
+        private const string NoText = "The note has no text";
+        private const string GeneralHasNoFrameToMark = "A general note has no frame to mark";
+        private const string FrameNotValid = "The frame number is not valid";
+
         /// <summary>
-        /// Adds a note at <paramref name="frame"/>; a region may come with the PNG of the frame (without a region the image
-        /// is ignored). Throws <see cref="SessionException"/> for no open video, an unknown frame rate, an unknown kind, a
-        /// negative frame or an invalid region. A failed write keeps the note in memory, publishes the state, then throws.
+        /// Adds a note at <paramref name="frame"/>; a null frame makes a general note about the whole video (no region, no
+        /// image). A region may come with the PNG of the frame (without a region the image is ignored). Throws
+        /// <see cref="SessionException"/> for no open video, an unknown frame rate, an unknown kind, a negative frame, an
+        /// empty text, an invalid region or a region on a general note. A failed write keeps the note in memory, publishes
+        /// the state, then throws.
         /// </summary>
-        public SessionState AddNote(int frame, string kind, string? text, Region? region, byte[]? imagePng)
+        public SessionState AddNote(int? frame, string kind, string? text, Region? region, byte[]? imagePng)
         {
             lock (_lock)
             {
                 RequireVideo();
                 TimecodeBase? tb = Tb();
-                if (tb == null) throw new SessionException("The frame rate is unknown. Choose it before adding notes");
+                if (tb == null) throw new SessionException(RateUnknownAdding);
                 kind = CheckKind(kind);
-                if (frame < 0) throw new SessionException("The frame number is not valid");
-                var note = new Note(Note.NewId(new HashSet<string>(_notes.Select(n => n.Id))), frame, kind, Note.NormalizeText(text ?? ""));
-                note.Region = CheckRegion(region);
+                if (frame.HasValue && frame.Value < 0) throw new SessionException(FrameNotValid);
+                if (!frame.HasValue && region != null) throw new SessionException(GeneralHasNoFrameToMark);
+                string clean = Note.NormalizeText(text ?? "");
+                if (clean.Length == 0) throw new SessionException(NoText);
+                var note = new Note(Note.NewId(new HashSet<string>(_notes.Select(n => n.Id))), frame, kind, clean);
                 note.Order = _nextOrder;
-                if (note.Region != null && imagePng != null && imagePng.Length > 0)
+                if (frame.HasValue)
                 {
-                    note.Image = NotesLayout.ImageName(note, tb, TakenImages(null));
-                    WriteImage(note.Image, imagePng);
+                    note.Region = CheckRegion(region);
+                    if (note.Region != null && imagePng != null && imagePng.Length > 0)
+                    {
+                        note.Image = NotesLayout.ImageName(note, tb, TakenImages(null));
+                        WriteImage(note.Image, imagePng);
+                    }
                 }
                 _nextOrder++;
                 _notes.Add(note);
@@ -399,42 +409,106 @@ namespace Retake.Core
         }
 
         /// <summary>
-        /// Changes the text and / or region of a note. <paramref name="region"/> replaces the region (a new region normally
-        /// comes with a new image); <paramref name="clearRegion"/> removes the region and its image; neither keeps the region.
-        /// A null <paramref name="text"/> keeps the text. Throws <see cref="SessionException"/> for no open video, an unknown
-        /// note, an unknown frame rate or an invalid region.
+        /// Changes the text, region and / or kind of a note. <paramref name="region"/> replaces the region (a new region
+        /// normally comes with a new image); <paramref name="clearRegion"/> removes the region and its image; neither keeps
+        /// the region. A null <paramref name="text"/> keeps the text; a text that is empty after normalising is refused. A
+        /// new <paramref name="kind"/> renames the image of the note to the name of that kind. A call that changes nothing
+        /// writes nothing and publishes nothing. Throws <see cref="SessionException"/> for no open video, an unknown note,
+        /// an unknown frame rate, an unknown kind, an empty text, an invalid region or a region on a general note.
         /// </summary>
-        public SessionState UpdateNote(string noteId, string? text = null, Region? region = null, bool clearRegion = false, byte[]? imagePng = null)
+        public SessionState UpdateNote(string noteId, string? text = null, Region? region = null, bool clearRegion = false,
+                                       byte[]? imagePng = null, string? kind = null)
         {
             lock (_lock)
             {
                 RequireVideo();
                 Note note = Find(noteId);
                 TimecodeBase? tb = Tb();
-                if (tb == null) throw new SessionException("The frame rate is unknown. Choose it before editing notes");
+                if (tb == null) throw new SessionException(RateUnknownEditing);
+                bool general = note.IsGeneral;
+                if (general && region != null) throw new SessionException(GeneralHasNoFrameToMark);
                 if (clearRegion && region != null) throw new SessionException("The region is not valid");
-                Region? newRegion = clearRegion ? null : (region != null ? CheckRegion(region) : note.Region);
+                string? newText = null;
+                if (text != null)
+                {
+                    newText = Note.NormalizeText(text);
+                    if (newText.Length == 0) throw new SessionException(NoText);
+                }
+                string? newKind = kind != null ? CheckKind(kind) : null;
+                Region? newRegion = general || clearRegion ? null : (region != null ? CheckRegion(region) : note.Region);
+                bool kindChanged = newKind != null && newKind != note.Kind;
+                bool textChanged = newText != null && newText != note.Text;
+                bool regionChanged = !SameRegion(newRegion, note.Region);
+                bool imageGiven = newRegion != null && imagePng != null && imagePng.Length > 0;
+                if (!kindChanged && !textChanged && !regionChanged && !imageGiven) return GetState();
+
                 string? oldImage = note.Image;
                 bool dropOldImage = false;
-                if (newRegion == null)
+                string? error = null;
+                bool regionRemoved = clearRegion || (newRegion == null && note.Region != null);
+                if (kindChanged) note.Kind = newKind!;
+                if (regionRemoved)
                 {
                     dropOldImage = oldImage != null;
                     note.Image = null;
                 }
-                else if (imagePng != null && imagePng.Length > 0)
+                else if (newRegion == null)
                 {
-                    if (oldImage == null) note.Image = NotesLayout.ImageName(note, tb, TakenImages(note));
-                    WriteImage(note.Image ?? "", imagePng);
+                    // An image without a region (a hand-edited file) stays, and follows a change of kind.
+                    if (oldImage != null && kindChanged && NotesLayout.IsPlainName(oldImage)) error = RelocateImage(note, tb, null);
+                }
+                else if (oldImage == null)
+                {
+                    if (imageGiven)
+                    {
+                        note.Image = NotesLayout.ImageName(note, tb, TakenImages(note));
+                        error = TryWriteImage(note.Image, imagePng!);
+                    }
+                }
+                else if (kindChanged && NotesLayout.IsPlainName(oldImage))
+                {
+                    error = RelocateImage(note, tb, imageGiven ? imagePng : null);
+                }
+                else if (imageGiven)
+                {
+                    error = TryWriteImage(oldImage, imagePng!);
                 }
                 note.Region = newRegion;
-                if (text != null) note.Text = Note.NormalizeText(text);
-                string? error = WriteNotes();
+                if (newText != null) note.Text = newText;
+                string? writeError = WriteNotes();
                 if (dropOldImage)
                 {
                     DeleteImage(oldImage);
                     PruneImagesDir();
                 }
-                return Finish(error);
+                return Finish(error ?? writeError);
+            }
+        }
+
+        /// <summary>
+        /// Moves a frame note to <paramref name="frame"/>; the note keeps its id, kind, text, region and order. An image
+        /// with a plain name gets the name of the new timecode: the file is renamed, or <paramref name="imagePng"/> (when
+        /// not empty) is written under the new name and the old file deleted. The same frame without a new image changes
+        /// nothing. Throws <see cref="SessionException"/> for no open video, an unknown note, an unknown frame rate, a
+        /// general note or a negative frame. A failed write keeps the move in memory, publishes the state, then throws.
+        /// </summary>
+        public SessionState MoveNote(string noteId, int frame, byte[]? imagePng)
+        {
+            lock (_lock)
+            {
+                RequireVideo();
+                Note note = Find(noteId);
+                TimecodeBase? tb = Tb();
+                if (tb == null) throw new SessionException(RateUnknownEditing);
+                if (note.IsGeneral) throw new SessionException("A general note has no frame");
+                if (frame < 0) throw new SessionException(FrameNotValid);
+                bool hasImage = NotesLayout.IsPlainName(note.Image);
+                bool hasBytes = hasImage && imagePng != null && imagePng.Length > 0;
+                if (frame == note.Frame && !hasBytes) return GetState();
+                note.Frame = frame;
+                string? imageError = hasImage ? RelocateImage(note, tb, hasBytes ? imagePng : null) : null;
+                string? writeError = WriteNotes();
+                return Finish(imageError ?? writeError);
             }
         }
 
@@ -450,6 +524,64 @@ namespace Retake.Core
                 DeleteImage(note.Image);
                 PruneImagesDir();
                 Finish(error);
+            }
+        }
+
+        /// <summary>
+        /// Writes <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.zip</c>: <c>notes.txt</c> (the readable text, CRLF) and
+        /// <c>frames/&lt;image&gt;</c> for every note image that exists. Streams into a part file and replaces the zip in
+        /// one step. Not a mutation: the state does not change and nothing is published. Throws
+        /// <see cref="SessionException"/> for no open video, an unknown frame rate, no notes or a failed write.
+        /// </summary>
+        public PackResult Pack()
+        {
+            lock (_lock)
+            {
+                string video = RequireVideo();
+                if (Tb() == null) throw new SessionException(RateUnknownEditing);
+                if (_notes.Count == 0) throw new SessionException("There are no notes to pack");
+                string zip = NotesLayout.PackagePathFor(video);
+                string part = zip + ".part";
+                var images = new List<KeyValuePair<string, string>>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (Note note in SortedNotes(_notes))
+                {
+                    string? file = ImageFile(note.Image);
+                    if (file == null || !File.Exists(file) || !seen.Add(note.Image!)) continue;
+                    images.Add(new KeyValuePair<string, string>(NotesFile.FramesDirName + "/" + note.Image, file));
+                }
+                byte[] text = new UTF8Encoding(false).GetBytes(BuildNotesFile().RenderReadable().Replace("\n", "\r\n"));
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(zip)!);
+                    using (var stream = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
+                        {
+                            ZipArchiveEntry notesEntry = archive.CreateEntry("notes.txt", CompressionLevel.Optimal);
+                            using (Stream target = notesEntry.Open()) target.Write(text, 0, text.Length);
+                            foreach (KeyValuePair<string, string> image in images)
+                            {
+                                ZipArchiveEntry entry = archive.CreateEntry(image.Key, CompressionLevel.NoCompression);
+                                using (Stream target = entry.Open())
+                                using (var source = new FileStream(image.Value, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                                {
+                                    source.CopyTo(target);
+                                }
+                            }
+                        }
+                        stream.Flush(true);
+                    }
+                    Paths.ReplaceFile(part, zip);
+                }
+                catch (Exception ex) when (IsFileError(ex) || ex is InvalidDataException)
+                {
+                    try { File.Delete(part); } catch (Exception) { }
+                    Log.Error("cannot write " + zip, ex);
+                    throw new SessionException("The notes could not be packed into " + zip);
+                }
+                Log.Info("packed " + _notes.Count + " notes and " + images.Count + " frames into " + zip);
+                return new PackResult { Path = zip, Notes = _notes.Count, Frames = images.Count };
             }
         }
 
@@ -514,23 +646,60 @@ namespace Retake.Core
                 return "The notes could not be saved to " + path;
             }
             _notesFileExists = true;
-            return WriteExport();
+            NotesLayout.RemoveLegacyExport(_video);
+            return null;
         }
 
-        /// <summary>Writes the readable export next to the data file. Returns an error sentence or null.</summary>
-        private string? WriteExport()
+        private static bool SameRegion(Region? a, Region? b)
         {
-            if (_video == null || _fps == null) return null;
-            string path = NotesLayout.ExportPathFor(_video);
+            return a == null ? b == null : a.Equals(b);
+        }
+
+        private string? TryWriteImage(string name, byte[] data)
+        {
             try
             {
-                Paths.AtomicWriteText(path, BuildNotesFile().RenderReadable());
+                WriteImage(name, data);
+                return null;
+            }
+            catch (SessionException ex)
+            {
+                return ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// Gives the image of the note the name its current kind and frame call for (names of other notes taken): the bytes
+        /// are written under the new name and the old file deleted, or, without bytes, the file is renamed. A failed rename
+        /// is logged and the old name stays. Returns an error sentence for a failed write, else null.
+        /// </summary>
+        private string? RelocateImage(Note note, TimecodeBase tb, byte[]? bytes)
+        {
+            string old = note.Image!;
+            string newName = NotesLayout.ImageName(note, tb, TakenImages(note));
+            bool sameFile = string.Equals(old, newName, StringComparison.OrdinalIgnoreCase);
+            if (bytes != null && bytes.Length > 0)
+            {
+                string? error = TryWriteImage(newName, bytes);
+                if (error != null) return error;
+                note.Image = newName;
+                if (!sameFile) DeleteImage(old);
+                return null;
+            }
+            if (string.Equals(old, newName, StringComparison.Ordinal)) return null;
+            string? source = ImageFile(old);
+            string? target = ImageFile(newName);
+            if (source == null || target == null) return null;
+            try
+            {
+                if (File.Exists(source)) NativeFile.Replace(source, target);
             }
             catch (Exception ex) when (IsFileError(ex))
             {
-                Log.Error("cannot write " + path, ex);
-                return "The notes could not be saved to " + path;
+                Log.Warning("cannot rename image " + old + " to " + newName + ": " + ex.Message);
+                return null;
             }
+            note.Image = newName;
             return null;
         }
 

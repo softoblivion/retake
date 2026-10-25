@@ -5,4 +5,8 @@
     <RootNamespace>Retake.Core</RootNamespace>
     <AssemblyName>Retake.Core</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- ZipArchive for the notes package. -->
+    <Reference Include="System.IO.Compression" />
+  </ItemGroup>
 </Project>

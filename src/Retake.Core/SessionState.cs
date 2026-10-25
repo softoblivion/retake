@@ -84,7 +84,7 @@ namespace Retake.Core
 
         public string NotesDir { get; set; } = "";
         public string NotesPath { get; set; } = "";
-        public string ExportPath { get; set; } = "";
+        public string PackagePath { get; set; } = "";
         public string ImagesDir { get; set; } = "";
 
         /// <summary>Last playback position, a frame number.</summary>
@@ -95,9 +95,14 @@ namespace Retake.Core
     public sealed class NoteState
     {
         public string Id { get; set; } = "";
-        public int Frame { get; set; }
 
-        /// <summary>The timecode of the frame ("" while the frame rate is unknown).</summary>
+        /// <summary>The frame number, or null for a general note.</summary>
+        public int? Frame { get; set; }
+
+        /// <summary>True for a general note (no frame, no region, no image).</summary>
+        public bool IsGeneral { get { return Frame == null; } }
+
+        /// <summary>The timecode of the frame ("" for a general note and while the frame rate is unknown).</summary>
         public string Timecode { get; set; } = "";
 
         public string Kind { get; set; } = "";
@@ -113,7 +118,20 @@ namespace Retake.Core
         public int Order { get; set; }
     }
 
-    /// <summary>The state published after every change: the video, the timecode rules, the notes sorted by frame then creation order and the counts.</summary>
+    /// <summary>What <see cref="Session.Pack"/> wrote.</summary>
+    public sealed class PackResult
+    {
+        /// <summary>Full path of the zip file.</summary>
+        public string Path { get; set; } = "";
+
+        /// <summary>Number of notes in the package.</summary>
+        public int Notes { get; set; }
+
+        /// <summary>Number of frame images in the package.</summary>
+        public int Frames { get; set; }
+    }
+
+    /// <summary>The state published after every change: the video, the timecode rules, the notes (general notes first, then by frame and creation order) and the counts.</summary>
     public sealed class SessionState
     {
         /// <summary>The open video, or null.</summary>

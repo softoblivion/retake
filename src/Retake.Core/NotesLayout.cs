@@ -80,10 +80,36 @@ namespace Retake.Core
             return Path.Combine(NotesDirFor(video), StemOf(video) + "_notes.txt");
         }
 
-        /// <summary>The readable export <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.md</c>.</summary>
-        public static string ExportPathFor(string video)
+        /// <summary>The Markdown export <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.md</c> written by Frame Notes 1.x and Retake 2.0; Retake only removes it.</summary>
+        public static string LegacyExportPathFor(string video)
         {
             return Path.Combine(NotesDirFor(video), StemOf(video) + "_notes.md");
+        }
+
+        /// <summary>The package <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.zip</c> written by <see cref="Session.Pack"/>.</summary>
+        public static string PackagePathFor(string video)
+        {
+            return Path.Combine(NotesDirFor(video), StemOf(video) + "_notes.zip");
+        }
+
+        /// <summary>
+        /// Deletes the stale legacy export of the video when its data file exists. True when a file was removed. A failed
+        /// delete is logged as a warning and never thrown; a folder that holds only the export is left alone.
+        /// </summary>
+        internal static bool RemoveLegacyExport(string video)
+        {
+            string export = LegacyExportPathFor(video);
+            try
+            {
+                if (!File.Exists(NotesPathFor(video)) || !File.Exists(export)) return false;
+                File.Delete(export);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                Log.Warning("cannot delete " + export + ": " + ex.Message);
+                return false;
+            }
         }
 
         /// <summary>The frame images folder <c>&lt;stem&gt;_notes\frames</c>.</summary>
@@ -114,7 +140,8 @@ namespace Retake.Core
         /// </summary>
         public static string ImageName(Note note, TimecodeBase tb, IEnumerable<string> taken)
         {
-            string stem = Timecode.FrameToTimecode(note.Frame, tb).Replace(':', '-').Replace(';', '-');
+            if (note.Frame == null) throw new ArgumentException("A general note has no frame image");
+            string stem = Timecode.FrameToTimecode(note.Frame.Value, tb).Replace(':', '-').Replace(';', '-');
             var used = new HashSet<string>(taken.Select(n => n.ToLowerInvariant()));
             string name = stem + "_" + note.Kind + ".png";
             int counter = 2;
@@ -287,13 +314,15 @@ namespace Retake.Core
         {
             string folder = NotesDirFor(video);
             string dataFile = NotesPathFor(video);
-            string export = ExportPathFor(video);
+            string export = LegacyExportPathFor(video);
+            string package = PackagePathFor(video);
             string legacy = LegacyNotesPathFor(video);
             string frames = ImagesDirFor(video);
             string videoName = Path.GetFileName(video);
             string folderName = Path.GetFileName(folder);
             string dataName = Path.GetFileName(dataFile);
             string exportName = Path.GetFileName(export);
+            string packageName = Path.GetFileName(package);
 
             bool folderExists = Exists(folder);
             if (folderExists && !IsPlainDir(folder))
@@ -332,8 +361,8 @@ namespace Retake.Core
                         }
                         if (!IsPlainFile(entry)) throw new NotesLayoutException(foreign);
                         string lower = name.ToLowerInvariant();
-                        if (lower == dataName.ToLowerInvariant() || lower == exportName.ToLowerInvariant()
-                            || AllowedLeftover(name, dataName) || AllowedLeftover(name, exportName))
+                        if (lower == dataName.ToLowerInvariant() || lower == exportName.ToLowerInvariant() || lower == packageName.ToLowerInvariant()
+                            || AllowedLeftover(name, dataName) || AllowedLeftover(name, exportName) || AllowedLeftover(name, packageName))
                         {
                             files.Add(entry);
                             if (IsPng(name)) pngs++;
@@ -356,13 +385,14 @@ namespace Retake.Core
                 notesCount = legacyNf.Notes.Count;
             }
 
-            // Images first, the data file last: an interrupted delete keeps the notes readable.
+            // Images first, then the package and the export, the data file last: an interrupted delete keeps the notes readable.
             string dataLower = dataName.ToLowerInvariant();
             string exportLower = exportName.ToLowerInvariant();
+            string packageLower = packageName.ToLowerInvariant();
             files = files.OrderBy(p =>
             {
                 string n = Path.GetFileName(p).ToLowerInvariant();
-                return n == dataLower ? 2 : n == exportLower ? 1 : 0;
+                return n == dataLower ? 3 : n == exportLower ? 2 : n == packageLower ? 1 : 0;
             }).ToList();
             try
             {

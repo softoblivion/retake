@@ -135,7 +135,7 @@ namespace Retake.Tests
         [Test("roundtrip.resave_of_a_1x_folder_changes_nothing_120fps")]
         public static void ResaveE(TestEnv t) { RunScenario(t, "r_resave_120fps"); }
 
-        [Test("roundtrip.parse_and_render_of_every_1x_data_file_and_export_are_identical")]
+        [Test("roundtrip.parse_and_render_of_every_1x_data_file_are_identical")]
         public static void ParseRenderEveryFile(TestEnv t)
         {
             int checkedFiles = 0;
@@ -148,9 +148,6 @@ namespace Retake.Tests
                 NotesFile nf = NotesFile.Parse(text);
                 string rendered = nf.Render();
                 if (rendered != text) throw new AssertException(txt + ": " + Describe(bytes, new UTF8Encoding(false).GetBytes(rendered)));
-                string mdPath = Path.ChangeExtension(txt, ".md");
-                string md = new UTF8Encoding(false, true).GetString(File.ReadAllBytes(mdPath));
-                if (nf.RenderReadable() != md) throw new AssertException(mdPath + ": export differs");
                 checkedFiles++;
             }
             Check.True(checkedFiles >= 6, "files checked: " + checkedFiles);

@@ -9,8 +9,6 @@ namespace Retake.Tests
     /// <summary>Port of tests/test_core_notes.py: regions, the notes file round trip, image names, the readable export and the notes folder.</summary>
     public static class NotesTests
     {
-        private static readonly string Dot = " " + (char)0xB7 + " ";
-
         private const string Sample =
             "# Frame Notes 1\n"
             + "# source: promo_v3.mp4\n"
@@ -134,7 +132,8 @@ namespace Retake.Tests
             string video = @"D:\clips\promo_v3.mp4";
             Check.Equal(@"D:\clips\promo_v3_notes", NotesLayout.NotesDirFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.txt", NotesLayout.NotesPathFor(video));
-            Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.md", NotesLayout.ExportPathFor(video));
+            Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.md", NotesLayout.LegacyExportPathFor(video));
+            Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.zip", NotesLayout.PackagePathFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes\frames", NotesLayout.ImagesDirFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes.txt", NotesLayout.LegacyNotesPathFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.txt", NotesLayout.NotesPathFor("D:/clips/promo_v3.mp4"));
@@ -272,39 +271,147 @@ namespace Retake.Tests
                 taken.Add(value);
             }
         }
+        // --- general notes ------------------------------------------------------------------------------------------
 
-        // --- readable export ----------------------------------------------------------------------------------------
+        private const string Header = "# Frame Notes 1\n# source: promo_v3.mp4\n# fps: 25\n# duration: 0:01:32:10\n";
 
-        [Test("test_core_notes.ReadableTest.test_export_of_the_sample")]
-        public static void ExportOfTheSample(TestEnv t)
+        [Test("notes.general_line_parses_renders_and_comes_first")]
+        public static void GeneralLineParsesRendersAndComesFirst(TestEnv t)
+        {
+            string text = Header
+                + "-\tFIX\tmusic is too loud overall\n"
+                + "  -  \tADD\tsecond general note\n"
+                + "0:00:12:07\tFIX\tlogo flickers\trect 0.540,0.360 0.880,0.800\t0-00-12-07_FIX.png\n";
+            NotesFile nf = NotesFile.Parse(text);
+            Check.Equal(3, nf.Notes.Count);
+            Check.Equal(0, nf.Extra.Count);
+            Check.True(nf.Notes[0].IsGeneral);
+            Check.Null(nf.Notes[0].Frame);
+            Check.Equal("FIX", nf.Notes[0].Kind);
+            Check.Equal("music is too loud overall", nf.Notes[0].Text);
+            Check.Null(nf.Notes[0].Region);
+            Check.Null(nf.Notes[0].Image);
+            Check.True(nf.Notes[1].IsGeneral);
+            Check.Equal("second general note", nf.Notes[1].Text);
+            Check.False(nf.Notes[2].IsGeneral);
+            Check.Equal(307, nf.Notes[2].Frame);
+            Check.Equal(new[] { 1, 2, 3 }, nf.Notes.Select(n => n.Order).ToList());
+            Check.Equal(Header + "-\tFIX\tmusic is too loud overall\n-\tADD\tsecond general note\n"
+                + "0:00:12:07\tFIX\tlogo flickers\trect 0.540,0.360 0.880,0.800\t0-00-12-07_FIX.png\n", nf.Render());
+            // render and parse are inverses once the general lines are in front
+            Check.Equal(nf.Render(), NotesFile.Parse(nf.Render()).Render());
+        }
+
+        [Test("notes.general_line_after_the_frame_notes_as_frame_notes_1x_writes_it")]
+        public static void GeneralLineAfterTheFrameNotes(TestEnv t)
+        {
+            // Frame Notes 1.x keeps the general line as an unparsed line and writes it back after its notes.
+            string text = Header
+                + "0:00:40:00\tADD\tsubtitle\n"
+                + "0:00:12:07\tFIX\tlogo\n"
+                + "-\tREMOVE\tcut the intro\n";
+            NotesFile nf = NotesFile.Parse(text);
+            Check.Equal(0, nf.Extra.Count);
+            Check.Equal(3, nf.Notes.Count);
+            Check.True(nf.Notes[2].IsGeneral);
+            Check.Equal(Header + "-\tREMOVE\tcut the intro\n0:00:12:07\tFIX\tlogo\n0:00:40:00\tADD\tsubtitle\n", nf.Render());
+        }
+
+        [Test("notes.general_line_with_region_or_image_column_goes_to_extra")]
+        public static void GeneralLineWithRegionOrImageGoesToExtra(TestEnv t)
+        {
+            string withRegion = "-\tFIX\tx\trect 0.100,0.100 0.200,0.200";
+            string withImage = "-\tFIX\tx\tshot.png";
+            string withBoth = "-\tFIX\tx\trect 0.100,0.100 0.200,0.200\tshot.png";
+            string emptyImageColumn = "-\tFIX\tx\t\t\t";
+            NotesFile nf = NotesFile.Parse(Header + withRegion + "\n" + withImage + "\n" + withBoth + "\n");
+            Check.Equal(0, nf.Notes.Count);
+            Check.Equal(new[] { withRegion, withImage, withBoth }, nf.Extra);
+            Check.Equal(Header + withRegion + "\n" + withImage + "\n" + withBoth + "\n", nf.Render());
+            // six columns never parse; empty 4th and 5th columns are accepted
+            Check.Equal(1, NotesFile.Parse(Header + emptyImageColumn + "\n").Extra.Count);
+            nf = NotesFile.Parse(Header + "-\tFIX\tx\t\t\n-\tADD\n-\tADD\ty\t\n");
+            Check.Equal(3, nf.Notes.Count);
+            Check.Equal(0, nf.Extra.Count);
+            Check.Equal("", nf.Notes[1].Text);
+            Check.Equal(Header + "-\tFIX\tx\n-\tADD\t\n-\tADD\ty\n", nf.Render());
+        }
+
+        [Test("notes.general_notes_sort_before_frame_notes_by_order")]
+        public static void GeneralNotesSortBeforeFrameNotes(TestEnv t)
+        {
+            var nf = new NotesFile("v.mp4", 25.0, null);
+            nf.Notes.Add(new Note("00000001", 0, "ADD", "frame zero") { Order = 1 });
+            nf.Notes.Add(new Note("00000002", null, "FIX", "late general") { Order = 9 });
+            nf.Notes.Add(new Note("00000003", null, "ADD", "early general\ttext") { Order = 4 });
+            nf.Notes.Add(new Note("00000004", 5, "FIX", "frame five") { Order = 2, Image = "5.png" });
+            string[] lines = nf.Render().Split('\n');
+            Check.Equal("-\tADD\tearly general text", lines[3]);
+            Check.Equal("-\tFIX\tlate general", lines[4]);
+            Check.Equal("0:00:00:00\tADD\tframe zero", lines[5]);
+            Check.Equal("0:00:00:05\tFIX\tframe five\t5.png", lines[6]);
+            // a general note never writes a region or an image
+            var general = new Note("00000005", null, "FIX", "g") { Order = 1, Region = Region.CreatePoint(0.5, 0.5), Image = "x.png" };
+            var other = new NotesFile("v.mp4", 25.0, null);
+            other.Notes.Add(general);
+            Check.Equal("# Frame Notes 1\n# source: v.mp4\n# fps: 25\n-\tFIX\tg\n", other.Render());
+        }
+
+        // --- readable text --------------------------------------------------------------------------------------------
+
+        private static readonly string Em = " " + (char)0x2014 + " ";
+
+        [Test("notes.readable_text_of_the_sample_has_no_markdown_and_no_images")]
+        public static void ReadableTextOfTheSample(TestEnv t)
         {
             NotesFile nf = NotesFile.Parse(Sample);
             Check.Equal(
-                "# promo_v3.mp4\n"
+                "promo_v3.mp4\n"
                 + "\n"
-                + "25 fps" + Dot + "0:01:32:10" + Dot + "FIX 1" + Dot + "ADD 1" + Dot + "REMOVE 1\n"
-                + "\n"
-                + "- **0:00:12:07**" + Dot + "FIX" + Dot + "logo flickers for two frames\n"
-                + "  ![](frames/0-00-12-07_FIX.png)\n"
-                + "- **0:00:40:00**" + Dot + "ADD" + Dot + "subtitle for the second speaker\n"
-                + "- **0:01:02:15**" + Dot + "REMOVE" + Dot + "second take of the handshake\n"
-                + "  ![](frames/0-01-02-15_REMOVE.png)\n",
+                + "0:00:12:07 FIX" + Em + "logo flickers for two frames\n"
+                + "0:00:40:00 ADD" + Em + "subtitle for the second speaker\n"
+                + "0:01:02:15 REMOVE" + Em + "second take of the handshake\n",
                 nf.RenderReadable());
-            Check.NotContains("![]", nf.RenderReadable(false));
         }
 
-        [Test("test_core_notes.ReadableTest.test_empty_unknown_duration_drop_frame_and_odd_names")]
-        public static void ExportEmptyDropAndOddNames(TestEnv t)
+        [Test("notes.readable_text_with_general_notes")]
+        public static void ReadableTextWithGeneralNotes(TestEnv t)
+        {
+            var nf = new NotesFile("promo_v3.mp4", 25.0, 2310);
+            nf.Notes.Add(new Note("a", 1000, "ADD", "subtitle for the second speaker") { Order = 1 });
+            nf.Notes.Add(new Note("b", 307, "FIX", "logo flickers for two frames") { Order = 2 });
+            nf.Notes.Add(new Note("c", null, "FIX", "music is too loud overall") { Order = 3 });
+            Check.Equal(
+                "promo_v3.mp4\n"
+                + "\n"
+                + "General\n"
+                + "FIX" + Em + "music is too loud overall\n"
+                + "\n"
+                + "0:00:12:07 FIX" + Em + "logo flickers for two frames\n"
+                + "0:00:40:00 ADD" + Em + "subtitle for the second speaker\n",
+                nf.RenderReadable());
+            // general notes only: no blank line after the block
+            nf.Notes.RemoveAll(n => !n.IsGeneral);
+            nf.Notes.Add(new Note("d", null, "ADD", "second\ngeneral") { Order = 4 });
+            Check.Equal("promo_v3.mp4\n\nGeneral\nFIX" + Em + "music is too loud overall\nADD" + Em + "second general\n", nf.RenderReadable());
+        }
+
+        [Test("notes.readable_text_empty_text_no_notes_drop_frame_and_extra_lines")]
+        public static void ReadableTextEmptyNoNotesDropFrameAndExtra(TestEnv t)
         {
             var nf = new NotesFile("clip.mp4", 30000.0 / 1001.0, null);
-            Check.Equal("# clip.mp4\n\n29.97 fps" + Dot + "FIX 0" + Dot + "ADD 0" + Dot + "REMOVE 0\n\nNo notes.\n", nf.RenderReadable());
+            Check.Equal("clip.mp4\n\nNo notes.\n", nf.RenderReadable());
             nf.Notes.Add(new Note("a", 1800, "ADD", "") { Image = "my frame.png" });
-            nf.Notes.Add(new Note("b", 1, "FIX", "x") { Image = "..\\y.png" });
+            nf.Notes.Add(new Note("b", 1, "FIX", "  x\ty ") { Order = 2 });
+            nf.Notes.Add(new Note("c", null, "REMOVE", "   ") { Order = 3 });
             nf.Extra.Add("hand written");
             string text = nf.RenderReadable();
-            Check.Contains("- **0;00;00;01**" + Dot + "FIX" + Dot + "x\n- **0;01;00;02**" + Dot + "ADD\n  ![](<frames/my frame.png>)\n", text);
+            Check.Equal("clip.mp4\n\nGeneral\nREMOVE\n\n0;00;00;01 FIX" + Em + "x y\n0;01;00;02 ADD\n", text);
             Check.NotContains("hand written", text);
+            Check.NotContains("![", text);
+            Check.NotContains("\r", text);
         }
+
 
         // --- the notes folder ---------------------------------------------------------------------------------------
 
@@ -360,6 +467,43 @@ namespace Retake.Tests
             Check.Equal(new[] { "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
             NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
             Check.Equal("There are no notes for promo.mp4.", ex.Message);
+        }
+
+        [Test("notes.summary_counts_general_notes_as_notes")]
+        public static void SummaryCountsGeneralNotes(TestEnv t)
+        {
+            string video = MakeVideo(t);
+            Fx.WriteText(t.Combine("promo_notes", "promo_notes.txt"), Data + "-\tFIX\tgeneral one\n-\tADD\tgeneral two\n");
+            NotesSummary s = NotesLayout.NotesSummaryFor(video)!;
+            Check.Equal(4, s.Notes);
+            Check.Equal(1, s.Frames);
+        }
+
+        [Test("notes.delete_removes_the_package_and_the_legacy_export_with_the_folder")]
+        public static void DeleteRemovesPackageAndExport(TestEnv t)
+        {
+            string video = MakeVideo(t);
+            string folder = MakeReview(t);
+            Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { (byte)'P', (byte)'K' });
+            Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip.part"), new byte[0]);
+            DeleteResult result = NotesLayout.DeleteNotes(video);
+            Check.Equal(2, result.Notes);
+            Check.Equal(1, result.Frames);
+            Check.False(Directory.Exists(folder));
+            Check.Equal(new[] { "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
+            // a package alone (and nothing foreign) is application content too
+            Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { 1 });
+            Fx.WriteText(Path.Combine(folder, "promo_notes.txt"), Data);
+            Fx.WriteBytes(Path.Combine(folder, "other.zip"), new byte[] { 1 });
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            Check.Equal("The notes folder promo_notes holds other files. Delete it by hand.", ex.Message);
+            Check.True(File.Exists(Path.Combine(folder, "promo_notes.zip")));
+        }
+
+        [Test("notes.image_name_of_a_general_note_is_refused")]
+        public static void ImageNameOfAGeneralNoteIsRefused(TestEnv t)
+        {
+            Check.Throws<ArgumentException>(() => NotesLayout.ImageName(new Note("a", null, "FIX", "x"), Timecode.BaseFor(25), new string[0]));
         }
 
         [Test("test_core_notes.FolderTest.test_delete_legacy_layout")]

@@ -6,6 +6,9 @@
     <AssemblyName>Retake.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Retake.Core\Retake.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
