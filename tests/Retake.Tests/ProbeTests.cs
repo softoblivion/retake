@@ -208,7 +208,7 @@ namespace Retake.Tests
         }
     }
 
-    /// <summary>Port of tests/test_core_probe.py.</summary>
+    /// <summary>The container probe; the test names follow the 1.x suite they match.</summary>
     public static class ProbeTests
     {
         private static string Write(TestEnv t, string name, byte[] data)

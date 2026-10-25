@@ -4,7 +4,7 @@ using Retake.Core;
 
 namespace Retake.Tests
 {
-    /// <summary>Port of tests/test_core_timecode.py: the reference values of docs/CORE.md.</summary>
+    /// <summary>Timecodes: the reference values of docs/CORE.md; the test names follow the 1.x suite they match.</summary>
     public static class TimecodeTests
     {
         private static readonly object[][] Table =

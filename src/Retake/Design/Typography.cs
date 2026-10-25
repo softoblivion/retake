@@ -49,24 +49,25 @@ namespace Retake.Design
     }
 
     /// <summary>
-    /// The type scale of the kit with fixed sizes (LIQUID_UI.md 3.1): seven roles plus the size variants
-    /// label-s and mono-s. Sora for text, Geist Mono for timecodes, versions and fields, both embedded as static
-    /// per-weight files (fonts\*.ttf); WPF picks the file by FontWeight. Every text of the window is one of these
-    /// roles; nothing sets its own size. WPF has no letter-spacing, so the kit's tracking is left out.
+    /// The type scale with fixed sizes: the seven roles of the kit (LIQUID_UI.md 3.1) plus the size variants
+    /// label-s and mono-s, one step larger than the kit's values so that the review text reads at arm's length on
+    /// a fixed 1280 x 800 window. Sora for text, Geist Mono for timecodes, versions and fields, both embedded as
+    /// static per-weight files (fonts\*.ttf); WPF picks the file by FontWeight. Every text of the window is one of
+    /// these roles; nothing sets its own size. WPF has no letter-spacing, so the kit's tracking is left out.
     /// </summary>
     public static class Typography
     {
         public static readonly TypeRole
-            Display = new TypeRole("display", 650, 20, 1.2),
-            Title = new TypeRole("title", 650, 16, 1.25),
-            Section = new TypeRole("section", 600, 11, 1.3, caps: true),
-            Body = new TypeRole("body", 450, 13, 1.45),
-            BodyMedium = new TypeRole("body-medium", 550, 13, 1.45),
-            Label = new TypeRole("label", 550, 12.5, 1.3),
-            LabelS = new TypeRole("label-s", 550, 11.5, 1.3),
-            Caption = new TypeRole("caption", 450, 11.5, 1.35),
-            Mono = new TypeRole("mono", 450, 12, 1.4, mono: true),
-            MonoS = new TypeRole("mono-s", 450, 11, 1.3, mono: true);
+            Display = new TypeRole("display", 650, 22, 1.2),
+            Title = new TypeRole("title", 650, 17, 1.25),
+            Section = new TypeRole("section", 600, 11.5, 1.3, caps: true),
+            Body = new TypeRole("body", 450, 14, 1.45),
+            BodyMedium = new TypeRole("body-medium", 550, 14, 1.45),
+            Label = new TypeRole("label", 550, 13.5, 1.3),
+            LabelS = new TypeRole("label-s", 550, 12.5, 1.3),
+            Caption = new TypeRole("caption", 450, 12.5, 1.35),
+            Mono = new TypeRole("mono", 450, 13, 1.4, mono: true),
+            MonoS = new TypeRole("mono-s", 450, 12, 1.3, mono: true);
 
         public static readonly TypeRole[] All = { Display, Title, Section, Body, BodyMedium, Label, LabelS, Caption, Mono, MonoS };
 

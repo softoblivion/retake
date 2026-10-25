@@ -220,7 +220,7 @@ namespace Retake.Design.Controls
             Kind = kind;
             double box = size == ButtonSize.L ? 32 : size == ButtonSize.M ? 28 : 24;
             double iconSize = size == ButtonSize.L ? 18 : size == ButtonSize.M ? 16 : 14;
-            if (kind == IconKind.Title || kind == IconKind.TitleClose) { Width = 30; Height = 28; iconSize = icon == Icons.Gear ? 17 : 15; }
+            if (kind == IconKind.Title || kind == IconKind.TitleClose) { Width = 34; Height = 32; iconSize = icon == Icons.Gear ? 19 : 17; }
             else Width = Height = box;
             AutomationProperties.SetName(this, name);
             var root = new Grid();

@@ -73,7 +73,7 @@ namespace Retake.Tests
         }
     }
 
-    /// <summary>Port of tests/test_core_session.py.</summary>
+    /// <summary>The session; the test names follow the 1.x suite they match.</summary>
     public static class SessionTests
     {
         private static readonly string Em = " " + (char)0x2014 + " ";

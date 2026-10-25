@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -18,16 +19,19 @@ namespace Retake.Views
     /// The mini timeline across the window: a ruler with timecodes at a step chosen from the zoom, the playhead,
     /// one stem per noted frame with a tag per note (the first words of its text in the note colour; chips when
     /// the next stem is too close; three tags at most, the third counts the rest), a scroll bar while zoomed.
-    /// Wheel zooms around the pointer, Shift + wheel pans, 0 resets (the window's key); a press in the ruler or the
-    /// empty track scrubs; a click on a tag selects the note, a double click edits it; resting on a tag shows a
-    /// hover card with the timecode, the type, the whole text and the frame image. Everything is drawn here; the
-    /// ruler, track and scroll strips are transparent children that take the pointer and carry the tooltips.
+    /// General notes have no frame and no tag. Wheel zooms around the pointer, Shift + wheel pans, 0 resets (the
+    /// window's key); a press in the ruler or the empty track scrubs; a click on a tag selects the note, a double
+    /// click edits it, a drag moves it to another frame (the playhead follows, so the video shows where it lands;
+    /// Esc or a lost capture cancels); a right click opens the menu of the tag or of the frame under the pointer;
+    /// resting on a tag shows a hover card with the timecode, the type, the whole text and the frame image.
+    /// Everything is drawn here; the ruler, track and scroll strips are transparent children that take the
+    /// pointer and carry the tooltips.
     /// </summary>
     public sealed class Timeline : Grid
     {
         protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new PanePeer(this);
 
-        const double RulerH = 22, RowH = 18, RowTop = 5, TagH = 15, ScrollH = 8, Radius = 10;
+        const double RulerH = 24, RowH = 20, RowTop = 5, TagH = 17, ScrollH = 8, Radius = 10, DragStart = 4;
         static readonly double TrackH = RowTop + TimelineMath.MaxRows * RowH + 3;
 
         readonly Border ruler = new Border { Background = Brushes.Transparent, Height = RulerH, VerticalAlignment = VerticalAlignment.Top };
@@ -45,14 +49,25 @@ namespace Retake.Views
         TimelineView view;
         readonly List<KeyValuePair<Rect, int>> tagRects = new List<KeyValuePair<Rect, int>>();
         int hoverIndex = -1;
-        bool scrubbing, thumbDrag;
-        double thumbGrab;
+        bool scrubbing, thumbDrag, moving;
+        double thumbGrab, pressX, grabOffset;
+        int pressTag = -1, moveFrame;
         Rect thumbRect, scrollRect;
 
         /// <summary>A scrub or a click on the ruler: the frame under the pointer.</summary>
         public event Action<int>? Scrub;
         public event Action<NoteState>? Pick, Edit;
         public event Action<bool>? Scrubbing;
+        /// <summary>A tag is being dragged: the note and the frame under the pointer.</summary>
+        public event Action<NoteState, int>? Moving;
+        /// <summary>A drag ended on another frame: the note and its new frame.</summary>
+        public event Action<NoteState, int>? Moved;
+        /// <summary>A drag was cancelled (Esc, a lost capture, a release on the same frame): the note stays.</summary>
+        public event Action<NoteState>? MoveCancelled;
+        /// <summary>A right click on a tag: the note and the point in the timeline.</summary>
+        public event Action<NoteState, Point>? TagMenu;
+        /// <summary>A right click on the ruler or the empty track: the frame under the pointer and the point.</summary>
+        public event Action<int, Point>? TrackMenu;
 
         public Timeline()
         {
@@ -73,6 +88,7 @@ namespace Retake.Views
                 part.MouseLeftButtonUp += OnUp;
                 part.LostMouseCapture += (s, e) => EndDrag();
                 part.MouseWheel += OnWheel;
+                part.MouseRightButtonUp += OnRightUp;
             }
             track.MouseLeave += (s, e) => SetHover(-1);
             cardTimer.Tick += (s, e) => { cardTimer.Stop(); ShowCard(); };
@@ -82,6 +98,7 @@ namespace Retake.Views
 
         public TimelineView View => view;
         public bool IsScrubbing => scrubbing;
+        public bool IsMoving => moving;
 
         /// <summary>A new video (or none: total 0).</summary>
         public void SetVideo(int frames, double fps, TimecodeBase? timecode)
@@ -105,9 +122,11 @@ namespace Retake.Views
             InvalidateVisual();
         }
 
+        /// <summary>The notes to draw; general notes (no frame) are left out.</summary>
         public void SetNotes(IList<NoteState> list, string? selected)
         {
-            notes = list;
+            CancelMove();
+            notes = list.Where(n => n.Frame.HasValue).ToList();
             selectedId = selected;
             SetHover(-1);
             InvalidateVisual();
@@ -204,22 +223,24 @@ namespace Retake.Views
 
         void DrawMarkers(DrawingContext dc, double w, Rect trackRect)
         {
+            // The order of the stems; a note being dragged takes the frame under the pointer.
+            int[] order = Enumerable.Range(0, notes.Count).OrderBy(i => FrameOf(i)).ThenBy(i => i).ToArray();
             var frames = new List<int>(notes.Count);
-            foreach (NoteState n in notes) frames.Add(n.Frame);
+            foreach (int i in order) frames.Add(FrameOf(i));
             List<MarkerSlot> slots = TimelineMath.Layout(frames, view, w);
             dc.PushClip(new RectangleGeometry(trackRect));
             foreach (MarkerSlot g in slots)
             {
-                NoteState first = notes[g.Notes[0]];
+                NoteState first = notes[order[g.Notes[0]]];
                 Color stemColor = NoteKinds.Color(first.Kind);
                 double x = Math.Round(g.X);
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xB0, stemColor.R, stemColor.G, stemColor.B)), null, new Rect(x - 0.75, RulerH, 1.5, TrackH));
                 for (int row = 0; row < Math.Min(TimelineMath.MaxRows, g.Notes.Count); row++)
                 {
-                    int index = g.Notes[row];
+                    int index = order[g.Notes[row]];
                     NoteState n = notes[index];
                     Color c = NoteKinds.Color(n.Kind);
-                    bool sel = n.Id == selectedId, hover = index == hoverIndex;
+                    bool sel = n.Id == selectedId || (moving && index == pressTag), hover = index == hoverIndex;
                     double top = RulerH + RowTop + row * RowH;
                     Rect r;
                     if (g.ShowLabels)
@@ -248,6 +269,8 @@ namespace Retake.Views
             }
             dc.Pop();
         }
+
+        int FrameOf(int index) => moving && index == pressTag ? moveFrame : notes[index].Frame ?? 0;
 
         void DrawPlayhead(DrawingContext dc, double w)
         {
@@ -316,8 +339,15 @@ namespace Retake.Views
             if (tag >= 0)
             {
                 CloseCard();
-                if (e.ClickCount >= 2) Edit?.Invoke(notes[tag]);
-                else Pick?.Invoke(notes[tag]);
+                if (e.ClickCount >= 2) { Edit?.Invoke(notes[tag]); return; }
+                Pick?.Invoke(notes[tag]);
+                // A press on a tag may turn into a drag that moves the note.
+                pressTag = tag;
+                pressX = p.X;
+                moving = false;
+                moveFrame = notes[tag].Frame ?? 0;
+                grabOffset = TimelineMath.FrameAtX(p.X, view, ActualWidth) - moveFrame;
+                part.CaptureMouse();
                 return;
             }
             scrubbing = true;
@@ -340,11 +370,39 @@ namespace Retake.Views
                 return;
             }
             if (scrubbing) { ScrubTo(p.X); return; }
+            if (pressTag >= 0)
+            {
+                if (!moving && Math.Abs(p.X - pressX) < DragStart) return;
+                if (!moving) { moving = true; SetHover(-1); track.Cursor = Cursors.SizeWE; }
+                double f = TimelineMath.FrameAtX(Math.Max(0, Math.Min(ActualWidth, p.X)), view, ActualWidth) - grabOffset;
+                int frame = (int)Math.Max(0, Math.Min(total - 1, Math.Round(f)));
+                if (frame != moveFrame)
+                {
+                    moveFrame = frame;
+                    Moving?.Invoke(notes[pressTag], frame);
+                    InvalidateVisual();
+                }
+                return;
+            }
             if (sender == track) SetHover(TagAt(p));
         }
 
         void OnUp(object sender, MouseButtonEventArgs e)
         {
+            if (pressTag >= 0)
+            {
+                NoteState n = notes[pressTag];
+                bool dragged = moving;
+                int frame = moveFrame;
+                pressTag = -1;
+                moving = false;
+                track.Cursor = null;
+                if (sender is UIElement held && held.IsMouseCaptured) held.ReleaseMouseCapture();
+                InvalidateVisual();
+                if (dragged && frame != n.Frame) Moved?.Invoke(n, frame);
+                else if (dragged) MoveCancelled?.Invoke(n);
+                return;
+            }
             if (sender is UIElement u && u.IsMouseCaptured) u.ReleaseMouseCapture();
             EndDrag();
         }
@@ -353,6 +411,33 @@ namespace Retake.Views
         {
             if (thumbDrag) { thumbDrag = false; InvalidateVisual(); }
             if (scrubbing) { scrubbing = false; Scrubbing?.Invoke(false); }
+            CancelMove();
+        }
+
+        /// <summary>Drops a drag in progress: the note stays on its frame.</summary>
+        public void CancelMove()
+        {
+            if (pressTag < 0) return;
+            NoteState? n = pressTag < notes.Count ? notes[pressTag] : null;
+            bool dragged = moving;
+            pressTag = -1;
+            moving = false;
+            track.Cursor = null;
+            if (track.IsMouseCaptured) track.ReleaseMouseCapture();
+            InvalidateVisual();
+            if (dragged && n != null) MoveCancelled?.Invoke(n);
+        }
+
+        void OnRightUp(object sender, MouseButtonEventArgs e)
+        {
+            if (total <= 0 || sender == scroll || pressTag >= 0) return;
+            e.Handled = true;
+            Point p = e.GetPosition(this);
+            int tag = sender == track ? TagAt(p) : -1;
+            CloseCard();
+            if (tag >= 0) { TagMenu?.Invoke(notes[tag], p); return; }
+            double f = TimelineMath.FrameAtX(Math.Max(0, Math.Min(ActualWidth, p.X)), view, ActualWidth);
+            TrackMenu?.Invoke((int)Math.Max(0, Math.Min(total - 1, Math.Floor(f + 1e-4))), p);
         }
 
         void ScrubTo(double x)
@@ -390,21 +475,21 @@ namespace Retake.Views
         void CloseCard()
         {
             cardTimer.Stop();
-            Tip.RootOf(this)?.Overlay.HideCard();
+            HoverCard.Hide();
         }
 
         void ShowCard()
         {
-            if (hoverIndex < 0 || hoverIndex >= notes.Count) return;
+            if (hoverIndex < 0 || hoverIndex >= notes.Count || moving) return;
             Rect at = Rect.Empty;
             foreach (var kv in tagRects) if (kv.Value == hoverIndex) at = kv.Key;
             if (at.IsEmpty) return;
             NoteState n = notes[hoverIndex];
-            Tip.RootOf(this)?.Overlay.ShowCard(new HoverCard(CardContent(n), 248), this, at);
+            HoverCard.Show(new HoverCard(CardContent(n, true), 260), this, at);
         }
 
-        /// <summary>The hover card of a note: type and timecode, the whole text, the frame image.</summary>
-        public static UIElement CardContent(NoteState n)
+        /// <summary>The hover card of a note: type and timecode, the whole text, the frame image; on the timeline also what the pointer can do.</summary>
+        public static UIElement CardContent(NoteState n, bool onTimeline = false)
         {
             var panel = new StackPanel();
             var head = new StackPanel { Orientation = Orientation.Horizontal };
@@ -421,6 +506,13 @@ namespace Retake.Views
             panel.Children.Add(text);
             BitmapSource? thumb = Thumbs.Load(n.ImagePath, 228);
             if (thumb != null) panel.Children.Add(new Image { Source = thumb, Margin = new Thickness(0, 8, 0, 0), Stretch = Stretch.Uniform, MaxHeight = 128 });
+            if (onTimeline)
+            {
+                TextBlock how = Typography.Text(Copy.TagCardHint, Typography.Caption, "ink-3");
+                how.TextWrapping = TextWrapping.Wrap;
+                how.Margin = new Thickness(0, 8, 0, 0);
+                panel.Children.Add(how);
+            }
             return panel;
         }
     }

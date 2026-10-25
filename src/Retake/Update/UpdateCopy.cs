@@ -10,6 +10,7 @@ namespace Retake.Update
     internal static class UpdateCopy
     {
         internal const string SheetClose = "Close, update later (Esc)";
+        internal const string PopoverName = "Version and updates";
         internal const string Later = "Keep this version for now; the version pill opens this again";
 
         internal const string Install = "Download the new version, then restart into it";

@@ -11,9 +11,11 @@ namespace Retake.Design.Controls
     /// <summary>The element of a window that hosts tooltips, menus, hover cards and sheets above the content.</summary>
     public interface IOverlayRoot
     {
-        /// <summary>Topmost layer for tooltips; coordinates are the logical (unscaled) layout.</summary>
+        /// <summary>Topmost layer of the window's own tree; the fallback for tooltips where there is no float window.</summary>
         Canvas TipLayer { get; }
         OverlayHost Overlay { get; }
+        /// <summary>The float window for tooltips or hover cards (above the native video window), or null without a window.</summary>
+        FloatWindow? Float(FloatKind kind);
     }
 
     /// <summary>
@@ -50,7 +52,8 @@ namespace Retake.Design.Controls
     /// Tooltips of the layer. <see cref="Set"/> gives an element its tooltip text: shown after 400 ms of hover
     /// (at once when another tooltip closed less than 300 ms ago), centred below the element or above it when
     /// there is no room, hidden on leave or press. The text is also the element's automation help text. The
-    /// bubble is drawn in the window's tooltip layer, inside the scaled root, so it follows the Scale setting.
+    /// bubble is drawn in the window's float window (above the native video window, so nothing under it has to
+    /// change), scaled like the root, so it follows the Scale setting; without one, in the root's tooltip layer.
     /// Rule: one line that says what happens, with the key in brackets when one exists; never the visible label.
     /// </summary>
     public static class Tip
@@ -62,6 +65,7 @@ namespace Retake.Design.Controls
         static readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(DelayMs) };
         static FrameworkElement? pending, shownFor;
         static TipBubble? bubble;
+        static FloatWindow? bubbleWindow;
         static DateTime lastHidden = DateTime.MinValue;
 
         static Tip()
@@ -127,22 +131,22 @@ namespace Retake.Design.Controls
         {
             string? text = Get(el);
             IOverlayRoot? root = RootOf(el);
-            if (text == null || root == null || !el.IsVisible) return;
+            if (text == null || root == null || !el.IsVisible || !(root is FrameworkElement rootElement)) return;
             Hide();
-            Canvas layer = root.TipLayer;
             bubble = new TipBubble(text);
             shownFor = el;
-            layer.Children.Add(bubble);
             bubble.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Size size = bubble.DesiredSize;
-            Rect at = el.TransformToVisual(layer).TransformBounds(new Rect(el.RenderSize));
-            double x = Math.Max(6, Math.Min(layer.ActualWidth - size.Width - 6, at.Left + at.Width / 2 - size.Width / 2));
-            double y = at.Bottom + 6;
-            double rise = 4;
-            if (y + size.Height > layer.ActualHeight - 6) { y = at.Top - 6 - size.Height; rise = -4; }
-            Canvas.SetLeft(bubble, Math.Round(x));
-            Canvas.SetTop(bubble, Math.Round(y));
-            var shift = new TranslateTransform(0, rise);
+            Rect at = el.TransformToVisual(rootElement).TransformBounds(new Rect(el.RenderSize));
+            Point p = FloatPlacement.Below(at, bubble.DesiredSize, new Size(rootElement.ActualWidth, rootElement.ActualHeight), out bool flipped);
+            bubbleWindow = root.Float(FloatKind.Tip);
+            if (bubbleWindow != null) bubbleWindow.ShowAt(bubble, p, rootElement);
+            else
+            {
+                root.TipLayer.Children.Add(bubble);
+                Canvas.SetLeft(bubble, p.X);
+                Canvas.SetTop(bubble, p.Y);
+            }
+            var shift = new TranslateTransform(0, flipped ? -4 : 4);
             bubble.RenderTransform = shift;
             bubble.Opacity = 0;
             Motion.To(bubble, UIElement.OpacityProperty, 1, Motion.D1);
@@ -157,6 +161,8 @@ namespace Retake.Design.Controls
             shownFor = null;
             lastHidden = DateTime.UtcNow;
             if (gone.Parent is Panel p) p.Children.Remove(gone);
+            bubbleWindow?.HideIf(gone);
+            bubbleWindow = null;
         }
 
         /// <summary>The tooltip currently shown, for checks; null when none.</summary>

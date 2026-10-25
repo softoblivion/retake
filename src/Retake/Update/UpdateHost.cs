@@ -30,6 +30,7 @@ namespace Retake.Update
         readonly Paths paths;
         readonly UpdateScheduler scheduler;
         readonly UpdateSheet sheet;
+        readonly UpdatePopover popover;
         readonly UpdateRows rows;
         bool started, disposed;
 
@@ -52,6 +53,7 @@ namespace Retake.Update
             scheduler = new UpdateScheduler(Updater);
 
             sheet = new UpdateSheet(window.Root.Overlay, window.Root.TitleBar.Pill, Presenter, OpenLink);
+            popover = new UpdatePopover(window.Root.Overlay, window.Root.TitleBar.Pill, Presenter, OpenLink);
             rows = new UpdateRows(Presenter);
             window.UpdatesRow = rows.Element;
             window.PillClicked += PillClicked;
@@ -83,12 +85,12 @@ namespace Retake.Update
             scheduler.Dispose();
         }
 
-        // The version pill: the sheet while a newer version is known, else the Updates group of Settings.
+        // The version pill: the sheet while a newer version is known, else the updates popover.
         void PillClicked()
         {
+            if (popover.IsOpen) { popover.Close(); return; }
             if (Presenter.PillClick()) return;
-            Presenter.Refresh();
-            window.OpenSettings();
+            popover.Toggle();
         }
 
         // The overlay closed or replaced the sheet (Esc, the veil, the close button, the gear, another sheet): that is Later.
@@ -103,7 +105,9 @@ namespace Retake.Update
             VersionPill pill = window.Root.TitleBar.Pill;
             pill.SetStage(Stage(view.Pill.State));
             Tip.Set(pill, view.Pill.Tooltip);
+            if (view.Sheet.Open) popover.Close();
             sheet.Render(view.Sheet);
+            popover.Render(view.Panel);
             rows.Show(view);
         }
 

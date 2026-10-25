@@ -9,9 +9,10 @@ namespace Retake.Design
         public const int WM_NCLBUTTONDBLCLK = 0x00A3, WM_SYSCOMMAND = 0x0112;
         public const int SC_SIZE = 0xF000, SC_MAXIMIZE = 0xF030;
         public const int GWL_STYLE = -16;
-        public const int WS_MAXIMIZEBOX = 0x00010000, WS_THICKFRAME = 0x00040000;
+        public const int WS_MAXIMIZEBOX = 0x00010000, WS_THICKFRAME = 0x00040000, WS_CAPTION = 0x00C00000;
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWA_BORDER_COLOR = 34;
-        public const int DWMWCP_ROUND = 2;
+        public const int DWMWCP_DONOTROUND = 1, DWMWCP_ROUND = 2;
+        public const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
         const uint MONITOR_DEFAULTTONEAREST = 2;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -35,12 +36,17 @@ namespace Retake.Design
         }
 
         /// <summary>The work area of the monitor that holds the window, in physical pixels.</summary>
-        public static RECT? WorkArea(IntPtr hwnd)
+        public static RECT? WorkArea(IntPtr hwnd) => Monitor(hwnd, false);
+
+        /// <summary>The whole monitor that holds the window (taskbar included), in physical pixels.</summary>
+        public static RECT? MonitorBounds(IntPtr hwnd) => Monitor(hwnd, true);
+
+        static RECT? Monitor(IntPtr hwnd, bool whole)
         {
             IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             var info = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
             if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return null;
-            return info.rcWork;
+            return whole ? info.rcMonitor : info.rcWork;
         }
 
         /// <summary>Sets a DWM attribute; silently ignored where the system does not know it (before Windows 11).</summary>

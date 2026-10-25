@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Retake.Design;
+using Retake.Design.Controls;
 
 namespace Retake.Views
 {
@@ -34,13 +35,15 @@ namespace Retake.Views
     /// covers everything of the main window's visual tree, so the region tool, the note editor and the hint are
     /// drawn here. Owned by the main window (no taskbar entry, above it, hidden with it), placed on the video
     /// area in device pixels and scaled by the Scale step, so its logical layout is the area's. It never takes
-    /// activation, except while the note field is typed into.
+    /// activation, except while the note field is typed into. Its background takes the pointer over the whole
+    /// video (an invisible fill), so a right click and a double click on the video reach the window; a press
+    /// brings the main window to the front.
     /// </summary>
     public sealed class OverlayWindow : Window
     {
         readonly ShellWindow owner;
         readonly FrameworkElement target;
-        readonly Grid content = new Grid();
+        readonly OverlayRoot content;
         readonly Canvas floating = new Canvas();
         readonly ScaleTransform scale = new ScaleTransform(1, 1);
         public readonly RegionTool Region = new RegionTool();
@@ -51,11 +54,26 @@ namespace Retake.Views
 
         /// <summary>Keys that reach the overlay outside the note field (the window's own key handler takes them).</summary>
         public event Action<KeyEventArgs>? KeyForward;
+        /// <summary>A right click on the video, at a point of the area (logical pixels).</summary>
+        public event Action<Point>? ContextRequested;
+        /// <summary>A double click on the video outside drawing mode.</summary>
+        public event Action? DoubleClicked;
+
+        static readonly Brush Catcher = MakeCatcher();
+
+        static Brush MakeCatcher()
+        {
+            // Alpha 1 / 255: invisible, but a layered window takes the pointer only where a pixel is not fully clear.
+            var b = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+            b.Freeze();
+            return b;
+        }
 
         public OverlayWindow(ShellWindow owner, FrameworkElement target)
         {
             this.owner = owner;
             this.target = target;
+            content = new OverlayRoot(owner);
             Title = "Retake overlay";
             WindowStyle = WindowStyle.None;
             AllowsTransparency = true;
@@ -71,6 +89,7 @@ namespace Retake.Views
             content.LayoutTransform = scale;
             content.HorizontalAlignment = HorizontalAlignment.Left;
             content.VerticalAlignment = VerticalAlignment.Top;
+            content.Background = Catcher;
             content.Children.Add(Region);
             content.Children.Add(floating);
             floating.Children.Add(Hint);
@@ -82,6 +101,19 @@ namespace Retake.Views
                 Win32.SetExStyle(hwnd, Win32.WS_EX_NOACTIVATE | Win32.WS_EX_TOOLWINDOW, true);
             };
             PreviewKeyDown += (s, e) => { if (!Composer.Field.IsKeyboardFocused) KeyForward?.Invoke(e); };
+            PreviewMouseDown += (s, e) => { if (!typing && !owner.IsActive) owner.Activate(); };
+            content.MouseRightButtonUp += (s, e) =>
+            {
+                if (e.Handled || Region.Drawing) return;
+                e.Handled = true;
+                ContextRequested?.Invoke(e.GetPosition(content));
+            };
+            content.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.Handled || Region.Drawing || e.ClickCount != 2) return;
+                e.Handled = true;
+                DoubleClicked?.Invoke();
+            };
             Closed += (s, e) => gone = true;
             // Only the main window ends the overlay (Alt+F4 or a close request aimed at it is refused).
             Closing += (s, e) => { if (!Releasing) e.Cancel = true; };
@@ -153,9 +185,26 @@ namespace Retake.Views
     }
 
     /// <summary>
+    /// The content of the overlay window: an overlay root of its own for the tooltips of the note editor, which
+    /// float in the main window's float windows (placed in this content's coordinates) and fall back to the main
+    /// window's overlay for everything else.
+    /// </summary>
+    sealed class OverlayRoot : Grid, IOverlayRoot
+    {
+        readonly ShellWindow owner;
+        readonly Canvas tips = new Canvas { IsHitTestVisible = false };
+
+        public OverlayRoot(ShellWindow owner) { this.owner = owner; }
+
+        public Canvas TipLayer => tips;
+        public OverlayHost Overlay => owner.Root.Overlay;
+        public FloatWindow? Float(FloatKind kind) => owner.Root.Float(kind);
+    }
+
+    /// <summary>
     /// The video area: a black rectangle holding the player's child window (or, with the fake player, an image),
-    /// the overlay window on top of it, and a still picture that stands in for the video while something of the
-    /// main window (a sheet, a menu, a tooltip or hover card) has to be drawn over it. The frame box is the video
+    /// the overlay window on top of it, and a still picture that stands in for the video while a sheet or a menu
+    /// of the main window is drawn over it. The frame box is the video
     /// letterboxed into the area (contain, centred), as the player draws it.
     /// </summary>
     public sealed class VideoView : Grid

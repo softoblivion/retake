@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
+using Retake.Core;
 
 namespace Retake.Design
 {
@@ -54,14 +55,14 @@ namespace Retake.Design
 
         static void Load(string json)
         {
-            var root = (Dictionary<string, object?>)Json.Parse(json)!;
+            var root = (JsonObject)Retake.Core.Json.Parse(json)!;
             if (root.TryGetValue("default", out object? d) && d is string name) DefaultName = name;
             foreach (object? item in (List<object?>)root["themes"]!)
             {
-                var t = (Dictionary<string, object?>)item!;
+                var t = (JsonObject)item!;
                 var spec = new ThemeSpec { Name = (string)t["name"]!, Label = (string)t["label"]!, Scheme = t.TryGetValue("scheme", out object? s) && s is string sc ? sc : "dark" };
                 foreach (string layer in new[] { "tokens", "derived", "overrides" })
-                    if (t.TryGetValue(layer, out object? block) && block is Dictionary<string, object?> map)
+                    if (t.TryGetValue(layer, out object? block) && block is JsonObject map)
                         foreach (KeyValuePair<string, object?> kv in map) spec.Values[kv.Key] = Convert.ToString(kv.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
                 foreach (KeyValuePair<string, string> kv in spec.Values)
                 {

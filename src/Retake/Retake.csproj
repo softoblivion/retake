@@ -24,6 +24,10 @@
     <Compile Include="..\Retake.Core\**\*.cs" Exclude="..\Retake.Core\obj\**;..\Retake.Core\bin\**" Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The notes package (a zip) written by the core. -->
+    <Reference Include="System.IO.Compression" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Static per-weight font files, read through pack://application:,,,/fonts/#Sora. -->
     <Resource Include="fonts\*.ttf" />
     <!-- The two themes; the single source of every colour of the window. -->

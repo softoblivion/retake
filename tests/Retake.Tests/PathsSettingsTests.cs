@@ -7,7 +7,7 @@ using Retake.Core;
 
 namespace Retake.Tests
 {
-    /// <summary>Port of tests/test_core_paths_settings.py, plus the JSON layer, the new settings keys, the legacy import and the log.</summary>
+    /// <summary>The data folder and the settings (test names after the 1.x suite), plus the JSON layer, the new settings keys, the legacy import and the log.</summary>
     public static class PathsSettingsTests
     {
         private static readonly string E9 = ((char)0xE9).ToString();

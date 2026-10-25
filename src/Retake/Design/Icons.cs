@@ -18,7 +18,8 @@ namespace Retake.Design
             Warn = "warn", Info = "info", Error = "error", Retry = "retry", Folder = "folder", Open = "open", Play = "play", Stop = "stop",
             Trash = "trash", Chevron = "chevron", ChevronDown = "chevronDown", Down = "down", Clock = "clock", Video = "video",
             File = "file", Export = "export", Copy = "copy", Note = "note", Pause = "pause", StepBack = "stepBack",
-            StepForward = "stepForward", First = "first", Last = "last", Keyboard = "keyboard", Panel = "panel";
+            StepForward = "stepForward", First = "first", Last = "last", Keyboard = "keyboard", Panel = "panel",
+            Expand = "expand", Collapse = "collapse", Package = "package", Pen = "pen", Move = "move";
 
         static readonly Dictionary<string, string> Data = new Dictionary<string, string>
         {
@@ -54,6 +55,11 @@ namespace Retake.Design
             [Last] = "M17 6.5v11 M7 6.5l5.5 5.5L7 17.5",
             [Keyboard] = "M4.5 6.5h15a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16V8a1.5 1.5 0 0 1 1.5-1.5Z M7 10.3h.1 M10.3 10.3h.1 M13.7 10.3h.1 M17 10.3h.1 M8.5 13.8h7",
             [Panel] = "M5.5 5h13a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5v-9A2.5 2.5 0 0 1 5.5 5Z M15 5v14",
+            [Expand] = "M4.5 9.5V6a1.5 1.5 0 0 1 1.5-1.5h3.5 M14.5 4.5H18a1.5 1.5 0 0 1 1.5 1.5v3.5 M19.5 14.5V18a1.5 1.5 0 0 1-1.5 1.5h-3.5 M9.5 19.5H6A1.5 1.5 0 0 1 4.5 18v-3.5",
+            [Collapse] = "M9.5 4.5V8A1.5 1.5 0 0 1 8 9.5H4.5 M14.5 4.5V8A1.5 1.5 0 0 0 16 9.5h3.5 M19.5 14.5H16a1.5 1.5 0 0 0-1.5 1.5v3.5 M4.5 14.5H8A1.5 1.5 0 0 1 9.5 16v3.5",
+            [Package] = "M4.5 8.2 12 4.3l7.5 3.9v7.6L12 19.7l-7.5-3.9Z M4.5 8.2 12 12.1l7.5-3.9 M12 12.1v7.6 M8.2 6.2l7.5 3.9",
+            [Pen] = "M14.6 5.4l4 4L9.2 18.8H5.2v-4Z M12.6 7.4l4 4",
+            [Move] = "M4.5 12h15 M8 8.5 4.5 12 8 15.5 M16 8.5l3.5 3.5-3.5 3.5",
         };
 
         static readonly HashSet<string> Filled = new HashSet<string> { Play };

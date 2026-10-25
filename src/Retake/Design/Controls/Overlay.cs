@@ -10,26 +10,49 @@ using System.Windows.Threading;
 
 namespace Retake.Design.Controls
 {
+    /// <summary>A floating panel of the overlay (a menu, a popover): it appears, closes itself on a pick and disappears.</summary>
+    public interface IPopup
+    {
+        Action? Picked { set; }
+        void Appear(bool up);
+        void Disappear(Action done);
+    }
+
     /// <summary>
     /// The overlay layer of a window, between the content and the title bar: the dim veil (--scrim), the modal
-    /// sheet and the floating layer for menus and hover cards. Esc closes the top overlay; a click on the veil
+    /// sheet and the floating layer for menus and popovers. Esc closes the top overlay; a click on the veil
     /// closes the sheet; a click outside a menu closes the menu. With nothing open the layer lets every click
     /// through. The sheet's top edge sits 6 px below the title bar (<see cref="TopInset"/>).
+    /// <para>
+    /// A window whose content holds a native child window (the video) sets <see cref="Prepare"/>: a sheet or a
+    /// menu then opens only once the host has put a still under it, and <see cref="Covering"/> stays true until
+    /// the last close animation has ended, so the native window comes back after the overlay is gone.
+    /// </para>
     /// </summary>
     public sealed class OverlayHost : Grid
     {
-        public const double TopInset = 44 + 6, BottomInset = 14;
+        public const double TopInset = TitleBar.BarHeight + 6, BottomInset = 14;
         readonly Rectangle veil = new Rectangle { Opacity = 0, Visibility = Visibility.Collapsed };
         readonly Grid sheetLayer = new Grid { Margin = new Thickness(0, TopInset, 0, BottomInset) };
         readonly Canvas floatLayer = new Canvas();
         Sheet? sheet;
         FrameworkElement? sheetOrigin;
-        PopMenu? menu;
-        HoverCard? card;
+        FrameworkElement? menu;
+        int serial, closing;
+        bool covering;
 
         public event Action<bool>? SheetChanged;
-        /// <summary>Raised when a menu opens (true) or closes (false).</summary>
+        /// <summary>Raised when a menu or a popover opens (true) or closes (false).</summary>
         public event Action<bool>? MenuChanged;
+        /// <summary>Raised when <see cref="Covering"/> changes.</summary>
+        public event Action<bool>? CoverChanged;
+
+        /// <summary>
+        /// Called before a sheet or a menu opens while nothing covers the content yet. It returns true when it takes
+        /// over: it prepares what has to lie under the overlay and then runs the action that opens it; false opens
+        /// at once.
+        /// </summary>
+        public Func<Action, bool>? Prepare;
 
         public OverlayHost()
         {
@@ -43,8 +66,31 @@ namespace Retake.Design.Controls
         public bool SheetOpen => sheet != null;
         public Sheet? CurrentSheet => sheet;
         public Canvas FloatLayer => floatLayer;
+        public bool MenuOpen => menu != null;
+        public FrameworkElement? CurrentMenu => menu;
 
-        public void OpenSheet(Sheet next, FrameworkElement? origin)
+        /// <summary>True from the moment a sheet or a menu opens until the last one has finished closing.</summary>
+        public bool Covering => covering;
+
+        void UpdateCovering()
+        {
+            bool now = sheet != null || menu != null || closing > 0;
+            if (now == covering) return;
+            covering = now;
+            CoverChanged?.Invoke(now);
+        }
+
+        /// <summary>Runs an opening now, or after <see cref="Prepare"/> has made the content ready; a later request wins.</summary>
+        void Begin(Action open)
+        {
+            int mine = ++serial;
+            if (!covering && Prepare != null && Prepare(() => { if (mine == serial) open(); })) return;
+            open();
+        }
+
+        public void OpenSheet(Sheet next, FrameworkElement? origin) => Begin(() => OpenSheetNow(next, origin));
+
+        void OpenSheetNow(Sheet next, FrameworkElement? origin)
         {
             if (sheet != null) RemoveSheet(sheet);
             CloseMenu();
@@ -55,6 +101,7 @@ namespace Retake.Design.Controls
             sheetLayer.Children.Add(next);
             veil.Visibility = Visibility.Visible;
             Motion.To(veil, OpacityProperty, 1, Motion.D3);
+            UpdateCovering();
             UpdateLayout();
             next.Open(OriginRect(next, origin));
             next.FocusFirst();
@@ -66,8 +113,9 @@ namespace Retake.Design.Controls
             Sheet? s = sheet;
             if (s == null) return;
             sheet = null;
+            closing++;
             Motion.To(veil, OpacityProperty, 0, Motion.D2, null, () => { if (sheet == null) veil.Visibility = Visibility.Collapsed; });
-            s.Close(OriginRect(s, sheetOrigin), () => RemoveSheet(s));
+            s.Close(OriginRect(s, sheetOrigin), () => { RemoveSheet(s); closing--; UpdateCovering(); });
             sheetOrigin?.Focus();
             SheetChanged?.Invoke(false);
         }
@@ -81,65 +129,50 @@ namespace Retake.Design.Controls
             catch (InvalidOperationException) { return null; }
         }
 
-        /// <summary>Opens a menu under (or above, when there is no room) the anchor, aligned to its left edge.</summary>
-        public void OpenMenu(PopMenu next, FrameworkElement anchor)
+        /// <summary>Opens a menu or popover under (or above, when there is no room) the anchor, aligned to its left edge.</summary>
+        public void OpenMenu(FrameworkElement next, FrameworkElement anchor) => Begin(() =>
+        {
+            if (!anchor.IsVisible) return;
+            Rect at = anchor.TransformToVisual(floatLayer).TransformBounds(new Rect(anchor.RenderSize));
+            Place(next, at.Left, at.Bottom + 6, at.Top - 6);
+        });
+
+        /// <summary>Opens a context menu at a point of an element (the pointer): below and right of it, above it when there is no room.</summary>
+        public void OpenMenuAt(FrameworkElement next, FrameworkElement relativeTo, Point at) => Begin(() =>
+        {
+            if (!relativeTo.IsVisible) return;
+            Point p = relativeTo.TransformToVisual(floatLayer).Transform(at);
+            Place(next, p.X + 2, p.Y + 2, p.Y - 2);
+        });
+
+        void Place(FrameworkElement next, double left, double below, double above)
         {
             CloseMenu();
             menu = next;
-            next.Picked = () => CloseMenu();
+            var popup = (IPopup)next;
+            popup.Picked = () => { if (menu == next) CloseMenu(); };
             floatLayer.Children.Add(next);
             next.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Rect at = anchor.TransformToVisual(floatLayer).TransformBounds(new Rect(anchor.RenderSize));
             Size size = next.DesiredSize;
-            double x = Math.Max(8, Math.Min(ActualWidth - size.Width - 8, at.Left));
-            double y = at.Bottom + 6;
+            double x = Math.Max(8, Math.Min(ActualWidth - size.Width - 8, left));
+            double y = below;
             bool up = y + size.Height > ActualHeight - 8;
-            if (up) y = at.Top - 6 - size.Height;
+            if (up) y = Math.Max(TopInset, above - size.Height);
             Canvas.SetLeft(next, Math.Round(x));
             Canvas.SetTop(next, Math.Round(y));
-            next.Appear(up);
+            popup.Appear(up);
+            UpdateCovering();
             MenuChanged?.Invoke(true);
         }
 
         public void CloseMenu()
         {
-            PopMenu? m = menu;
+            FrameworkElement? m = menu;
             if (m == null) return;
             menu = null;
-            m.Disappear(() => floatLayer.Children.Remove(m));
+            closing++;
+            ((IPopup)m).Disappear(() => { floatLayer.Children.Remove(m); closing--; UpdateCovering(); });
             MenuChanged?.Invoke(false);
-        }
-
-        public bool MenuOpen => menu != null;
-
-        internal void ShowCard(HoverCard next, FrameworkElement anchor) => ShowCard(next, anchor, new Rect(anchor.RenderSize));
-
-        /// <summary>
-        /// Shows a hover card above an area of an element (below it when there is no room), for content drawn
-        /// by the element itself (the markers of a timeline). One card at a time.
-        /// </summary>
-        public void ShowCard(HoverCard next, FrameworkElement relativeTo, Rect area)
-        {
-            HideCard();
-            card = next;
-            floatLayer.Children.Add(next);
-            next.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Rect at = relativeTo.TransformToVisual(floatLayer).TransformBounds(area);
-            Size size = next.DesiredSize;
-            double x = Math.Max(8, Math.Min(ActualWidth - size.Width - 8, at.Left + at.Width / 2 - size.Width / 2));
-            double y = at.Top - 8 - size.Height;
-            if (y < TopInset) y = at.Bottom + 8;
-            Canvas.SetLeft(next, Math.Round(x));
-            Canvas.SetTop(next, Math.Round(y));
-            next.Opacity = 0;
-            Motion.To(next, OpacityProperty, 1, Motion.D1);
-        }
-
-        public void HideCard()
-        {
-            if (card == null) return;
-            floatLayer.Children.Remove(card);
-            card = null;
         }
 
         /// <summary>Esc: closes the menu, else the sheet. Returns true when something closed.</summary>
@@ -241,12 +274,14 @@ namespace Retake.Design.Controls
     /// entries at 0.36. It appears with a 6 px rise and a 0.96 -> 1 scale over 180 ms. For rare actions only:
     /// a primary function never hides behind a menu.
     /// </summary>
-    public sealed class PopMenu : Grid
+    public sealed class PopMenu : Grid, IPopup
     {
         readonly StackPanel list = new StackPanel { Margin = new Thickness(5) };
         readonly ScaleTransform scale = new ScaleTransform(1, 1);
         readonly TranslateTransform rise = new TranslateTransform();
-        internal Action? Picked;
+        Action? picked;
+
+        public Action? Picked { set => picked = value; }
 
         public PopMenu(double minWidth = 190)
         {
@@ -265,7 +300,7 @@ namespace Retake.Design.Controls
         {
             var e = new MenuEntry(label, icon, key, danger);
             if (tip != null) Tip.Set(e, tip);
-            e.Click += (s, a) => { if (!e.KeepsMenuOpen) Picked?.Invoke(); run?.Invoke(); };
+            e.Click += (s, a) => { if (!e.KeepsMenuOpen) picked?.Invoke(); run?.Invoke(); };
             if (list.Children.Count > 0 && !(list.Children[list.Children.Count - 1] is Border)) e.Margin = new Thickness(0, 1, 0, 0);
             list.Children.Add(e);
             return e;
@@ -281,7 +316,7 @@ namespace Retake.Design.Controls
         public bool HasEntries => list.Children.Count > 0;
 
         /// <summary>Closes the menu as a pick of an entry does.</summary>
-        public void Close() => Picked?.Invoke();
+        public void Close() => picked?.Invoke();
 
         public void AddSeparator()
         {
@@ -290,7 +325,7 @@ namespace Retake.Design.Controls
             list.Children.Add(line);
         }
 
-        internal void Appear(bool up)
+        public void Appear(bool up)
         {
             RenderTransformOrigin = new Point(0.2, up ? 1 : 0);
             if (!Motion.Enabled) return;
@@ -303,7 +338,7 @@ namespace Retake.Design.Controls
             Motion.To(rise, TranslateTransform.YProperty, 0, Motion.D2);
         }
 
-        internal void Disappear(Action done)
+        public void Disappear(Action done)
         {
             IsHitTestVisible = false;
             Motion.To(scale, ScaleTransform.ScaleXProperty, 0.96, Motion.D1);
@@ -382,7 +417,8 @@ namespace Retake.Design.Controls
 
     /// <summary>
     /// A hover card: a near-opaque card (radius 14, --menu-tint, hairline, bevel, --shadow-m) shown above an
-    /// element after the tooltip delay, for content richer than one line (a marker's frame and note).
+    /// element after the tooltip delay, for content richer than one line (a marker's frame and note). It is drawn
+    /// in the window's float window, so the video under it stays as it is.
     /// </summary>
     public sealed class HoverCard : Grid
     {
@@ -400,6 +436,7 @@ namespace Retake.Design.Controls
         static readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Tip.DelayMs) };
         static FrameworkElement? pending;
         static Func<UIElement>? pendingBuild;
+        static HoverCard? shown;
 
         static HoverCard()
         {
@@ -407,7 +444,7 @@ namespace Retake.Design.Controls
             {
                 timer.Stop();
                 if (pending == null || pendingBuild == null) return;
-                Tip.RootOf(pending)?.Overlay.ShowCard(new HoverCard(pendingBuild()), pending);
+                Show(new HoverCard(pendingBuild()), pending, new Rect(pending.RenderSize));
             };
         }
 
@@ -415,7 +452,96 @@ namespace Retake.Design.Controls
         public static void Attach(FrameworkElement element, Func<UIElement> build)
         {
             element.MouseEnter += (s, e) => { pending = element; pendingBuild = build; timer.Stop(); timer.Start(); };
-            element.MouseLeave += (s, e) => { timer.Stop(); pending = null; Tip.RootOf(element)?.Overlay.HideCard(); };
+            element.MouseLeave += (s, e) => { timer.Stop(); pending = null; Hide(); };
+        }
+
+        /// <summary>
+        /// Shows a card above an area of an element (below it when the title bar is in the way), for content drawn
+        /// by the element itself (the markers of a timeline). One card at a time.
+        /// </summary>
+        public static void Show(HoverCard card, FrameworkElement relativeTo, Rect area)
+        {
+            Hide();
+            if (!(Tip.RootOf(relativeTo) is FrameworkElement root) || !(root is IOverlayRoot overlay) || !relativeTo.IsVisible) return;
+            card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Rect at = relativeTo.TransformToVisual(root).TransformBounds(area);
+            Point p = FloatPlacement.Above(at, card.DesiredSize, new Size(root.ActualWidth, root.ActualHeight), OverlayHost.TopInset);
+            FloatWindow? window = overlay.Float(FloatKind.Card);
+            shown = card;
+            if (window != null) window.ShowAt(card, p, root);
+            else
+            {
+                overlay.TipLayer.Children.Add(card);
+                Canvas.SetLeft(card, p.X);
+                Canvas.SetTop(card, p.Y);
+            }
+            card.Opacity = 0;
+            Motion.To(card, OpacityProperty, 1, Motion.D1);
+            card.Tag = window;
+        }
+
+        public static void Hide()
+        {
+            HoverCard? card = shown;
+            if (card == null) return;
+            shown = null;
+            if (card.Parent is Panel p) p.Children.Remove(card);
+            (card.Tag as FloatWindow)?.HideIf(card);
+        }
+    }
+
+    /// <summary>
+    /// A popover: a near-opaque card (radius 22, padding 14, --menu-tint, hairline, bevel, --shadow-m) anchored to
+    /// the control that opened it, for a small view with its own controls (the updates popover of the version
+    /// pill). It opens and closes like a menu: Esc or a press outside closes it.
+    /// </summary>
+    public sealed class Popover : Grid, IPopup
+    {
+        readonly Border body = new Border { Padding = new Thickness(14) };
+        readonly ScaleTransform scale = new ScaleTransform(1, 1);
+        readonly TranslateTransform rise = new TranslateTransform();
+        Action? picked;
+
+        public Popover(double width = 352)
+        {
+            Width = width;
+            Background = Brushes.Transparent;
+            HorizontalAlignment = HorizontalAlignment.Left;
+            VerticalAlignment = VerticalAlignment.Top;
+            Children.Add(new ShadowLayer("shadow-m", 22));
+            Children.Add(new SurfaceVisual(22, "stroke-2", "btn-bevel", "menu-tint"));
+            Children.Add(body);
+            RenderTransform = new TransformGroup { Children = { scale, rise } };
+            RenderTransformOrigin = new Point(0.15, 0);
+        }
+
+        public Action? Picked { set => picked = value; }
+
+        /// <summary>The content of the card.</summary>
+        public UIElement? Body { get => body.Child; set => body.Child = value; }
+
+        /// <summary>Closes the popover.</summary>
+        public void Close() => picked?.Invoke();
+
+        public void Appear(bool up)
+        {
+            RenderTransformOrigin = new Point(0.15, up ? 1 : 0);
+            if (!Motion.Enabled) return;
+            Opacity = 0;
+            scale.ScaleX = scale.ScaleY = 0.97;
+            rise.Y = up ? -6 : 6;
+            Motion.To(this, OpacityProperty, 1, Motion.D2);
+            Motion.To(scale, ScaleTransform.ScaleXProperty, 1, Motion.D3);
+            Motion.To(scale, ScaleTransform.ScaleYProperty, 1, Motion.D3);
+            Motion.To(rise, TranslateTransform.YProperty, 0, Motion.D3);
+        }
+
+        public void Disappear(Action done)
+        {
+            IsHitTestVisible = false;
+            Motion.To(scale, ScaleTransform.ScaleXProperty, 0.97, Motion.D1);
+            Motion.To(scale, ScaleTransform.ScaleYProperty, 0.97, Motion.D1);
+            Motion.To(this, OpacityProperty, 0, Motion.D1, null, done);
         }
     }
 }

@@ -18,13 +18,23 @@ namespace Retake.Tests
     /// </summary>
     public static class UpdateTests
     {
-        static UpdateStatus Status(UpdateStage stage, string latest = "2.0.1", bool canApply = true)
+        /// <summary>The running version and the next patch version, so the cases hold for every release.</summary>
+        static readonly string Current = AppVersion.Version, Next = NextPatch(AppVersion.Version);
+
+        static string NextPatch(string version)
         {
+            string[] parts = version.Split('.');
+            return parts[0] + "." + parts[1] + "." + (int.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture) + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        static UpdateStatus Status(UpdateStage stage, string? latest = "", bool canApply = true)
+        {
+            if (latest == "") latest = Next;
             return new UpdateStatus
             {
                 Stage = stage,
                 Current = AppVersion.Version,
-                Latest = latest,
+                Latest = latest!,
                 Notes = "## What is new\n- Faster **start**\n- A fix",
                 Size = 12582912,
                 PublishedAt = 1792000000,
@@ -126,22 +136,22 @@ namespace Retake.Tests
             UpdatePresenter p = Presenter(t, toasts, out Updater _);
             Check.False(p.View.Sheet.Open);
             Check.Equal(PillState.Idle, p.View.Pill.State);
-            Check.Equal("v2.0.0", p.View.Pill.Text);
-            p.Show(Status(UpdateStage.UpToDate, latest: null!));
+            Check.Equal("v" + Current, p.View.Pill.Text);
+            p.Show(Status(UpdateStage.UpToDate, latest: null));
             Check.False(p.View.Sheet.Open, "never for an up-to-date check");
 
             p.Show(Status(UpdateStage.Available));
             SheetView s = p.View.Sheet;
             Check.True(s.Open);
-            Check.Equal("Retake 2.0.1", s.Title);
-            Check.Equal("Installed v2.0.0 · 12.0 MB · " + UpdateText.ShortDate(1792000000, TimeZoneInfo.Utc), s.Subtitle);
+            Check.Equal("Retake " + Next, s.Title);
+            Check.Equal("Installed v" + Current + " · 12.0 MB · " + UpdateText.ShortDate(1792000000, TimeZoneInfo.Utc), s.Subtitle);
             Check.Equal(UpdateCommand.Install, s.Action.Command);
             Check.True(s.Action.Accent && s.Action.Enabled);
             Check.Equal("Install", s.Action.Label);
             Check.Equal("Later", s.LaterLabel);
             Check.Equal(3, s.Notes.Count, "a heading and two bullets");
             Check.Equal(PillState.Available, p.View.Pill.State);
-            Check.Equal("Retake 2.0.1 is available", p.View.Pill.Tooltip);
+            Check.Equal("Retake " + Next + " is available", p.View.Pill.Tooltip);
             Check.Equal(0, toasts.Count, "the sheet is the notice, no toast");
         }
 
@@ -159,8 +169,8 @@ namespace Retake.Tests
             Check.True(p.PillClick(), "the pill opens it");
             Check.True(p.View.Sheet.Open);
             p.Later();
-            p.Show(Status(UpdateStage.UpToDate, latest: null!));
-            Check.False(p.PillClick(), "no newer version: the pill leaves the click to the settings");
+            p.Show(Status(UpdateStage.UpToDate, latest: null));
+            Check.False(p.PillClick(), "no newer version: the pill leaves the click to the updates popover");
         }
 
         [Test("update.wiring.install_downloads_then_restarts")]
@@ -203,7 +213,7 @@ namespace Retake.Tests
             Check.Equal(1, toasts.Count);
             UpdateToast toast = toasts[0];
             Check.True(toast.Sticky, "the ready notice stays until it is clicked");
-            Check.Equal("Retake 2.0.1 is ready", toast.Text);
+            Check.Equal("Retake " + Next + " is ready", toast.Text);
             Check.Equal("Restart", toast.ActionLabel);
             Check.Equal(PillState.Ready, p.View.Pill.State);
             Check.Equal("Restart to update", p.View.Panel.RowAction.Label);

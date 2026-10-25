@@ -84,6 +84,7 @@ namespace Retake.Design
             page.Children.Add(Section("Inputs", InputsBlock(fits)));
             page.Children.Add(Section("Title bar", TitleBarBlock()));
             page.Children.Add(Section("Overlays", OverlaysBlock(prefs, fits)));
+            page.Children.Add(Section("Review parts", ReviewBlock()));
             page.Children.Add(Section("Type and colour", TypeBlock()));
             return page;
         }
@@ -202,7 +203,7 @@ namespace Retake.Design
             var tinted = new FrameworkElement?[4];
             for (int i = 0; i < 4; i++)
             {
-                plain[i] = new GlassButton(i == 0 ? "Open video" : "Open", i == 0 ? Icons.Folder : Icons.Open, ButtonKind.Plain, sizes[i]);
+                plain[i] = new GlassButton(i == 0 ? "Open video" : "Open", i == 0 ? Icons.Video : Icons.Open, ButtonKind.Plain, sizes[i]);
                 tinted[i] = new GlassButton("Add note", Icons.Plus, ButtonKind.Tinted, sizes[i]);
             }
             block.Children.Add(Table(names, new List<(string, FrameworkElement?[])> { ("Plain", plain), ("Tinted", tinted) }));
@@ -327,6 +328,48 @@ namespace Retake.Design
             return block;
         }
 
+        /// <summary>The updates popover, the note editor with its type chips, and note rows (a general one, a selected one).</summary>
+        static FrameworkElement ReviewBlock()
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var body = new StackPanel();
+            body.Children.Add(Typography.Text("Retake", Typography.Title));
+            TextBlock status = Typography.Text("You have the latest version", Typography.BodyMedium);
+            status.Margin = new Thickness(0, 6, 0, 0);
+            body.Children.Add(status);
+            var installed = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+            TextBlock name = Typography.Text("Installed", Typography.Caption, "ink-3");
+            name.Margin = new Thickness(0, 0, 14, 0);
+            installed.Children.Add(name);
+            installed.Children.Add(Typography.Text("v" + AppVersion.Version, Typography.Mono));
+            body.Children.Add(installed);
+            var line = new Border { Height = 1, Margin = new Thickness(-14, 14, -14, 10) };
+            line.SetResourceReference(Border.BackgroundProperty, "T.line-soft");
+            body.Children.Add(line);
+            var footer = new DockPanel();
+            var check = new GlassButton("Check for updates", null, ButtonKind.Plain, ButtonSize.S);
+            DockPanel.SetDock(check, Dock.Right);
+            footer.Children.Add(check);
+            TextBlock when = Typography.Text("Checked 2 min ago", Typography.Caption, "ink-3");
+            footer.Children.Add(when);
+            body.Children.Add(footer);
+            row.Children.Add(Labelled("Popover (the updates popover of the version pill)", new Popover(320) { Body = body }));
+
+            var composer = new Views.Composer();
+            composer.Open("FIX", "0:00:03:12", "Logo badge sits too close to the edge");
+            FrameworkElement composerCell = Labelled("Note editor: the place, the type chips, the field", composer);
+            composerCell.Margin = new Thickness(36, 0, 0, 0);
+            row.Children.Add(composerCell);
+
+            var list = new StackPanel { Width = 290 };
+            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "g", Frame = null, Kind = "ADD", Text = "End card with the logo and the date" }));
+            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "f", Frame = 87, Timecode = "0:00:03:12", Kind = "FIX", Text = "Logo badge sits too close to the edge" }) { Selected = true });
+            FrameworkElement listCell = Labelled("Note rows: a general note, a selected note", list);
+            listCell.Margin = new Thickness(36, 0, 0, 0);
+            row.Children.Add(listCell);
+            return row;
+        }
+
         static FrameworkElement OverlaysBlock(Prefs prefs, Func<int, bool> fits)
         {
             var block = new StackPanel();
@@ -433,24 +476,25 @@ namespace Retake.Design
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var type = new StackPanel();
-            var samples = new (TypeRole role, string text, string spec)[]
+            var samples = new (TypeRole role, string text)[]
             {
-                (Typography.Display, "Settings", "display · 20 / 650"),
-                (Typography.Title, "Notes", "title · 16 / 650"),
-                (Typography.Section, "Appearance", "section · 11 / 600, capitals"),
-                (Typography.Body, "Background colour and accent of the window", "body · 13 / 450"),
-                (Typography.Label, "Download updates automatically", "label · 12.5 / 550"),
-                (Typography.LabelS, "Try again", "label-s · 11.5 / 550"),
-                (Typography.Caption, "Checked every 5 minutes", "caption · 11.5 / 450"),
-                (Typography.Mono, "00:01:23:12", "mono · 12 / 450"),
-                (Typography.MonoS, "v" + AppVersion.Version, "mono-s · 11 / 450"),
+                (Typography.Display, "Settings"),
+                (Typography.Title, "Notes"),
+                (Typography.Section, "Appearance"),
+                (Typography.Body, "Background colour and accent of the window"),
+                (Typography.Label, "Download updates automatically"),
+                (Typography.LabelS, "Try again"),
+                (Typography.Caption, "Checked every 5 minutes"),
+                (Typography.Mono, "00:01:23:12"),
+                (Typography.MonoS, "v" + AppVersion.Version),
             };
             foreach (var s in samples)
             {
                 var line = new Grid { Margin = new Thickness(0, 3, 0, 3) };
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
                 line.ColumnDefinitions.Add(new ColumnDefinition());
-                line.Children.Add(Caption(s.spec));
+                string spec = s.role.Name + " · " + s.role.Size.ToString(System.Globalization.CultureInfo.InvariantCulture) + " / " + s.role.Weight.ToOpenTypeWeight() + (s.role.Caps ? ", capitals" : "");
+                line.Children.Add(Caption(spec));
                 TextBlock t = Typography.Text(s.text, s.role);
                 Grid.SetColumn(t, 1);
                 line.Children.Add(t);

@@ -20,10 +20,12 @@ namespace Retake.Views
         public const string OpenTip = "Open a video (Ctrl+O)";
         public const string RecentTip = "Recent videos";
         public const string CopyTip = "Copy the notes as text";
-        public const string CopyNotes = "Notes file", CopyReadable = "Readable text";
-        public const string CopyReadableTip = "Without the image lines, ready for a chat";
+        public const string CopyNotes = "Notes file", CopyReadable = "Text for a chat";
+        public const string CopyNotesTip = "The data file as it is on disk", CopyReadableTip = "Plain lines without formatting, ready to paste into a message";
         public const string KeysTip = "Keyboard shortcuts (?)";
         public const string PanelHideTip = "Hide the notes list", PanelShowTip = "Show the notes list";
+        public const string FullTip = "Full screen (F11)", FullExitTip = "Leave full screen (F11)";
+        public const string DoneLabel = "Done", DoneTip = "Pack the notes and their frames into a zip to send (Ctrl+E)", DoneOffTip = "Add a note first";
 
         // Empty state.
         public const string EmptyTitle = "Review a video";
@@ -54,27 +56,46 @@ namespace Retake.Views
         // Composer and hint over the video.
         public const string HintCreate = "Drag to mark a region, click to put a point";
         public const string HintEdit = "Drag to replace the region";
+        public const string HintGeneral = "A note about the whole video";
         public const string KeysCreate = "Enter saves · Esc cancels";
         public const string KeysEdit = "Backspace in the empty field removes it · Enter saves · Esc cancels";
         public const string FixPlaceholder = "What to fix", AddPlaceholder = "What to add", RemovePlaceholder = "What to remove";
-        public const string FieldTip = "One line, saved with the frame";
+        public const string FieldTip = "One line; Enter saves, Esc cancels";
+        public const string NeedText = "Type the note first";
+        public const string KindChipTip = "Change the type (Ctrl+{0})";
 
         // Notes list.
         public const string NotesTitle = "Notes";
         public const string NotesEmpty = "No notes yet";
-        public const string NoteRowTip = "Go to this frame · double-click to edit (F2)";
+        public const string NotesEmptyHint = "Pause on a frame and press 1, 2 or 3. G adds a note about the whole video.";
+        public const string NoteRowTip = "Go to this frame · double-click to edit (F2) · right-click for more";
+        public const string GeneralRowTip = "Select · double-click to edit (F2) · right-click for more";
+        public const string GeneralLabel = "General";
+        public const string AddGeneralTip = "New general note, about the whole video (G)";
         public const string NoText = "No text";
 
         // Timeline.
         public const string RulerTip = "Click or drag to move the playhead · wheel zooms (0 fits all)";
         public const string ScrollTip = "Drag to scroll the zoomed timeline (Shift+wheel)";
+        public const string TagCardHint = "Drag to move · double-click to edit · right-click for more";
+
+        // Context menus (the key of an entry is shown on its right).
+        public const string MenuEdit = "Edit", MenuCopyTimecode = "Copy the timecode", MenuCopyText = "Copy the text";
+        public const string MenuMoveHere = "Move to the playhead", MenuRemoveNote = "Delete";
+        public const string MenuMoveHereTip = "Puts the note on the frame shown now";
+        public const string MenuPlay = "Play", MenuPause = "Pause";
+        public const string MenuNewFix = "New FIX note", MenuNewAdd = "New ADD note", MenuNewRemove = "New REMOVE note", MenuNewGeneral = "New general note";
+        public const string MenuNewFixHere = "New FIX note here", MenuNewAddHere = "New ADD note here", MenuNewRemoveHere = "New REMOVE note here";
+        public const string MenuFull = "Full screen", MenuFullExit = "Leave full screen", MenuFit = "Fit the whole video";
+        public const string MenuCopyNotes = "Copy the notes file", MenuCopyReadable = "Copy the text for a chat", MenuDone = "Done: pack into a zip";
 
         // Key map.
         public const string KeysTitle = "Keyboard", KeysCloseTip = "Close (Esc)";
 
         // Banner and toasts.
         public const string BannerTip = "Dismiss";
-        public const string NotesCopied = "Notes copied", ReadableCopied = "Readable notes copied", Copied = "Copied {0}";
+        public const string NotesCopied = "Notes file copied", ReadableCopied = "Notes copied as text", Copied = "Copied {0}";
+        public const string Packed = "Packed into {0}", PackedShow = "Show";
         public const string NoteRemoved = "Note removed";
         public const string NeedRate = "Choose the frame rate to add notes";
         public const string CannotPlay = "{0}: {1}";

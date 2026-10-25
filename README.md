@@ -11,7 +11,7 @@
 ![WPF](https://img.shields.io/badge/UI-WPF-68217A)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-**Frame-accurate video review notes for editors and reviewers on Windows. Pause on a frame, press 1, 2 or 3, mark the element and type a line: every note lands on the exact frame with an After Effects style timecode, in a notes folder next to the render. Plays H.264, HEVC, ProRes, DNxHD, VP9 and AV1 through the mpv engine with exact frame stepping. One portable exe, no installer, no account; updates itself from GitHub Releases.**
+**Frame-accurate video review notes for editors and reviewers on Windows. Pause on a frame, press 1, 2 or 3, mark the element and type a line: every note lands on the exact frame with an After Effects style timecode, in a notes folder next to the render. Drag notes along the timeline, add general notes for the whole video, and pack the review into one zip to send. Plays H.264, HEVC, ProRes, DNxHD, VP9 and AV1 through the mpv engine with exact frame stepping. One portable exe, no installer, no account; updates itself from GitHub Releases.**
 
 <img src="docs/assets/screenshot.png" alt="Retake main window" width="860">
 
@@ -31,8 +31,9 @@
   note lands on the exact frame, also at drop-frame rates and on files whose video starts late.
 - **Timecodes the editor can use.** `0:00:12:07` as in the After Effects timeline (drop-frame `0;00;12;07` for
   29.97 and 59.94), computed from the file's real frame rate.
-- **One folder next to the video.** `promo_v3.mp4` gets `promo_v3_notes\` with the notes as a plain text file, the
-  same notes as a readable Markdown page with the frame images, and the images themselves.
+- **One folder next to the video.** `promo_v3.mp4` gets `promo_v3_notes\` with the notes as a plain text file and
+  the frame images. **Done** packs both into one zip, and the notes copy as plain text that reads the same in any
+  chat.
 - **Free, open source, portable.** GPL-3.0, one exe with a data folder next to it. No account, no telemetry; videos
   and notes never leave the machine.
 
@@ -57,9 +58,11 @@ admin rights.
 | **Built-in engine** | Containers MP4, MOV, MKV and WebM, decoded by mpv inside the exe with hardware decoding where the GPU has it; no codec packs or Windows extensions. |
 | **Shuttle and stepping** | Arrow keys step one frame, `Shift` ten, `J` / `K` / `L` shuttle up to 8x; dragging in the ruler scrubs. The [full key map](docs/USER_GUIDE.md#keyboard) is one `?` away. |
 | **Frame rate** | Read from the file and checked against the player; a wrong or missing rate is overridden per video, and the timecodes of its notes follow. |
-| **Mini timeline** | Ruler with timecodes, playhead and one tagged marker per note; resting on a tag shows the note and its frame image, the wheel zooms. |
-| **Notes list** | Every note with its thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes. |
-| **Copy for the editor** | A click on any timecode copies it for the time field of After Effects or Premiere; `Ctrl+C` copies the notes, `Ctrl+Shift+C` the readable text for a chat. |
+| **Mini timeline** | Ruler with timecodes, playhead and one tagged marker per note; resting on a tag shows the note and its frame image, a drag moves the note to another frame, the wheel zooms. |
+| **Notes list** | General notes for the whole video first, then every frame note with its thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes. |
+| **Right-click menus** | Notes, the video, the timeline and the list offer their actions with the key of each, so nobody has to learn the keys first. |
+| **Send the review** | **Done** packs the notes and their frame images into one zip; `Ctrl+Shift+C` copies the notes as plain text for a chat; a click on any timecode copies it for the time field of After Effects or Premiere. |
+| **Full screen** | `F11` or a double click on the video gives the whole monitor to the review. |
 | **Recent videos** | The start screen lists recent videos with their note counts and opens them at the frame they were left on. |
 | **Glass look** | Crystal Black and Crystal Sky themes and a Scale setting from 100 to 200 % for the whole window. |
 | **Self-updating** | New releases are found in the background, downloaded, verified by size and SHA-256 and installed on **Restart to update**. |

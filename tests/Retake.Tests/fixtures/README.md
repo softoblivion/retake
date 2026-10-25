@@ -24,4 +24,5 @@ Scenarios:
 | `d_layout10_extra_lines` | 1.0 layout with BOM, CRLF, a blank header line, foreign lines and an unrelated file |
 | `r_resave*` | a folder written by the 1.x core, opened and saved without changes; the stale export is removed |
 
-Files in this folder are byte-exact: `.gitattributes` turns line-ending conversion off.
+Files in this folder are byte-exact: `.gitattributes` turns line-ending conversion off, except for the files recorded
+with CRLF, which are stored with LF and checked out with CRLF, so the working tree holds them as recorded.

@@ -75,7 +75,7 @@ namespace Retake.Tests
             Check.True(again.Notes[0].IsGeneral);
         }
 
-        [Test("session.open_reads_a_general_line_that_follows_the_frame_notes")]
+        [Test("session.open_reads_a_general_line_that_follows_the_notes_of_frames")]
         public static void OpenReadsAGeneralLineAfterTheFrameNotes(TestEnv t)
         {
             var c = new SessionCase(t);
@@ -366,7 +366,7 @@ namespace Retake.Tests
             Check.Equal(new[] { "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
         }
 
-        [Test("session.every_write_removes_an_export_that_frame_notes_1x_wrote_again")]
+        [Test("session.every_write_removes_an_export_that_1x_wrote_again")]
         public static void EveryWriteRemovesTheExport(TestEnv t)
         {
             var c = new SessionCase(t);

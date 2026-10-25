@@ -163,13 +163,16 @@ namespace Retake.Views
             new[] { "J", "Step back while held" },
             new[] { "K", "Pause" },
             new[] { "L", "Play; again for 2×, 4×, 8×" },
+            new[] { "F11", "Full screen (also a double click on the video); Esc leaves it" },
         };
 
         public static readonly string[][] Notes =
         {
             new[] { "1  2  3", "Start a FIX, ADD or REMOVE note at this frame" },
+            new[] { "G", "Start a general note, about the whole video" },
             new[] { "Drag  Click", "Mark a region or a point on the video" },
-            new[] { "Enter", "Save the note" },
+            new[] { "Ctrl+1  Ctrl+2  Ctrl+3", "Change the type of the note being written" },
+            new[] { "Enter", "Save the note (it needs text)" },
             new[] { "Esc", "Cancel the new note or the edit" },
             new[] { "Backspace", "Remove the region (empty field, while editing)" },
             new[] { "F2", "Edit the selected note" },
@@ -182,9 +185,12 @@ namespace Retake.Views
             new[] { "Wheel", "Zoom the timeline" },
             new[] { "Shift+Wheel", "Scroll the timeline" },
             new[] { "0", "Fit the whole video in the timeline" },
+            new[] { "Drag", "Move a note to another frame by its tag" },
+            new[] { "Right-click", "Menu of a note, the video, the notes list or the timeline" },
             new[] { "Ctrl+O", "Open a video" },
-            new[] { "Ctrl+C", "Copy the notes file text" },
-            new[] { "Ctrl+Shift+C", "Copy the readable text" },
+            new[] { "Ctrl+Shift+C", "Copy the notes as text for a chat" },
+            new[] { "Ctrl+C", "Copy the notes file" },
+            new[] { "Ctrl+E", "Done: pack the notes and frames into a zip" },
             new[] { "?", "This list" },
             new[] { "Ctrl+,", "Settings" },
         };
@@ -195,7 +201,7 @@ namespace Retake.Views
             body.Children.Add(SettingsSheet.Group("Playback", Rows(Playback)));
             body.Children.Add(SettingsSheet.Group("Notes", Rows(Notes)));
             body.Children.Add(SettingsSheet.Group("Timeline and files", Rows(Files)));
-            var sheet = new Sheet(Copy.KeysTitle, body, Copy.KeysCloseTip, 520);
+            var sheet = new Sheet(Copy.KeysTitle, body, Copy.KeysCloseTip, 560);
             AutomationProperties.SetAutomationId(sheet, "KeyMap");
             return sheet;
         }
@@ -206,7 +212,7 @@ namespace Retake.Views
             foreach (string[] r in table)
             {
                 var row = new Grid { Margin = new Thickness(14, 6, 14, 6) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 var keys = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
                 foreach (string k in r[0].Split(new[] { "  " }, StringSplitOptions.RemoveEmptyEntries)) keys.Children.Add(Key(k));

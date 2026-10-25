@@ -6,7 +6,7 @@ using Retake.Core;
 
 namespace Retake.Tests
 {
-    /// <summary>Port of tests/test_core_notes.py: regions, the notes file round trip, image names, the readable export and the notes folder.</summary>
+    /// <summary>Regions, the notes file round trip, image names, the readable text and the notes folder; the test names follow the 1.x suite they match.</summary>
     public static class NotesTests
     {
         private const string Sample =
@@ -302,7 +302,7 @@ namespace Retake.Tests
             Check.Equal(nf.Render(), NotesFile.Parse(nf.Render()).Render());
         }
 
-        [Test("notes.general_line_after_the_frame_notes_as_frame_notes_1x_writes_it")]
+        [Test("notes.general_line_after_the_notes_of_frames_as_1x_writes_it")]
         public static void GeneralLineAfterTheFrameNotes(TestEnv t)
         {
             // Frame Notes 1.x keeps the general line as an unparsed line and writes it back after its notes.
@@ -337,7 +337,7 @@ namespace Retake.Tests
             Check.Equal(Header + "-\tFIX\tx\n-\tADD\t\n-\tADD\ty\n", nf.Render());
         }
 
-        [Test("notes.general_notes_sort_before_frame_notes_by_order")]
+        [Test("notes.general_notes_sort_before_the_notes_of_frames_by_order")]
         public static void GeneralNotesSortBeforeFrameNotes(TestEnv t)
         {
             var nf = new NotesFile("v.mp4", 25.0, null);
