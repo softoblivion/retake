@@ -34,8 +34,6 @@ $ignoreEntries = @('__pycache__', '*.py[cod]', '.venv/', 'venv/', '*.spec.bak', 
 $exceptions = @(
     @{ Path = '^docs/releases/v1\.[^/]*\.md$'; Allowed = '*' },                                       # release history
     @{ Path = '^docs/USER_GUIDE\.md$'; Allowed = @('FrameNotes.exe'); MaxLines = 1 },                 # updating from 1.4.1
-    @{ Path = '^docs/SELF_UPDATE\.md$'; Allowed = @('FrameNotes.exe', 'frame-notes_data'); Sections = @('Hand-off from the 1.x line', 'Tests') },
-    @{ Path = '^docs/CORE\.md$'; Allowed = @('frame-notes_data'); Sections = @('Paths') },            # the legacy import
     @{ Path = '^src/Retake\.Core/Paths\.cs$'; Allowed = @('frame-notes_data') },                      # the legacy import
     @{ Path = '^src/Retake/Update/LegacyUpdates\.cs$'; Allowed = @('frame-notes_data') },             # the 1.x updates folder
     @{ Path = '^tests/Retake\.Tests/(PathsSettingsTests|UpdateTests)\.cs$'; Allowed = @('frame-notes_data', 'FrameNotes.exe') },

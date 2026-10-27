@@ -72,9 +72,7 @@ admin rights.
 | Document | What it covers |
 |---|---|
 | [User guide](docs/USER_GUIDE.md) | Install, usage, keyboard, settings, the notes file, timecodes, supported video, data folder, updates, FAQ |
-| [Architecture](docs/ARCHITECTURE.md) | Stack and engine, layout, modules, behaviour, notes file format, timecode rules, data flow |
 | [Build](docs/BUILD.md) | Prerequisites, the build script, libmpv, tests, end-to-end update tests, releasing |
-| [Core](docs/CORE.md) · [Design](docs/DESIGN.md) · [UI](docs/UI.md) · [Self-update](docs/SELF_UPDATE.md) | Module contracts: core API, design layer, player and review views, update wiring |
 | [Release notes](docs/releases/) | What changed in every version |
 | [Third-party components](docs/THIRD_PARTY.md) | What is bundled into the exe, with licences and sources |
 
