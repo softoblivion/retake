@@ -18,8 +18,10 @@ namespace Retake.Design
             Warn = "warn", Info = "info", Error = "error", Retry = "retry", Folder = "folder", Open = "open", Play = "play", Stop = "stop",
             Trash = "trash", Chevron = "chevron", ChevronDown = "chevronDown", Down = "down", Clock = "clock", Video = "video",
             File = "file", Export = "export", Copy = "copy", Note = "note", Pause = "pause", StepBack = "stepBack",
-            StepForward = "stepForward", First = "first", Last = "last", Keyboard = "keyboard", Panel = "panel",
-            Expand = "expand", Collapse = "collapse", Package = "package", Pen = "pen", Move = "move";
+            StepForward = "stepForward", Keyboard = "keyboard", Panel = "panel",
+            Expand = "expand", Package = "package", Pen = "pen", Move = "move", Maximize = "maximize",
+            Restore = "restore", Wrench = "wrench", PlusCircle = "plusCircle", MinusCircle = "minusCircle", ThumbUp = "thumbUp",
+            ThumbDown = "thumbDown", Whole = "whole";
 
         static readonly Dictionary<string, string> Data = new Dictionary<string, string>
         {
@@ -51,15 +53,20 @@ namespace Retake.Design
             [Pause] = "M8.6 6.2v11.6 M15.4 6.2v11.6",
             [StepBack] = "M14.5 6.5 9 12l5.5 5.5",
             [StepForward] = "M9.5 6.5 15 12l-5.5 5.5",
-            [First] = "M7 6.5v11 M17 6.5 11.5 12l5.5 5.5",
-            [Last] = "M17 6.5v11 M7 6.5l5.5 5.5L7 17.5",
             [Keyboard] = "M4.5 6.5h15a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16V8a1.5 1.5 0 0 1 1.5-1.5Z M7 10.3h.1 M10.3 10.3h.1 M13.7 10.3h.1 M17 10.3h.1 M8.5 13.8h7",
             [Panel] = "M5.5 5h13a2.5 2.5 0 0 1 2.5 2.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5v-9A2.5 2.5 0 0 1 5.5 5Z M15 5v14",
             [Expand] = "M4.5 9.5V6a1.5 1.5 0 0 1 1.5-1.5h3.5 M14.5 4.5H18a1.5 1.5 0 0 1 1.5 1.5v3.5 M19.5 14.5V18a1.5 1.5 0 0 1-1.5 1.5h-3.5 M9.5 19.5H6A1.5 1.5 0 0 1 4.5 18v-3.5",
-            [Collapse] = "M9.5 4.5V8A1.5 1.5 0 0 1 8 9.5H4.5 M14.5 4.5V8A1.5 1.5 0 0 0 16 9.5h3.5 M19.5 14.5H16a1.5 1.5 0 0 0-1.5 1.5v3.5 M4.5 14.5H8A1.5 1.5 0 0 1 9.5 16v3.5",
             [Package] = "M4.5 8.2 12 4.3l7.5 3.9v7.6L12 19.7l-7.5-3.9Z M4.5 8.2 12 12.1l7.5-3.9 M12 12.1v7.6 M8.2 6.2l7.5 3.9",
             [Pen] = "M14.6 5.4l4 4L9.2 18.8H5.2v-4Z M12.6 7.4l4 4",
             [Move] = "M4.5 12h15 M8 8.5 4.5 12 8 15.5 M16 8.5l3.5 3.5-3.5 3.5",
+            [Maximize] = "M7.5 6h9A1.5 1.5 0 0 1 18 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 16.5v-9A1.5 1.5 0 0 1 7.5 6Z",
+            [Restore] = "M6.8 9h7.7a1.3 1.3 0 0 1 1.3 1.3V18a1.3 1.3 0 0 1-1.3 1.3H6.8A1.3 1.3 0 0 1 5.5 18v-7.7A1.3 1.3 0 0 1 6.8 9Z M9 6.2v-.4A1.3 1.3 0 0 1 10.3 4.5H18a1.3 1.3 0 0 1 1.3 1.3v7.7A1.3 1.3 0 0 1 18 14.8h-.4",
+            [Wrench] = "M14.6 4.2a4.6 4.6 0 0 0-4.2 6.2l-5.7 5.7a2 2 0 0 0 2.8 2.8l5.7-5.7a4.6 4.6 0 0 0 6.2-4.2l-2.9 1.9-2.6-.6-.6-2.6Z",
+            [PlusCircle] = "M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0 -17 0Z M12 8.3v7.4 M8.3 12h7.4",
+            [MinusCircle] = "M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0 -17 0Z M8.3 12h7.4",
+            [ThumbUp] = "M8 10.5 11.4 4.6a1.7 1.7 0 0 1 3.1 1.2l-.7 3.7h4.3a2 2 0 0 1 2 2.4l-1.3 6.1a2 2 0 0 1-2 1.6H8Z M4.5 10.5H8v9.1H4.5Z",
+            [ThumbDown] = "M8 13.5 11.4 19.4a1.7 1.7 0 0 0 3.1-1.2l-.7-3.7h4.3a2 2 0 0 0 2-2.4l-1.3-6.1a2 2 0 0 0-2-1.6H8Z M4.5 13.5H8V4.4H4.5Z",
+            [Whole] = "M5.5 5h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z M3.5 9h17 M8 5v4 M16 5v4 M8.5 13h7 M8.5 16h4.5",
         };
 
         static readonly HashSet<string> Filled = new HashSet<string> { Play };

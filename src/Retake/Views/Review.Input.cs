@@ -74,7 +74,6 @@ namespace Retake.Views
             if (IsTyping()) return;
             Key key = e.Key == Key.System ? e.SystemKey : e.Key;
             ModifierKeys mods = Keyboard.Modifiers;
-            if (key == Key.F11) { e.Handled = true; window.ToggleFullScreen(); return; }
             if (Timeline.IsMoving)
             {
                 if (key == Key.Escape) { e.Handled = true; Timeline.CancelMove(); }
@@ -84,10 +83,15 @@ namespace Retake.Views
             {
                 if (key == Key.Enter) { e.Handled = true; _ = Commit(); }
                 else if (key == Key.Escape) { e.Handled = true; CancelEdit(); }
-                else if (mods == ModifierKeys.Control && Composer.KindKey(key) is string kind)
+                else if (mods == ModifierKeys.Control && NoteKinds.OfKey(key) is string kind)
                 {
                     e.Handled = true;
                     Video.Overlay.Composer.ChangeKind(kind);
+                }
+                else if (mods == ModifierKeys.Control && NoteKinds.IsGeneralKey(key))
+                {
+                    e.Handled = true;
+                    Video.Overlay.Composer.TogglePlace();
                 }
                 else if (key == Key.Back)
                 {
@@ -106,7 +110,6 @@ namespace Retake.Views
                 else if (key == Key.E && videoLoaded) { e.Handled = true; _ = Pack(); }
                 return;
             }
-            if (key == Key.Escape && window.IsFullScreen) { e.Handled = true; window.SetFullScreen(false); return; }
             if ((mods & ModifierKeys.Alt) != 0) return;
             if (key == Key.OemQuestion && mods == ModifierKeys.Shift)
             {
@@ -120,6 +123,8 @@ namespace Retake.Views
             if (nav) e.Handled = true;
             if (!videoLoaded || player == null) return;
             bool shift = (mods & ModifierKeys.Shift) != 0;
+            if (!shift && NoteKinds.OfKey(key) is string newKind) { e.Handled = true; _ = StartNote(newKind); return; }
+            if (!shift && NoteKinds.IsGeneralKey(key)) { e.Handled = true; _ = StartNote(null); return; }
             switch (key)
             {
                 case Key.Space: TogglePlay(); break;
@@ -129,10 +134,6 @@ namespace Retake.Views
                 case Key.End: player.SeekFrame(lastFrame); break;
                 case Key.Up: SelectNeighbour(-1); break;
                 case Key.Down: SelectNeighbour(1); break;
-                case Key.D1: case Key.NumPad1: if (!shift) { e.Handled = true; _ = StartNote("FIX"); } break;
-                case Key.D2: case Key.NumPad2: if (!shift) { e.Handled = true; _ = StartNote("ADD"); } break;
-                case Key.D3: case Key.NumPad3: if (!shift) { e.Handled = true; _ = StartNote("REMOVE"); } break;
-                case Key.G: e.Handled = true; StartGeneralNote(); break;
                 case Key.F2: e.Handled = true; if (selectedId != null) _ = EditNote(selectedId); else { NoteState? n = state.Notes.FirstOrDefault(x => x.Frame == frame); if (n != null) _ = EditNote(n.Id); } break;
                 case Key.Delete: e.Handled = true; if (selectedId != null) RemoveNote(selectedId); break;
                 case Key.D0: case Key.NumPad0: if (!shift) { e.Handled = true; Timeline.ResetZoom(); } break;

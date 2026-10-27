@@ -16,9 +16,10 @@ Requirements: Windows 10 or 11, 64-bit. Nothing else is installed: the video eng
 1. Open a video: drop it onto the window, press `Ctrl+O`, use "Open with" in Explorer, or pick it from the recent
    list on the start screen or in the **Recent** menu of the title bar.
 2. Play, step frame by frame with the arrow keys, pause on the frame that needs a change.
-3. Press `1` (FIX: correct something), `2` (ADD: something is missing) or `3` (REMOVE: take something out). The
-   video pauses first and the note takes the current frame. `G` writes a general note about the whole video
-   instead ("the music is too loud overall").
+3. Press `1` (FIX: correct something), `2` (ADD: something is missing), `3` (REMOVE: take something out), `5`
+   (LIKE: something that works) or `6` (DISLIKE: something that does not), or click the same button in the row
+   under the video. The video pauses first and the note takes the current frame. `4` writes a general note about
+   the whole video instead ("the music is too loud overall").
 4. Optionally drag a rectangle around the element on the video, or click to put a point.
 5. Type the note and press `Enter`. A note needs text: with an empty field `Enter` keeps the editor open and asks for
    it. `Esc` cancels: a new note is removed, an edit is reverted.
@@ -38,22 +39,31 @@ is selected.
 
 ### Note types
 
-The editor shows where the note belongs (its timecode, or General) and the three types; the type of the note is lit.
-A click on another type, or `Ctrl+1` / `Ctrl+2` / `Ctrl+3`, changes it, also when editing an older note; the mark and
-the saved frame image take the colour of the new type.
+| Type | Key | For |
+|---|---|---|
+| FIX | `1` | something is wrong and must be corrected |
+| ADD | `2` | something is missing |
+| REMOVE | `3` | something must be taken out |
+| LIKE | `5` | something works and should stay |
+| DISLIKE | `6` | something does not work, without a fix in mind yet |
+
+The editor shows where the note belongs (its timecode, or General) and the five types, each with its icon; the type of
+the note is lit. A click on another type, or `Ctrl+1` to `Ctrl+6`, changes it, also when editing an older note; the
+mark and the saved frame image take the colour of the new type.
 
 ### General notes
 
-A general note is about the whole video, not a frame: `G`, the `+` at the top of the notes list, or **New general
-note** in a right-click menu. It has no mark and no marker on the timeline; the notes list shows it first, labelled
-General.
+A general note is about the whole video, not a frame: `4`, the **General** button in the row under the video, or
+**New general note** in a right-click menu. It has no mark and no marker on the timeline; the notes list shows it
+first, labelled General. In the editor, a click on General or on the timecode (or `Ctrl+4`) moves a note between the
+whole video and its frame; a note that becomes general loses its mark.
 
 ### Frame-exact playback
 
 Every seek and step lands on an exact frame, whatever the codec: the arrow keys step one frame, `Shift` + arrows
 ten, `Home` / `End` go to the first and last frame. `J` steps back while held, `K` pauses, `L` plays and, pressed
-again, plays faster (2x, 4x, 8x). The current timecode, the duration and the frame number are shown under the
-video.
+again, plays faster (2x, 4x, 8x). The row under the video holds the frame steps, play, the speed, the current
+timecode, the duration and the frame number, and the six note buttons with their keys.
 
 ### Mini timeline
 
@@ -65,15 +75,16 @@ note with a mark gets a new frame image at the frame where it lands; `Esc` cance
 
 ### Notes list
 
-General notes first, then every frame note with its timecode, type, text and a thumbnail of its frame image, in
-timecode order. `↑` / `↓` select (the video follows), `F2` or a double click edits, `Delete` removes, a right click
+General notes first, then every frame note with the icon of its type, its timecode, type, text and a thumbnail of
+its frame image, in timecode order; the heading counts the notes of each type. `↑` / `↓` select (the video follows), `F2` or a double click edits, `Delete` removes, a right click
 offers Edit, Copy the timecode, Copy the text, Move to the playhead and Delete. The list button in the title bar
 hides and shows it.
 
-### Full screen
+### Window
 
-The full-screen button in the title bar, `F11` or a double click on the video fills the whole monitor; the video
-gets the extra room, the notes and the timeline stay. `F11`, `Esc` or the button return to the normal window.
+The window can be resized from its edges and maximized with the button beside minimize (or a double click on the
+title bar, or Windows Snap); the video gets the extra room, the notes and the timeline stay. The size, the place
+and whether it was maximized are remembered for the next start.
 
 ### Frame rate
 
@@ -86,8 +97,8 @@ known frame rate.
 
 The current timecode, the duration, the frame number and the timecode of every note copy themselves on a click
 (`0:01:12:05`), ready for the time field of After Effects or Premiere. The **Copy** menu in the title bar copies the
-notes as plain text for a chat (`Ctrl+Shift+C`) or the data file text (`Ctrl+C`). The text for a chat has no
-formatting, so it reads the same in Telegram, WhatsApp or an e-mail:
+notes as **Text** (`Ctrl+Shift+C`) or the data file text (`Ctrl+C`). The text has no formatting, so it reads the
+same in Telegram, WhatsApp or an e-mail:
 
 ```
 promo_v3.mp4
@@ -121,20 +132,20 @@ The keys work when no text field has focus; `?` shows them in the app.
 | `Home` `End` | First / last frame |
 | `J` `K` `L` | Step back while held / pause / play, again for 2x, 4x, 8x |
 | `1` `2` `3` | Start a FIX / ADD / REMOVE note at the current frame (pauses first); then drag on the video to mark a region, or click to put a point |
-| `G` | Start a general note, about the whole video |
-| `Ctrl+1` `Ctrl+2` `Ctrl+3` | Change the type of the note being written |
+| `4` | Start a general note, about the whole video |
+| `5` `6` | Start a LIKE / DISLIKE note at the current frame |
+| `Ctrl+1` … `Ctrl+6` | Change the type of the note being written; `Ctrl+4` moves it between its frame and the whole video |
 | `Enter` | Save the note (it needs text) |
-| `Esc` | Cancel the note; close a menu or a sheet; cancel a marker drag; leave full screen |
+| `Esc` | Cancel the note; close a menu or a sheet; cancel a marker drag |
 | `Backspace` (empty note field) | Remove the region of the note being written |
 | `F2` | Edit the selected note |
 | `Delete` | Remove the selected note |
 | `↑` `↓` | Previous / next note (moves to it) |
-| `Ctrl+Shift+C` | Copy the notes as text for a chat |
+| `Ctrl+Shift+C` | Copy the notes as text |
 | `Ctrl+C` | Copy the notes file text |
 | `Ctrl+E` | Done: pack the notes and frames into a zip |
 | `Ctrl+O` | Open a video |
 | `0` | Show the whole video in the timeline |
-| `F11` | Full screen on / off |
 | `?` | Show the keys |
 | `Ctrl+,` | Settings |
 
@@ -145,12 +156,13 @@ The gear in the title bar (or `Ctrl+,`) opens Settings. Every change applies at 
 | Setting | Meaning |
 |---|---|
 | **Theme** | Crystal Black (dark glass on a near-black scene, the default) or Crystal Sky (light glass on a pale blue scene). |
-| **Scale** | The size of the whole window and its text: 100, 125, 150, 175 or 200 %, on top of the scaling Windows applies. On a large monitor at Windows' 100 % (2560 x 1440, for example), 125 or 150 % gives a window of a comfortable size. A step too large for the screen is unavailable. |
+| **Scale** | The size of the text and controls: 100, 125, 150, 175 or 200 %, on top of the scaling Windows applies. On a large monitor at Windows' 100 % (2560 x 1440, for example), 125 or 150 % reads comfortably. A step whose smallest window does not fit the screen is unavailable. |
 | **Download updates automatically** | On (default): a new version downloads in the background and waits for a restart. Off: it waits until you install it. |
 | **Author name** | Your name, kept in the settings. This version does not write it into the notes file yet. |
 
-The window has one size (1280 x 800 at 100 % Scale, smaller on a small screen) and remembers its position; full
-screen is the only other size.
+The window opens at 1280 x 800 at 100 % Scale (smaller on a small screen), can be resized down to 960 x 600 at that
+Scale or maximized, and remembers its place, size and maximized state. Scale makes text and controls larger; a larger
+window shows more room for the video, not larger controls.
 
 ## The notes file
 
@@ -180,7 +192,8 @@ promo_v3_notes\
 The first line names the file format (it is the same format as in Frame Notes 1.x, so both read each other's
 folders). The first three columns are what the editor reads: timecode (`-` for a general note), type, text. The
 optional fourth column is the region in fractions of the frame, the fifth the image file name inside `frames\`. General
-notes come first, then the frame notes sorted by frame. The `source` line ties the file to its video; lines the app
+notes come first, then the frame notes sorted by frame. The types are `FIX`, `ADD`, `REMOVE`, `LIKE` and `DISLIKE`;
+Frame Notes 1.x knows only the first three and keeps a LIKE or DISLIKE line as it is. The `source` line ties the file to its video; lines the app
 does not understand are kept, so hand edits survive.
 
 The file is rewritten with an atomic replace. Removing a note deletes its image; removing every note keeps the folder

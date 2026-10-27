@@ -9,8 +9,10 @@ namespace Retake.Core
         public int Fix { get; set; }
         public int Add { get; set; }
         public int Remove { get; set; }
+        public int Like { get; set; }
+        public int Dislike { get; set; }
 
-        /// <summary>The count of a kind (<c>FIX</c>, <c>ADD</c> or <c>REMOVE</c>); an unknown kind throws <see cref="ArgumentException"/>.</summary>
+        /// <summary>The count of a kind (one of <see cref="Note.Kinds"/>); an unknown kind throws <see cref="ArgumentException"/>.</summary>
         public int this[string kind]
         {
             get
@@ -20,6 +22,8 @@ namespace Retake.Core
                     case "FIX": return Fix;
                     case "ADD": return Add;
                     case "REMOVE": return Remove;
+                    case "LIKE": return Like;
+                    case "DISLIKE": return Dislike;
                     default: throw new ArgumentException("Unknown note type");
                 }
             }
@@ -30,6 +34,8 @@ namespace Retake.Core
                     case "FIX": Fix = value; break;
                     case "ADD": Add = value; break;
                     case "REMOVE": Remove = value; break;
+                    case "LIKE": Like = value; break;
+                    case "DISLIKE": Dislike = value; break;
                     default: throw new ArgumentException("Unknown note type");
                 }
             }

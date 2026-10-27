@@ -44,7 +44,6 @@ namespace Retake.Core
         public static readonly string[] Themes = { "black", "sky" };
 
         private static readonly string[] RetiredKeys = { "update_check_interval" };
-        private static readonly string[] RetiredWindowKeys = { "width", "height", "maximized" };
         private static readonly string[] KnownKeys =
         {
             "window", "last_dir", "recent", "fps_overrides", "auto_download_updates", "notes_panel_open", "ui_scale", "theme", "author"
@@ -73,6 +72,15 @@ namespace Retake.Core
 
         /// <summary>Window top edge in screen pixels, or null for the default position.</summary>
         public int? WindowY { get; set; }
+
+        /// <summary>Width of the window when it is not maximized, in device-independent pixels; null for the default size.</summary>
+        public int? WindowWidth { get; set; }
+
+        /// <summary>Height of the window when it is not maximized, in device-independent pixels; null for the default size.</summary>
+        public int? WindowHeight { get; set; }
+
+        /// <summary>Whether the window was maximized when it closed. Default false.</summary>
+        public bool WindowMaximized { get; set; }
 
         /// <summary>Folder of the last opened video ("" when none).</summary>
         public string LastDir { get; set; } = "";
@@ -124,6 +132,9 @@ namespace Retake.Core
         {
             WindowX = null;
             WindowY = null;
+            WindowWidth = null;
+            WindowHeight = null;
+            WindowMaximized = false;
             LastDir = "";
             AutoDownloadUpdates = true;
             NotesPanelOpen = true;
@@ -188,7 +199,10 @@ namespace Retake.Core
                         {
                             if (w.Key == "x") WindowX = ToInt(w.Value);
                             else if (w.Key == "y") WindowY = ToInt(w.Value);
-                            else if (Array.IndexOf(RetiredWindowKeys, w.Key) < 0) _windowExtra[w.Key] = w.Value;
+                            else if (w.Key == "width") WindowWidth = ToSize(w.Value);
+                            else if (w.Key == "height") WindowHeight = ToSize(w.Value);
+                            else if (w.Key == "maximized") WindowMaximized = w.Value is bool max && max;
+                            else _windowExtra[w.Key] = w.Value;
                         }
                         break;
                     case "last_dir":
@@ -229,6 +243,13 @@ namespace Retake.Core
             if (!IsInt(value)) return null;
             long l = (long)value!;
             return (l < int.MinValue || l > int.MaxValue) ? (int?)null : (int)l;
+        }
+
+        /// <summary>A window size: a whole number from 100 to 100000, else null.</summary>
+        private static int? ToSize(object? value)
+        {
+            int? n = ToInt(value);
+            return n.HasValue && n.Value >= 100 && n.Value <= 100000 ? n : null;
         }
 
         private void CleanRecent(List<object?> items)
@@ -292,6 +313,10 @@ namespace Retake.Core
             var window = new JsonObject();
             window["x"] = WindowX.HasValue ? (object)(long)WindowX.Value : null;
             window["y"] = WindowY.HasValue ? (object)(long)WindowY.Value : null;
+            // The size keys are written only when they hold something, so a file of the 1.x line is kept as it is.
+            if (WindowWidth.HasValue) window["width"] = (long)WindowWidth.Value;
+            if (WindowHeight.HasValue) window["height"] = (long)WindowHeight.Value;
+            if (WindowMaximized) window["maximized"] = true;
             foreach (KeyValuePair<string, object?> pair in _windowExtra) window[pair.Key] = pair.Value;
 
             var recent = new List<object?>();

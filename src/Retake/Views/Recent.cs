@@ -61,7 +61,10 @@ namespace Retake.Views
         }
     }
 
-    /// <summary>A row of the recent list: the name, the folder under it, the position and counts on the right. Right click opens its menu.</summary>
+    /// <summary>
+    /// A row of the recent list: a video tile, the name with the folder under it (its last two parts), the position
+    /// and counts on the right. Right click opens its menu.
+    /// </summary>
     public sealed class RecentRow : Pressable
     {
         readonly PlateVisual plate = new PlateVisual(PlateKind.Bare) { Radius = 10 };
@@ -79,20 +82,30 @@ namespace Retake.Views
             AutomationProperties.SetAutomationId(this, "Recent-" + item.Name);
             AutomationProperties.SetItemStatus(this, item.Meta());
             Tip.Set(this, item.Exists ? Copy.RecentRowTip : Copy.RecentMissingTip);
-            var grid = new Grid { Margin = new Thickness(10, 5, 10, 6) };
+            var grid = new Grid { Margin = new Thickness(8, 7, 12, 7) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var names = new StackPanel();
+            var tile = new Border { Width = 36, Height = 36, CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 0, 12, 0) };
+            tile.SetResourceReference(Border.BackgroundProperty, "T.fill-2");
+            FrameworkElement glyph = Icons.Make(Icons.Video, 18);
+            glyph.HorizontalAlignment = HorizontalAlignment.Center;
+            glyph.SetResourceReference(TextBlock.ForegroundProperty, item.IsOpen ? "T.accent-ink" : "T.ink-2");
+            tile.Child = glyph;
+            grid.Children.Add(tile);
+            var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(names, 1);
             TextBlock name = Typography.Text(item.Name, Typography.Label, item.Exists ? "ink-1" : "ink-3");
             name.TextTrimming = TextTrimming.CharacterEllipsis;
-            TextBlock folder = Typography.Text(item.Folder, Typography.Caption, "ink-3");
+            TextBlock folder = Typography.Text(PathText.ShortFolder(item.Folder), Typography.Caption, "ink-3");
             folder.TextTrimming = TextTrimming.CharacterEllipsis;
             names.Children.Add(name);
             names.Children.Add(folder);
             grid.Children.Add(names);
             TextBlock meta = Typography.Text(item.Meta(), Typography.Caption, "ink-3");
             meta.Margin = new Thickness(12, 0, 0, 0);
-            Grid.SetColumn(meta, 1);
+            meta.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(meta, 2);
             grid.Children.Add(meta);
             Content = new Grid { Children = { plate, grid } };
             Opacity = item.Exists ? 1 : 0.7;
@@ -176,8 +189,8 @@ namespace Retake.Views
     }
 
     /// <summary>
-    /// The start screen without a video: a drop target card (title, hint, the one primary button) and the recent
-    /// list under it. While the player starts, the button waits.
+    /// The start screen without a video: a drop target card (a video glyph on a round tile, the title, the hint, the
+    /// one primary button) and the recent list on a card under it. While the player starts, the button waits.
     /// </summary>
     public sealed class EmptyState : Grid
     {
@@ -186,7 +199,7 @@ namespace Retake.Views
         public readonly GlassButton OpenButton;
         readonly StackPanel recent = new StackPanel();
         readonly TextBlock recentHead;
-        readonly ScrollViewer recentScroll;
+        readonly Grid recentCard = new Grid();
         const double ListWidth = 560;
 
         public event Action<RecentRow>? RowMenu;
@@ -195,25 +208,28 @@ namespace Retake.Views
         public EmptyState()
         {
             AutomationProperties.SetAutomationId(this, "EmptyState");
-            var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 70, 0, 0), Width = ListWidth };
-            var card = new Grid { Height = 190 };
+            var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 64, 0, 0), Width = ListWidth };
+            var card = new Grid { Height = 232 };
             card.Children.Add(new ShadowLayer("card-drop", 22));
             card.Children.Add(new SurfaceVisual(22, "card-rim", null, "card-fill"));
-            var dash = new System.Windows.Shapes.Rectangle { RadiusX = 16, RadiusY = 16, StrokeThickness = 1.5, StrokeDashArray = new System.Windows.Media.DoubleCollection { 4, 4 }, Margin = new Thickness(8), IsHitTestVisible = false };
+            var dash = new System.Windows.Shapes.Rectangle { RadiusX = 14, RadiusY = 14, StrokeThickness = 1.5, StrokeDashArray = new System.Windows.Media.DoubleCollection { 4, 4 }, Margin = new Thickness(8), IsHitTestVisible = false };
             dash.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "T.stroke-2");
             card.Children.Add(dash);
             var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            FrameworkElement glyph = Icons.Make(Icons.Video, 30);
+            var disc = new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(28), HorizontalAlignment = HorizontalAlignment.Center };
+            disc.SetResourceReference(Border.BackgroundProperty, "T.fill-2");
+            FrameworkElement glyph = Icons.Make(Icons.Video, 26);
             glyph.HorizontalAlignment = HorizontalAlignment.Center;
-            glyph.SetResourceReference(TextBlock.ForegroundProperty, "T.ink-3");
-            inner.Children.Add(glyph);
+            glyph.SetResourceReference(TextBlock.ForegroundProperty, "T.ink-2");
+            disc.Child = glyph;
+            inner.Children.Add(disc);
             TextBlock title = Typography.Text(Copy.EmptyTitle, Typography.Title);
             title.HorizontalAlignment = HorizontalAlignment.Center;
-            title.Margin = new Thickness(0, 10, 0, 0);
+            title.Margin = new Thickness(0, 14, 0, 0);
             inner.Children.Add(title);
             TextBlock hint = Typography.Text(Copy.EmptyHint, Typography.Caption, "ink-3");
             hint.HorizontalAlignment = HorizontalAlignment.Center;
-            hint.Margin = new Thickness(0, 4, 0, 14);
+            hint.Margin = new Thickness(0, 4, 0, 16);
             inner.Children.Add(hint);
             OpenButton = new GlassButton(Copy.EmptyButton, Icons.Folder, ButtonKind.Tinted, ButtonSize.M) { HorizontalAlignment = HorizontalAlignment.Center };
             Tip.Set(OpenButton, Copy.EmptyButtonTip);
@@ -222,11 +238,14 @@ namespace Retake.Views
             card.Children.Add(inner);
             column.Children.Add(card);
             recentHead = Typography.Text(Copy.RecentHeading, Typography.Section, "ink-3");
-            recentHead.Margin = new Thickness(12, 22, 0, 6);
+            recentHead.Margin = new Thickness(14, 26, 0, 8);
             column.Children.Add(recentHead);
-            recentScroll = new ScrollViewer { Content = recent, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, MaxHeight = 330 };
+            recentCard.Children.Add(new ShadowLayer("card-drop", Review.CardRadius));
+            recentCard.Children.Add(new SurfaceVisual(Review.CardRadius, "card-rim", null, "card-fill"));
+            var recentScroll = new ScrollViewer { Content = recent, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, MaxHeight = 330, Padding = new Thickness(4) };
             AutomationProperties.SetAutomationId(recent, "RecentList");
-            column.Children.Add(recentScroll);
+            recentCard.Children.Add(recentScroll);
+            column.Children.Add(recentCard);
             Children.Add(column);
         }
 
@@ -241,12 +260,12 @@ namespace Retake.Views
             recent.Children.Clear();
             foreach (RecentItem item in items)
             {
-                var row = new RecentRow(item, ListWidth - 12);
+                var row = new RecentRow(item, ListWidth - 8);
                 row.Click += (s, e) => { if (item.Exists) OpenPath?.Invoke(item.Path); };
                 row.Menu += r => RowMenu?.Invoke(r);
                 recent.Children.Add(row);
             }
-            recentHead.Visibility = recentScroll.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            recentHead.Visibility = recentCard.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 }

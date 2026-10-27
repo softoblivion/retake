@@ -163,15 +163,15 @@ namespace Retake.Views
             new[] { "J", "Step back while held" },
             new[] { "K", "Pause" },
             new[] { "L", "Play; again for 2×, 4×, 8×" },
-            new[] { "F11", "Full screen (also a double click on the video); Esc leaves it" },
         };
 
         public static readonly string[][] Notes =
         {
             new[] { "1  2  3", "Start a FIX, ADD or REMOVE note at this frame" },
-            new[] { "G", "Start a general note, about the whole video" },
+            new[] { "4", "Start a general note, about the whole video" },
+            new[] { "5  6", "Start a LIKE or DISLIKE note at this frame" },
             new[] { "Drag  Click", "Mark a region or a point on the video" },
-            new[] { "Ctrl+1  Ctrl+2  Ctrl+3", "Change the type of the note being written" },
+            new[] { "Ctrl+1 … Ctrl+6", "Change the type of the note being written; Ctrl+4 moves it between its frame and the whole video" },
             new[] { "Enter", "Save the note (it needs text)" },
             new[] { "Esc", "Cancel the new note or the edit" },
             new[] { "Backspace", "Remove the region (empty field, while editing)" },
@@ -188,7 +188,7 @@ namespace Retake.Views
             new[] { "Drag", "Move a note to another frame by its tag" },
             new[] { "Right-click", "Menu of a note, the video, the notes list or the timeline" },
             new[] { "Ctrl+O", "Open a video" },
-            new[] { "Ctrl+Shift+C", "Copy the notes as text for a chat" },
+            new[] { "Ctrl+Shift+C", "Copy the notes as text" },
             new[] { "Ctrl+C", "Copy the notes file" },
             new[] { "Ctrl+E", "Done: pack the notes and frames into a zip" },
             new[] { "?", "This list" },

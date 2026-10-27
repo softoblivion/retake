@@ -219,21 +219,34 @@ namespace Retake.Tests
             Check.Equal(true, s.AutoDownloadUpdates);
         }
 
-        [Test("test_core_paths_settings.SettingsTest.test_old_window_size_keys_are_dropped")]
-        public static void OldWindowSizeKeysAreDropped(TestEnv t)
+        [Test("settings.window_size_and_maximized_are_read_and_written")]
+        public static void WindowSizeAndMaximized(TestEnv t)
         {
             string folder = t.Combine("home");
             Fx.WriteText(Path.Combine(folder, "settings.json"),
-                "{\"window\": {\"x\": 30, \"y\": 20, \"width\": 900, \"height\": 700, \"maximized\": true}}");
+                "{\"window\": {\"x\": 30, \"y\": 20, \"width\": 900, \"height\": 700, \"maximized\": true, \"z\": 1}}");
             Settings s = Make(t);
             s.Load();
             Check.Equal(30, s.WindowX);
             Check.Equal(20, s.WindowY);
+            Check.Equal(900, s.WindowWidth);
+            Check.Equal(700, s.WindowHeight);
+            Check.True(s.WindowMaximized);
             s.Save();
             var window = (JsonObject)ReadJson(Path.Combine(folder, "settings.json"))["window"]!;
-            Check.Equal(new[] { "x", "y" }, window.Keys.ToList());
-            Check.Equal(30L, window["x"]);
-            Check.Equal(20L, window["y"]);
+            Check.Equal(new[] { "x", "y", "width", "height", "maximized", "z" }, window.Keys.ToList());
+            Check.Equal(900L, window["width"]);
+            Check.Equal(true, window["maximized"]);
+            Check.Equal(1L, window["z"], "unknown window keys are kept");
+            Fx.WriteText(Path.Combine(folder, "settings.json"),
+                "{\"window\": {\"width\": 12, \"height\": \"big\", \"maximized\": 1}}");
+            s.Load();
+            Check.True(s.WindowWidth == null, "a size below 100 is ignored");
+            Check.True(s.WindowHeight == null, "a size that is not a number is ignored");
+            Check.False(s.WindowMaximized);
+            s.Save();
+            window = (JsonObject)ReadJson(Path.Combine(folder, "settings.json"))["window"]!;
+            Check.Equal(new[] { "x", "y" }, window.Keys.ToList(), "unknown size and a window that is not maximized write no keys");
         }
 
         [Test("test_core_paths_settings.SettingsTest.test_recent_list_is_newest_first_unique_and_capped")]

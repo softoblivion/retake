@@ -11,11 +11,11 @@
 ![WPF](https://img.shields.io/badge/UI-WPF-68217A)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-**Frame-accurate video review notes for editors and reviewers on Windows. Pause on a frame, press 1, 2 or 3, mark the element and type a line: every note lands on the exact frame with an After Effects style timecode, in a notes folder next to the render. Drag notes along the timeline, add general notes for the whole video, and pack the review into one zip to send. Plays H.264, HEVC, ProRes, DNxHD, VP9 and AV1 through the mpv engine with exact frame stepping. One portable exe, no installer, no account; updates itself from GitHub Releases.**
+**Frame-accurate video review notes for editors and reviewers on Windows. Pause on a frame, press a key from 1 to 6, mark the element and type a line: every note lands on the exact frame with an After Effects style timecode, in a notes folder next to the render. Drag notes along the timeline, add general notes for the whole video, and pack the review into one zip to send. Plays H.264, HEVC, ProRes, DNxHD, VP9 and AV1 through the mpv engine with exact frame stepping. One portable exe, no installer, no account; updates itself from GitHub Releases.**
 
 <img src="docs/assets/screenshot.png" alt="Retake main window" width="860">
 
-<sub>Pause on a frame · press 1, 2 or 3 and mark the element · type the note.</sub>
+<sub>Pause on a frame · press a key from 1 to 6 and mark the element · type the note.</sub>
 
 </div>
 
@@ -23,8 +23,8 @@
 
 ## Why Retake
 
-- **Three keys, no mouse.** `1` fix, `2` add, `3` remove. The video pauses, the note takes the current frame, you
-  type one line and press `Enter`.
+- **One key per note, no mouse.** `1` fix, `2` add, `3` remove, `5` like, `6` dislike, `4` a note about the whole
+  video. The video pauses, the note takes the current frame, you type one line and press `Enter`.
 - **Point at the thing.** Drag a rectangle around the element on the frame, or click to put a point. The note gets
   a PNG of that frame at full size with the mark drawn on it, so "this title" needs no description.
 - **Exact frames on real deliverables.** Mezzanine and long-GOP renders open as they are, and every seek, step and
@@ -42,8 +42,8 @@
 1. Download [`Retake.exe`](https://github.com/softoblivion/retake/releases/latest/download/Retake.exe) into a folder
    of its own, for example `D:\Apps\Retake\`.
 2. Run it and drop a video onto the window (or press `Ctrl+O`, or use "Open with" in Explorer).
-3. Play, pause on a frame, press `1`, `2` or `3`, drag a rectangle around the element if it helps, type the note,
-   press `Enter`. The notes are saved after every change.
+3. Play, pause on a frame, press `1`, `2`, `3`, `5` or `6` (or click the note buttons under the video), drag a
+   rectangle around the element if it helps, type the note, press `Enter`. The notes are saved after every change.
 
 **Requirements:** Windows 10 or 11, 64-bit. The video engine is inside the exe; no codec packs, no installer, no
 admin rights.
@@ -59,10 +59,11 @@ admin rights.
 | **Shuttle and stepping** | Arrow keys step one frame, `Shift` ten, `J` / `K` / `L` shuttle up to 8x; dragging in the ruler scrubs. The [full key map](docs/USER_GUIDE.md#keyboard) is one `?` away. |
 | **Frame rate** | Read from the file and checked against the player; a wrong or missing rate is overridden per video, and the timecodes of its notes follow. |
 | **Mini timeline** | Ruler with timecodes, playhead and one tagged marker per note; resting on a tag shows the note and its frame image, a drag moves the note to another frame, the wheel zooms. |
-| **Notes list** | General notes for the whole video first, then every frame note with its thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes. |
+| **Note types** | FIX, ADD and REMOVE for change requests, LIKE and DISLIKE for reactions, and general notes about the whole video; each type has its key, colour and icon. |
+| **Notes list** | General notes for the whole video first, then every frame note with its type icon and thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes. |
 | **Right-click menus** | Notes, the video, the timeline and the list offer their actions with the key of each, so nobody has to learn the keys first. |
-| **Send the review** | **Done** packs the notes and their frame images into one zip; `Ctrl+Shift+C` copies the notes as plain text for a chat; a click on any timecode copies it for the time field of After Effects or Premiere. |
-| **Full screen** | `F11` or a double click on the video gives the whole monitor to the review. |
+| **Send the review** | **Done** packs the notes and their frame images into one zip; `Ctrl+Shift+C` copies the notes as plain text for a chat or an e-mail; a click on any timecode copies it for the time field of After Effects or Premiere. |
+| **Any window size** | Resize the window or maximize it; the video takes the room, and the size is remembered. |
 | **Recent videos** | The start screen lists recent videos with their note counts and opens them at the frame they were left on. |
 | **Glass look** | Crystal Black and Crystal Sky themes and a Scale setting from 100 to 200 % for the whole window. |
 | **Self-updating** | New releases are found in the background, downloaded, verified by size and SHA-256 and installed on **Restart to update**. |

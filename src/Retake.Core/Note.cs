@@ -9,7 +9,7 @@ namespace Retake.Core
     public sealed class Note
     {
         /// <summary>The note kinds, in the order the summaries list them.</summary>
-        public static readonly string[] Kinds = { "FIX", "ADD", "REMOVE" };
+        public static readonly string[] Kinds = { "FIX", "ADD", "REMOVE", "LIKE", "DISLIKE" };
 
         public Note(string id, int? frame, string kind, string text)
         {

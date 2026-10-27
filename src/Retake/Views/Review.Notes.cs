@@ -73,9 +73,16 @@ namespace Retake.Views
             return true;
         }
 
-        /// <summary>1 / 2 / 3: a new note of a type at the frame on screen (or at <paramref name="at"/>, from the timeline's menu).</summary>
-        async Task StartNote(string kind, int? at = null)
+        /// <summary>
+        /// The keys 1 to 6 and the note bar: a new note of a type at the frame on screen (or at <paramref name="at"/>, from
+        /// the timeline's menu); a null <paramref name="kind"/> (4) is a general note about the whole video, of the type
+        /// FIX until the editor changes it. A note being written is saved first (a click on the bar presses the window
+        /// before it clicks the button), so the new note never waits for a second press.
+        /// </summary>
+        async Task StartNote(string? kind, int? at = null)
         {
+            if (commitTask != null && !commitTask.IsCompleted) await commitTask;
+            if (edit != null && !saving) await Commit(true);
             if (Busy || RateMissing()) return;
             starting = true;
             int f;
@@ -92,17 +99,8 @@ namespace Retake.Views
             finally { starting = false; }
             if (edit != null || !videoLoaded) return;
             Select(null, false);
-            edit = new Edit { Create = true, Kind = kind, OrigKind = kind, Frame = f };
-            BeginEdit();
-        }
-
-        /// <summary>G: a new general note, about the whole video (no frame, no region).</summary>
-        void StartGeneralNote()
-        {
-            if (Busy || RateMissing()) return;
-            if (playing) player!.Pause();
-            Select(null, false);
-            edit = new Edit { Create = true, Kind = "FIX", OrigKind = "FIX", Frame = null };
+            string k = kind ?? "FIX";
+            edit = new Edit { Create = true, Kind = k, OrigKind = k, Frame = kind != null ? f : (int?)null, AtFrame = f, OrigGeneral = kind == null };
             BeginEdit();
         }
 
@@ -129,7 +127,7 @@ namespace Retake.Views
             }
             finally { starting = false; }
             if (edit != null) return;
-            edit = new Edit { Create = false, Id = n.Id, Kind = n.Kind, OrigKind = n.Kind, Frame = n.Frame, Region = n.Region, OrigRegion = n.Region, OrigText = n.Text };
+            edit = new Edit { Create = false, Id = n.Id, Kind = n.Kind, OrigKind = n.Kind, Frame = n.Frame, AtFrame = n.Frame ?? player.Frame, OrigGeneral = n.IsGeneral, Region = n.Region, OrigRegion = n.Region, OrigText = n.Text };
             BeginEdit();
         }
 
@@ -138,15 +136,43 @@ namespace Retake.Views
             Edit e = edit!;
             Trace();
             OverlayWindow o = Video.Overlay;
+            o.Composer.Open(e.Kind, Format(e.AtFrame), e.General, e.OrigText);
+            ShowPlace();
+            o.SetTyping(true);
+        }
+
+        /// <summary>The parts of the editor that follow the note's place: the region tool, the hint, the editor's spot.</summary>
+        void ShowPlace()
+        {
+            Edit e = edit!;
+            OverlayWindow o = Video.Overlay;
             o.Region.Show(e.General ? null : e.Region, e.Kind);
             o.Region.SetDrawing(!e.General);
             if (e.General) o.Hint.Show(Copy.HintGeneral, Copy.KeysCreate);
-            else if (e.Create) o.Hint.Show(Copy.HintCreate, Copy.KeysCreate);
+            else if (e.Create || e.OrigGeneral) o.Hint.Show(Copy.HintCreate, Copy.KeysCreate);
             else o.Hint.Show(Copy.HintEdit, Copy.KeysEdit);
-            o.Composer.Open(e.Kind, e.Frame.HasValue ? Format(e.Frame.Value) : null, e.OrigText);
             PlaceComposer();
-            o.SetTyping(true);
             AutomationProperties.SetItemStatus(o.Composer, (e.Create ? "create" : "edit") + (e.General ? " general" : ""));
+        }
+
+        /// <summary>
+        /// Ctrl+4 or the place chips: the note moves between its frame and the whole video. To the whole video it loses
+        /// its region; back on a frame it is the frame it came from (or the one on screen when it started as general).
+        /// </summary>
+        void SetEditPlace(bool general)
+        {
+            Edit? e = edit;
+            if (e == null || e.General == general) return;
+            e.Frame = general ? (int?)null : e.AtFrame;
+            if (general && e.Region != null)
+            {
+                e.Region = null;
+                e.RegionDirty = !Same(null, e.OrigRegion);
+            }
+            if (!general && player != null && player.Frame != e.AtFrame) player.SeekFrame(e.AtFrame);
+            ShowPlace();
+            Video.Overlay.Composer.FocusField();
+            Trace();
         }
 
         void PlaceComposer()
@@ -247,7 +273,8 @@ namespace Retake.Views
             saving = true;
             Box frameBox = Video.FrameBox;
             bool kindChanged = e.Kind != e.OrigKind;
-            bool needImage = !e.General && e.Region != null && (e.Create || e.RegionDirty || kindChanged);
+            bool placeChanged = e.General != e.OrigGeneral;
+            bool needImage = !e.General && e.Region != null && (e.Create || e.RegionDirty || kindChanged || placeChanged);
             EndEditUi();
             Video.Overlay.Region.Show(e.General ? null : e.Region, e.Kind);
             byte[]? png = null;
@@ -281,11 +308,14 @@ namespace Retake.Views
                 else
                 {
                     bool textChanged = text != e.OrigText;
+                    bool regionChanged = !e.General && (e.RegionDirty || (placeChanged && e.Region != null));
                     edit = null;
-                    if (textChanged || e.RegionDirty || kindChanged)
+                    // The place first: a note that comes to a frame can take a region only once it has the frame.
+                    if (placeChanged) Apply(session.MoveNote(e.Id, e.Frame, null));
+                    if (textChanged || regionChanged || kindChanged)
                     {
                         SessionState st = session.UpdateNote(e.Id, textChanged ? text : null,
-                            e.RegionDirty ? e.Region : null, e.RegionDirty && e.Region == null, png, kindChanged ? e.Kind : null);
+                            regionChanged ? e.Region : null, regionChanged && e.Region == null, png, kindChanged ? e.Kind : null);
                         Apply(st);
                     }
                 }

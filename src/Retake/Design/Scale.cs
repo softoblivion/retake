@@ -4,10 +4,10 @@ using System.Windows;
 namespace Retake.Design
 {
     /// <summary>
-    /// The Scale setting (LIQUID_UI.md 9.4): five steps on top of the Windows scaling. The whole window scales:
-    /// the root element gets a LayoutTransform of step / 100 and the window size follows, so the logical layout
-    /// stays the same. The logical size is the largest of the window ladder (1280 x 800, 1152 x 720,
-    /// 1024 x 640, 960 x 600) whose scaled size fits the work area of the window's monitor; a step for which
+    /// The Scale setting (LIQUID_UI.md 9.4): five steps on top of the Windows scaling. The root element gets a
+    /// LayoutTransform of step / 100, so text and controls grow with the step. The window ladder (1280 x 800,
+    /// 1152 x 720, 1024 x 640, 960 x 600) gives the first size of the window: the largest whose scaled size fits the
+    /// work area of the window's monitor; its last size, scaled, is the smallest the window can be. A step for which
     /// not even the smallest size fits cannot be chosen.
     /// </summary>
     public static class Scale

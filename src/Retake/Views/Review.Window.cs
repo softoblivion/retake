@@ -97,13 +97,18 @@ namespace Retake.Views
 
         // --- window ---------------------------------------------------------------------------------------------
 
+        /// <summary>The saved place, size and maximized state, when enough of the window stays on the screens.</summary>
         void RestorePosition()
         {
             Win32.VirtualScreen(out double left, out double topY, out double width, out double height);
             double dpi = VisualTreeHelper.GetDpi(window).DpiScaleX;
-            if (!WindowPlace.Usable(settings.WindowX, settings.WindowY, window.Width, left, topY, width, height, dpi)) return;
-            window.Left = settings.WindowX!.Value;
-            window.Top = settings.WindowY!.Value;
+            double w = settings.WindowWidth ?? window.Width, h = settings.WindowHeight ?? window.Height;
+            if (!WindowPlace.Usable(settings.WindowX, settings.WindowY, w, left, topY, width, height, dpi))
+            {
+                if (settings.WindowMaximized) window.WindowState = WindowState.Maximized;
+                return;
+            }
+            window.RestorePlacement(new Rect(settings.WindowX!.Value, settings.WindowY!.Value, w, h), settings.WindowMaximized);
         }
 
         async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -115,12 +120,18 @@ namespace Retake.Views
             try
             {
                 await Commit(true);
-                // Full screen keeps the place the window returns to; that place is what is saved.
-                Point place = window.NormalTopLeft;
-                if (window.WindowState == WindowState.Normal && WindowPlace.Savable(place.X, place.Y))
+                // A maximized window saves the place and size it returns to; a minimized one saves nothing.
+                if (window.WindowState != WindowState.Minimized)
                 {
-                    settings.WindowX = (int)Math.Round(place.X);
-                    settings.WindowY = (int)Math.Round(place.Y);
+                    Rect place = window.WindowState == WindowState.Maximized ? window.RestoreBounds : new Rect(window.Left, window.Top, window.Width, window.Height);
+                    if (!place.IsEmpty && WindowPlace.Savable(place.X, place.Y))
+                    {
+                        settings.WindowX = (int)Math.Round(place.X);
+                        settings.WindowY = (int)Math.Round(place.Y);
+                        settings.WindowWidth = (int)Math.Round(place.Width);
+                        settings.WindowHeight = (int)Math.Round(place.Height);
+                    }
+                    settings.WindowMaximized = window.WindowState == WindowState.Maximized;
                 }
                 if (videoLoaded) session.SetLastFrame(frame);
                 session.Close();

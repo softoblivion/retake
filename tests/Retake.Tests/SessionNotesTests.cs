@@ -317,11 +317,65 @@ namespace Retake.Tests
             string general = c.Session.AddNote(null, "FIX", "g", null, null).Notes[0].Id;
             string framed = c.Session.AddNote(5, "FIX", "f", null, null).Notes[1].Id;
             c.Events.Clear();
-            Check.Equal("A general note has no frame", Check.Throws<SessionException>(() => c.Session.MoveNote(general, 5, null)).Message);
             Check.Equal("The frame number is not valid", Check.Throws<SessionException>(() => c.Session.MoveNote(framed, -1, null)).Message);
+            Check.Equal("The frame number is not valid", Check.Throws<SessionException>(() => c.Session.MoveNote(general, -1, null)).Message);
             Check.Equal("The note was not found", Check.Throws<SessionException>(() => c.Session.MoveNote("deadbeef", 5, null)).Message);
             Check.Equal(0, c.Events.Count);
             Check.Equal(5, c.Session.GetState().Notes[1].Frame);
+        }
+
+        [Test("session.move_note_to_the_whole_video_drops_the_region_and_image")]
+        public static void MoveNoteToTheWholeVideo(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(10, "ADD", "first", null, null);
+            string id = c.Session.AddNote(307, "LIKE", "logo", SessionCase.Rect(), SessionCase.Png).Notes[1].Id;
+            string frames = c.Path_("dummy_notes", "frames");
+            Check.Equal(new[] { "0-00-12-07_LIKE.png" }, Fx.Names(frames));
+            c.Events.Clear();
+            SessionState data = c.Session.MoveNote(id, null, null);
+            Check.Equal(1, c.Events.Count);
+            Check.Equal(new[] { "logo", "first" }, Texts(data), "a general note comes first");
+            NoteState note = data.Notes[0];
+            Check.Equal(id, note.Id);
+            Check.True(note.IsGeneral);
+            Check.Equal("LIKE", note.Kind);
+            Check.True(note.Region == null);
+            Check.True(note.Image == null);
+            Check.False(Directory.Exists(frames), "the empty frames folder is removed");
+            Check.Contains("-\tLIKE\tlogo\n", NotesTxt(c));
+            c.Events.Clear();
+            Check.Equal(new[] { "logo", "first" }, Texts(c.Session.MoveNote(id, null, null)), "already general: nothing changes");
+            Check.Equal(0, c.Events.Count);
+            data = c.Session.MoveNote(id, 400, null);
+            Check.Equal(new[] { "first", "logo" }, Texts(data), "back on a frame: sorted by frame again");
+            Check.Equal(400, data.Notes[1].Frame);
+            Check.True(data.Notes[1].Region == null);
+            Check.Contains("0:00:16:00\tLIKE\tlogo\n", NotesTxt(c));
+        }
+
+        [Test("session.like_and_dislike_notes_are_written_counted_and_read_back")]
+        public static void LikeAndDislikeNotes(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(25, "LIKE", "great cut", null, null);
+            SessionState data = c.Session.AddNote(50, "DISLIKE", "plain font", SessionCase.Rect(), SessionCase.Png);
+            Check.Equal(1, data.Counts.Like);
+            Check.Equal(1, data.Counts.Dislike);
+            Check.Equal(1, data.Counts["DISLIKE"]);
+            Check.Equal("0-00-02-00_DISLIKE.png", data.Notes[1].Image);
+            string text = NotesTxt(c);
+            Check.Contains("0:00:01:00\tLIKE\tgreat cut\n", text);
+            Check.Contains("0:00:02:00\tDISLIKE\tplain font\trect 0.540,0.360 0.880,0.800\t0-00-02-00_DISLIKE.png\n", text);
+            Check.Contains("0:00:01:00 LIKE" + Em + "great cut", c.Session.ReadableText());
+            data = c.Session.UpdateNote(data.Notes[0].Id, kind: "FIX");
+            Check.Equal("FIX", data.Notes[0].Kind);
+            Check.Equal(0, data.Counts.Like);
+            c.Session.Close();
+            c.OpenUnknown();
+            Check.Equal(new[] { "FIX", "DISLIKE" }, c.Session.GetState().Notes.Select(n => n.Kind).ToList(), "read back");
         }
 
         [Test("session.move_note_write_failure_publishes_the_state_then_throws")]

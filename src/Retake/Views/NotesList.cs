@@ -15,6 +15,7 @@ namespace Retake.Views
     /// <summary>
     /// The plate of a note row, drawn inside the row's bounds so nothing of it is cut by the list's edges: a soft
     /// fill on hover; when selected a stronger fill, a hairline rim and a 3 px bar in the note's colour on the left.
+    /// Radius 10: the card's 14 less its 4 px inset.
     /// </summary>
     sealed class RowPlate : FrameworkElement
     {
@@ -39,7 +40,7 @@ namespace Retake.Views
             double w = ActualWidth, h = ActualHeight, lit = Lit, hover = Hover * (1 - lit);
             if (w <= 0 || h <= 0) return;
             var rect = new Rect(0, 0, w, h);
-            const double r = 12;
+            const double r = 10;
             if (hover > 0) dc.DrawRoundedRectangle(Themes.Solid(Themes.Fade(Themes.Color("fill-2"), hover)), null, rect, r, r);
             if (lit > 0)
             {
@@ -58,7 +59,35 @@ namespace Retake.Views
         }
     }
 
-    /// <summary>One note of the list: its timecode (copies itself) or General, the type, up to three lines of text, the frame image.</summary>
+    /// <summary>
+    /// The badge of a note type: its glyph in the type's colour on a 26 px rounded tile of a tint of it, so the type
+    /// reads by shape as well as by colour.
+    /// </summary>
+    public sealed class KindBadge : Grid
+    {
+        public KindBadge(string kind, double size = 26)
+        {
+            Width = Height = size;
+            VerticalAlignment = VerticalAlignment.Top;
+            IsHitTestVisible = false;
+            var tile = new Painted(size, size, (dc, s) =>
+            {
+                Color c = NoteKinds.Color(kind);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(0x2E, c.R, c.G, c.B)), null, new Rect(0, 0, s.Width, s.Height), 7, 7);
+            });
+            Themes.Track(tile);
+            Children.Add(tile);
+            FrameworkElement glyph = Icons.Make(NoteKinds.Glyph(kind), size * 0.58);
+            glyph.HorizontalAlignment = HorizontalAlignment.Center;
+            glyph.SetResourceReference(TextBlock.ForegroundProperty, NoteKinds.Ink(kind));
+            Children.Add(glyph);
+        }
+    }
+
+    /// <summary>
+    /// One note of the list: the type's badge; a head line with the timecode (copies itself) or General and the type
+    /// in its colour; up to three lines of text; the frame image on the right.
+    /// </summary>
     public sealed class NoteRow : Pressable
     {
         readonly RowPlate plate;
@@ -82,39 +111,48 @@ namespace Retake.Views
             Tip.Set(this, note.IsGeneral ? Copy.GeneralRowTip : Copy.NoteRowTip);
             Color c = NoteKinds.Color(note.Kind);
             plate = new RowPlate(c);
-            var grid = new Grid { Margin = new Thickness(10, 7, 8, 8) };
+            var grid = new Grid { Margin = new Thickness(10, 9, 10, 10) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.Children.Add(new KindBadge(note.Kind) { Margin = new Thickness(0, 0, 10, 0) });
             var body = new StackPanel();
-            var head = new StackPanel { Orientation = Orientation.Horizontal };
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Height = 24 };
             if (note.IsGeneral)
             {
                 TextBlock general = Typography.Text(Copy.GeneralLabel, Typography.LabelS, "ink-2");
-                general.Margin = new Thickness(0, 0, 2, 0);
+                general.VerticalAlignment = VerticalAlignment.Center;
                 head.Children.Add(general);
             }
             else
             {
-                Timecode = new CopyText(Typography.Mono, "ink-1", Copy.TimecodeTip, "NoteTimecode") { Value = note.Timecode, Margin = new Thickness(-6, 0, 0, 0) };
+                Timecode = new CopyText(Typography.Mono, "ink-2", Copy.TimecodeTip, "NoteTimecode") { Value = note.Timecode, Margin = new Thickness(-6, 0, -2, 0) };
                 head.Children.Add(Timecode);
             }
-            head.Children.Add(new Painted(8, 8, (dc, s) => dc.DrawEllipse(new SolidColorBrush(c), null, new Point(4, 4), 4, 4)) { Margin = new Thickness(6, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center });
-            head.Children.Add(Typography.Text(note.Kind, Typography.LabelS, "ink-2"));
+            TextBlock dot = Typography.Text("·", Typography.LabelS, "ink-4");
+            dot.Margin = new Thickness(6, 0, 6, 0);
+            dot.VerticalAlignment = VerticalAlignment.Center;
+            head.Children.Add(dot);
+            TextBlock kind = Typography.Text(NoteKinds.Label(note.Kind), Typography.LabelS, null);
+            kind.SetResourceReference(TextBlock.ForegroundProperty, NoteKinds.Ink(note.Kind));
+            kind.VerticalAlignment = VerticalAlignment.Center;
+            head.Children.Add(kind);
             body.Children.Add(head);
             TextBlock text = Typography.Text(note.Text.Length > 0 ? note.Text : Copy.NoText, Typography.Body, note.Text.Length > 0 ? "ink-1" : "ink-4");
             text.TextWrapping = TextWrapping.Wrap;
             text.TextTrimming = TextTrimming.CharacterEllipsis;
             text.MaxHeight = Typography.Body.LineHeight * 3;
-            text.Margin = new Thickness(0, 3, 0, 0);
+            text.Margin = new Thickness(0, 1, 0, 0);
             body.Children.Add(text);
+            Grid.SetColumn(body, 1);
             grid.Children.Add(body);
-            BitmapSource? thumb = Thumbs.Load(note.ImagePath, 144);
+            BitmapSource? thumb = Thumbs.Load(note.ImagePath, 128);
             if (thumb != null)
             {
-                var img = new Border { Width = 72, Height = 41, CornerRadius = new CornerRadius(6), Margin = new Thickness(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Top, ClipToBounds = true };
+                var img = new Border { Width = 64, Height = 36, CornerRadius = new CornerRadius(6), Margin = new Thickness(10, 2, 0, 0), VerticalAlignment = VerticalAlignment.Top, ClipToBounds = true };
                 img.SetResourceReference(Border.BackgroundProperty, "T.video-bg");
                 img.Child = new Image { Source = thumb, Stretch = Stretch.Uniform };
-                Grid.SetColumn(img, 1);
+                Grid.SetColumn(img, 2);
                 grid.Children.Add(img);
             }
             Content = new Grid { Children = { plate, grid } };
@@ -143,8 +181,9 @@ namespace Retake.Views
     }
 
     /// <summary>
-    /// The notes list on the right (collapsible): a heading with the count per type and the button for a general
-    /// note, then one row per note: general notes first, then the frame notes in timecode order. The selection
+    /// The notes list on the right (collapsible): a heading with the number of notes and, for every type that has
+    /// notes, its glyph and count; then one row per note: general notes first, then the frame notes in timecode
+    /// order. Without notes the card shows what to press. The selection
     /// follows the timeline and the playhead keys and scrolls into view with room around it. A right click on a row
     /// or on the empty list opens its menu.
     /// </summary>
@@ -154,9 +193,9 @@ namespace Retake.Views
 
         readonly StackPanel rows = new StackPanel();
         readonly ScrollViewer scroller;
-        readonly StackPanel empty = new StackPanel { Margin = new Thickness(16, 4, 16, 0), VerticalAlignment = VerticalAlignment.Top };
+        readonly StackPanel empty = new StackPanel { Margin = new Thickness(24, 0, 24, 0), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         readonly StackPanel counts = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        public readonly IconButton AddGeneral;
+        readonly TextBlock total = Typography.Text("", Typography.Caption, "ink-3");
         readonly Dictionary<string, NoteRow> byId = new Dictionary<string, NoteRow>();
         string? selectedId;
 
@@ -171,31 +210,43 @@ namespace Retake.Views
         {
             AutomationProperties.SetAutomationId(this, "NotesList");
             Background = Brushes.Transparent;
-            Children.Add(new ShadowLayer("card-drop", 18));
-            Children.Add(new SurfaceVisual(18, "card-rim", null, "card-fill"));
+            Children.Add(new ShadowLayer("card-drop", Review.CardRadius));
+            Children.Add(new SurfaceVisual(Review.CardRadius, "card-rim", null, "card-fill"));
             var dock = new DockPanel();
-            var head = new DockPanel { Margin = new Thickness(16, 12, 10, 10) };
-            AddGeneral = new IconButton(Icons.Plus, "New general note", IconKind.Bare, ButtonSize.M) { Margin = new Thickness(8, 0, 0, 0) };
-            Tip.Set(AddGeneral, Copy.AddGeneralTip);
-            AutomationProperties.SetAutomationId(AddGeneral, "AddGeneral");
-            DockPanel.SetDock(AddGeneral, Dock.Right);
-            head.Children.Add(AddGeneral);
+            var head = new DockPanel { Margin = new Thickness(16, 13, 14, 9) };
             DockPanel.SetDock(counts, Dock.Right);
             head.Children.Add(counts);
-            head.Children.Add(Typography.Text(Copy.NotesTitle, Typography.Title));
+            var title = new StackPanel { Orientation = Orientation.Horizontal };
+            title.Children.Add(Typography.Text(Copy.NotesTitle, Typography.Title));
+            total.Margin = new Thickness(8, 0, 0, 0);
+            total.VerticalAlignment = VerticalAlignment.Center;
+            title.Children.Add(total);
+            head.Children.Add(title);
             DockPanel.SetDock(head, Dock.Top);
             dock.Children.Add(head);
+            var line = new Border { Height = 1, Margin = new Thickness(14, 0, 14, 0) };
+            line.SetResourceReference(Border.BackgroundProperty, "T.line-soft");
+            DockPanel.SetDock(line, Dock.Top);
+            dock.Children.Add(line);
+            FrameworkElement emptyGlyph = Icons.Make(Icons.Note, 28);
+            emptyGlyph.HorizontalAlignment = HorizontalAlignment.Center;
+            emptyGlyph.SetResourceReference(TextBlock.ForegroundProperty, "T.ink-4");
             TextBlock emptyTitle = Typography.Text(Copy.NotesEmpty, Typography.BodyMedium, "ink-2");
+            emptyTitle.HorizontalAlignment = HorizontalAlignment.Center;
+            emptyTitle.Margin = new Thickness(0, 10, 0, 0);
             TextBlock emptyHint = Typography.Text(Copy.NotesEmptyHint, Typography.Caption, "ink-3");
             emptyHint.TextWrapping = TextWrapping.Wrap;
+            emptyHint.TextAlignment = TextAlignment.Center;
             emptyHint.Margin = new Thickness(0, 4, 0, 0);
+            empty.Children.Add(emptyGlyph);
             empty.Children.Add(emptyTitle);
             empty.Children.Add(emptyHint);
-            DockPanel.SetDock(empty, Dock.Top);
-            dock.Children.Add(empty);
+            var body = new Grid();
             // The padding keeps a lit row clear of the card's edges and of the heading when it scrolls under it.
-            scroller = new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Padding = new Thickness(8, 2, 6, 10) };
-            dock.Children.Add(scroller);
+            scroller = new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Padding = new Thickness(4, 6, 4, 6) };
+            body.Children.Add(scroller);
+            body.Children.Add(empty);
+            dock.Children.Add(body);
             Children.Add(dock);
             MouseRightButtonUp += (s, e) => { if (e.Handled) return; e.Handled = true; ListMenu?.Invoke(e.GetPosition(this)); };
         }
@@ -215,11 +266,15 @@ namespace Retake.Views
                 rows.Children.Add(row);
             }
             empty.Visibility = notes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            total.Text = notes.Count > 0 ? notes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
             counts.Children.Clear();
             foreach (string kind in NoteKinds.All)
             {
-                Color c = NoteKinds.Color(kind);
-                counts.Children.Add(new Painted(7, 7, (dc, s) => dc.DrawEllipse(new SolidColorBrush(c), null, new Point(3.5, 3.5), 3.5, 3.5)) { Margin = new Thickness(10, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center });
+                if (kinds[kind] == 0) continue;
+                FrameworkElement glyph = Icons.Make(NoteKinds.Glyph(kind), 13);
+                glyph.SetResourceReference(TextBlock.ForegroundProperty, NoteKinds.Ink(kind));
+                glyph.Margin = new Thickness(10, 0, 4, 0);
+                counts.Children.Add(glyph);
                 TextBlock t = Typography.Text(kinds[kind].ToString(System.Globalization.CultureInfo.InvariantCulture), Typography.Caption, "ink-2");
                 AutomationProperties.SetName(t, kind + " " + kinds[kind]);
                 counts.Children.Add(t);

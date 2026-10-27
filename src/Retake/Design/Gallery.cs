@@ -356,7 +356,7 @@ namespace Retake.Design
             row.Children.Add(Labelled("Popover (the updates popover of the version pill)", new Popover(320) { Body = body }));
 
             var composer = new Views.Composer();
-            composer.Open("FIX", "0:00:03:12", "Logo badge sits too close to the edge");
+            composer.Open("FIX", "0:00:03:12", false, "Logo badge sits too close to the edge");
             FrameworkElement composerCell = Labelled("Note editor: the place, the type chips, the field", composer);
             composerCell.Margin = new Thickness(36, 0, 0, 0);
             row.Children.Add(composerCell);
@@ -364,10 +364,21 @@ namespace Retake.Design
             var list = new StackPanel { Width = 290 };
             list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "g", Frame = null, Kind = "ADD", Text = "End card with the logo and the date" }));
             list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "f", Frame = 87, Timecode = "0:00:03:12", Kind = "FIX", Text = "Logo badge sits too close to the edge" }) { Selected = true });
-            FrameworkElement listCell = Labelled("Note rows: a general note, a selected note", list);
+            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "l", Frame = 120, Timecode = "0:00:04:20", Kind = "LIKE", Text = "Great transition, keep this timing" }));
+            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "d", Frame = 190, Timecode = "0:00:07:15", Kind = "DISLIKE", Text = "The title font feels too plain" }));
+            FrameworkElement listCell = Labelled("Note rows: a general note, a selected note, a like, a dislike", list);
             listCell.Margin = new Thickness(36, 0, 0, 0);
             row.Children.Add(listCell);
-            return row;
+
+            // The control row of the dock with a sample time, at the width of the 1280 window.
+            var transport = new Views.Transport { Width = 1180, HorizontalAlignment = HorizontalAlignment.Left };
+            transport.SetTime("0:00:03:12", "0:00:12:00", 87);
+            var block = new StackPanel();
+            block.Children.Add(row);
+            FrameworkElement transportCell = Labelled("Control row: frame steps, play, speed, time, the note bar (keys 1 to 6)", transport);
+            transportCell.Margin = new Thickness(0, 24, 0, 0);
+            block.Children.Add(transportCell);
+            return block;
         }
 
         static FrameworkElement OverlaysBlock(Prefs prefs, Func<int, bool> fits)

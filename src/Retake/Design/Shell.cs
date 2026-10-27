@@ -124,9 +124,9 @@ namespace Retake.Design
     /// <summary>
     /// The standard title bar (LIQUID_UI.md 9.3) at Retake's size, 52 px: on the left the app glyph (24 px), the
     /// name in the title role and the version pill; a centre slot for the app's own controls, centred on the
-    /// window; on the right an optional aside slot and the grouped capsule settings | minimize, close (38 px,
-    /// --tint-clear, rim, --shadow-s). The empty bar drags the window (the window's caption area); the slots and
-    /// buttons take their clicks back.
+    /// window; on the right an optional aside slot and the grouped capsule settings | minimize, maximize, close
+    /// (38 px, --tint-clear, rim, --shadow-s). The empty bar drags the window (the window's caption area) and a double
+    /// click on it maximizes or restores; the slots and buttons take their clicks back.
     /// </summary>
     public sealed class TitleBar : Grid
     {
@@ -134,18 +134,18 @@ namespace Retake.Design
         public readonly StackPanel Centre = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         public readonly StackPanel Aside = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         public readonly VersionPill Pill;
-        public readonly IconButton Gear, MinimizeButton, CloseButton;
+        public readonly IconButton Gear, MinimizeButton, MaximizeButton, CloseButton;
 
-        public const string GearTip = "Settings (Ctrl+,)", MinimizeTip = "Minimize", CloseTip = "Close (Alt+F4)", PillTip = "Version and updates";
+        public const string GearTip = "Settings (Ctrl+,)", MinimizeTip = "Minimize", MaximizeTip = "Maximize", RestoreTip = "Restore down",
+            CloseTip = "Close (Alt+F4)", PillTip = "Version and updates";
 
         public TitleBar(string name, string version)
         {
             Height = BarHeight;
             VerticalAlignment = VerticalAlignment.Top;
             Margin = new Thickness(12, 0, 10, 0);
-            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var row = new BarRow();
+            Children.Add(row);
 
             var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
             left.Children.Add(new AppGlyph { LayoutTransform = new ScaleTransform(1.2, 1.2) });
@@ -157,11 +157,10 @@ namespace Retake.Design
             Tip.Set(Pill, PillTip);
             WindowChrome.SetIsHitTestVisibleInChrome(Pill, true);
             left.Children.Add(Pill);
-            Children.Add(left);
+            row.Children.Add(left);
 
-            SetColumn(Centre, 1);
             WindowChrome.SetIsHitTestVisibleInChrome(Centre, true);
-            Children.Add(Centre);
+            row.Children.Add(Centre);
 
             var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
             Aside.Margin = new Thickness(0, 0, 8, 0);
@@ -180,18 +179,69 @@ namespace Retake.Design
             MinimizeButton = new IconButton(Icons.Minimize, "Minimize", IconKind.Title) { Margin = new Thickness(0, 0, 2, 0) };
             Tip.Set(MinimizeButton, MinimizeTip);
             buttons.Children.Add(MinimizeButton);
+            MaximizeButton = new IconButton(Icons.Maximize, "Maximize", IconKind.Title) { Margin = new Thickness(0, 0, 2, 0) };
+            Tip.Set(MaximizeButton, MaximizeTip);
+            buttons.Children.Add(MaximizeButton);
             CloseButton = new IconButton(Icons.Close, "Close", IconKind.TitleClose);
             Tip.Set(CloseButton, CloseTip);
             buttons.Children.Add(CloseButton);
             cluster.Children.Add(buttons);
             WindowChrome.SetIsHitTestVisibleInChrome(cluster, true);
             right.Children.Add(cluster);
-            SetColumn(right, 2);
-            Children.Add(right);
+            row.Children.Add(right);
         }
 
         /// <summary>Shows the aside slot when it holds something.</summary>
         public void RefreshAside() => Aside.Visibility = Aside.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        /// <summary>The maximize button follows the window: Maximize, or Restore down while maximized.</summary>
+        public void SetMaximized(bool on)
+        {
+            var root = (Grid)MaximizeButton.Content;
+            for (int i = root.Children.Count - 1; i >= 0; i--)
+                if (root.Children[i] is Viewbox) root.Children.RemoveAt(i);
+            FrameworkElement glyph = Icons.Make(on ? Icons.Restore : Icons.Maximize, 17);
+            glyph.HorizontalAlignment = HorizontalAlignment.Center;
+            root.Children.Add(glyph);
+            AutomationProperties.SetName(MaximizeButton, on ? "Restore down" : "Maximize");
+            Tip.Set(MaximizeButton, on ? RestoreTip : MaximizeTip);
+        }
+    }
+
+    /// <summary>
+    /// The three parts of the title bar: the left group at the start, the right group at the end, the centre on the
+    /// window's centre line. When the window is too narrow for that, the centre moves aside to stay clear of both
+    /// groups and, with less room still, gets only the width between them (its text trims).
+    /// </summary>
+    sealed class BarRow : Panel
+    {
+        const double Clear = 12;
+
+        protected override Size MeasureOverride(Size available)
+        {
+            UIElement left = Children[0], centre = Children[1], right = Children[2];
+            var any = new Size(double.PositiveInfinity, available.Height);
+            left.Measure(any);
+            right.Measure(any);
+            double room = double.IsInfinity(available.Width) ? double.PositiveInfinity
+                : Math.Max(0, available.Width - left.DesiredSize.Width - right.DesiredSize.Width - 2 * Clear);
+            centre.Measure(new Size(room, available.Height));
+            double h = Math.Max(left.DesiredSize.Height, Math.Max(centre.DesiredSize.Height, right.DesiredSize.Height));
+            return new Size(double.IsInfinity(available.Width) ? left.DesiredSize.Width + centre.DesiredSize.Width + right.DesiredSize.Width : available.Width, h);
+        }
+
+        protected override Size ArrangeOverride(Size size)
+        {
+            UIElement left = Children[0], centre = Children[1], right = Children[2];
+            double lw = left.DesiredSize.Width, rw = right.DesiredSize.Width, cw = centre.DesiredSize.Width;
+            left.Arrange(new Rect(0, 0, lw, size.Height));
+            right.Arrange(new Rect(Math.Max(0, size.Width - rw), 0, rw, size.Height));
+            double min = lw + Clear, max = size.Width - rw - Clear - cw;
+            double x = (size.Width - cw) / 2;
+            x = Math.Max(min, Math.Min(max, x));
+            centre.Arrange(new Rect(x, 0, Math.Max(0, Math.Min(cw, size.Width - rw - Clear - x)), size.Height));
+            return size;
+        }
     }
 
     /// <summary>
@@ -242,29 +292,35 @@ namespace Retake.Design
     }
 
     /// <summary>
-    /// The application window: fixed size (minimize and close only; no maximize by button, double click, system
-    /// menu or keyboard), custom chrome through WindowChrome with the 52 px title bar as the caption, no layered
-    /// window (AllowsTransparency false keeps ClearType and allows a native child window), rounded corners and
-    /// the --bg-mid border on Windows 11. The Scale step is applied before the first paint and again on every
-    /// change, keeping the window's centre. Full screen (<see cref="SetFullScreen"/>) covers the whole monitor of
-    /// the window, taskbar included, with the same Scale step; the logical layout then takes the monitor's size.
+    /// The application window: resizable from its edges, with minimize, maximize and close (the buttons, a double
+    /// click on the bar, the system menu, Snap); custom chrome through WindowChrome with the 52 px title bar as the
+    /// caption, no layered window (AllowsTransparency false keeps ClearType and allows a native child window), rounded
+    /// corners and the --bg-mid border on Windows 11. The content is laid out at the window's size divided by the
+    /// Scale step, so a larger window shows more, not larger, content. The smallest size is the last step of the
+    /// ladder (960 x 600) times the Scale step; the first start opens at the largest step of the ladder that fits.
+    /// A maximized window fills the work area of its monitor.
     /// </summary>
     public class ShellWindow : Window
     {
         public readonly ShellRoot Root;
         public readonly Prefs Prefs;
-        readonly WindowChrome chrome = new WindowChrome { CaptionHeight = TitleBar.BarHeight, ResizeBorderThickness = new Thickness(0), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0), UseAeroCaptionButtons = false };
+        public const double ResizeBorder = 6;
+        readonly WindowChrome chrome = new WindowChrome { CaptionHeight = TitleBar.BarHeight, ResizeBorderThickness = new Thickness(ResizeBorder), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0), UseAeroCaptionButtons = false };
         SettingsSheet? settings;
         IntPtr hwnd;
-        Point normalCentre;
 
         public int AppliedScale { get; private set; } = Scale.Default;
-        public Size LogicalSize { get; private set; } = Scale.Ladder[0];
         public event Action? ScaleApplied;
 
-        /// <summary>True while the window covers its whole monitor.</summary>
-        public bool IsFullScreen { get; private set; }
-        public event Action? FullScreenChanged;
+        /// <summary>The size the content is laid out at: the client size divided by the Scale step.</summary>
+        public Size LogicalSize
+        {
+            get
+            {
+                double f = AppliedScale / 100.0;
+                return Root.ActualWidth > 0 ? new Size(Root.ActualWidth, Root.ActualHeight) : new Size(Width / f, Height / f);
+            }
+        }
 
         /// <summary>Raised when the version pill is clicked; the updater decides what it opens.</summary>
         public event Action? PillClicked;
@@ -277,7 +333,7 @@ namespace Retake.Design
             Prefs = prefs;
             Title = title;
             WindowStyle = WindowStyle.SingleBorderWindow;
-            ResizeMode = ResizeMode.CanMinimize;
+            ResizeMode = ResizeMode.CanResize;
             AllowsTransparency = false;
             WindowStartupLocation = WindowStartupLocation.Manual;
             UseLayoutRounding = true;
@@ -288,6 +344,9 @@ namespace Retake.Design
             TitleBar bar = Root.TitleBar;
             bar.Gear.Click += (s, e) => ToggleSettings();
             bar.MinimizeButton.Click += (s, e) => WindowState = WindowState.Minimized;
+            bar.MaximizeButton.Click += (s, e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            StateChanged += (s, e) => bar.SetMaximized(WindowState == WindowState.Maximized);
+            Loaded += (s, e) => bar.SetMaximized(WindowState == WindowState.Maximized);
             bar.CloseButton.Click += (s, e) => Close();
             bar.Pill.Click += (s, e) => PillClicked?.Invoke();
             Root.Overlay.SheetChanged += open => bar.Gear.IsSource = open && settings != null && Root.Overlay.CurrentSheet == settings.Sheet;
@@ -297,7 +356,7 @@ namespace Retake.Design
             // A first guess from the primary work area, so the window is created at about its size;
             // the real size for the window's own monitor is set in SourceInitialized, before the first paint.
             Rect primary = SystemParameters.WorkArea;
-            Place(prefs.UiScale, new Size(primary.Width, primary.Height), new Point(primary.Left + primary.Width / 2, primary.Top + primary.Height / 2));
+            Place(prefs.UiScale, new Size(primary.Width, primary.Height), new Point(primary.Left + primary.Width / 2, primary.Top + primary.Height / 2), null);
             SourceInitialized += OnSourceInitialized;
             DpiChanged += (s, e) => ApplyScale(AppliedScale);
             // Settings are built while the window is idle after its first paint, so the first open is only the animation.
@@ -313,32 +372,18 @@ namespace Retake.Design
         void OnSourceInitialized(object? sender, EventArgs e)
         {
             hwnd = new WindowInteropHelper(this).Handle;
-            int style = Native.GetWindowLong(hwnd, Native.GWL_STYLE);
-            Native.SetWindowLong(hwnd, Native.GWL_STYLE, style & ~Native.WS_MAXIMIZEBOX & ~Native.WS_THICKFRAME);
-            HwndSource.FromHwnd(hwnd)?.AddHook(Hook);
             Native.Dwm(hwnd, Native.DWMWA_WINDOW_CORNER_PREFERENCE, Native.DWMWCP_ROUND);
             UpdateFrame();
             Size work = WorkArea();
             Rect primary = SystemParameters.WorkArea;
-            Place(Prefs.UiScale, work, new Point(primary.Left + primary.Width / 2, primary.Top + primary.Height / 2));
-        }
-
-        static IntPtr Hook(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled)
-        {
-            if (msg == Native.WM_NCLBUTTONDBLCLK) { handled = true; return IntPtr.Zero; }
-            if (msg == Native.WM_SYSCOMMAND)
-            {
-                int cmd = (int)((long)w & 0xFFF0);
-                if (cmd == Native.SC_MAXIMIZE || cmd == Native.SC_SIZE) { handled = true; return IntPtr.Zero; }
-            }
-            return IntPtr.Zero;
+            Place(Prefs.UiScale, work, new Point(primary.Left + primary.Width / 2, primary.Top + primary.Height / 2), null);
         }
 
         void UpdateFrame()
         {
             if (hwnd == IntPtr.Zero) return;
             Color mid = Themes.Color("bg-mid");
-            Native.Dwm(hwnd, Native.DWMWA_BORDER_COLOR, IsFullScreen ? Native.DWMWA_COLOR_NONE : mid.R | mid.G << 8 | mid.B << 16);
+            Native.Dwm(hwnd, Native.DWMWA_BORDER_COLOR, mid.R | mid.G << 8 | mid.B << 16);
             Native.Dwm(hwnd, Native.DWMWA_USE_IMMERSIVE_DARK_MODE, Themes.Current.IsDark ? 1 : 0);
         }
 
@@ -353,98 +398,92 @@ namespace Retake.Design
 
         public bool StepFits(int step) => Scale.Fits(step, WorkArea());
 
-        /// <summary>Applies a Scale step now, keeping the window's centre; a step that does not fit falls back to the largest that does.</summary>
+        /// <summary>
+        /// Applies a Scale step now: the window keeps its place and size, grown to the smallest size of the step when it
+        /// is below it; a step whose smallest size does not fit falls back to the largest that does.
+        /// </summary>
         public void ApplyScale(int step)
         {
-            if (IsFullScreen) PlaceFull(Scale.Fitting(Scale.Normalize(step), WorkArea()));
-            else Place(step, WorkArea(), new Point(Left + Width / 2, Top + Height / 2));
+            if (WindowState != WindowState.Normal)
+            {
+                Apply(Scale.Fitting(Scale.Normalize(step), WorkArea()), null);
+                return;
+            }
+            Place(step, WorkArea(), new Point(Left + Width / 2, Top + Height / 2), new Size(Width, Height));
         }
-
-        /// <summary>The top-left corner the window has (or returns to) outside full screen, in device-independent pixels.</summary>
-        public Point NormalTopLeft => IsFullScreen
-            ? new Point(normalCentre.X - LogicalWindowed().Width / 2, normalCentre.Y - LogicalWindowed().Height / 2)
-            : new Point(Left, Top);
-
-        Size LogicalWindowed()
-        {
-            double f = AppliedScale / 100.0;
-            Size logical = Scale.LogicalSize(AppliedScale, WorkArea()) ?? Scale.Ladder[Scale.Ladder.Length - 1];
-            return new Size(Math.Round(logical.Width * f), Math.Round(logical.Height * f));
-        }
-
-        public void ToggleFullScreen() => SetFullScreen(!IsFullScreen);
 
         /// <summary>
-        /// Covers the window's monitor (taskbar included) or returns to the fixed size at the place it had. The
-        /// caption style is dropped while full, so the shell treats the window as a full-screen one and the bar
-        /// does not drag it.
+        /// Puts the window back where it was (device-independent pixels; a size below the step's smallest grows to it,
+        /// one larger than the work area shrinks to it), maximized when it was. Called before the first paint.
         /// </summary>
-        public void SetFullScreen(bool on)
+        public void RestorePlacement(Rect bounds, bool maximized)
         {
-            if (on == IsFullScreen || hwnd == IntPtr.Zero) return;
-            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-            int style = Native.GetWindowLong(hwnd, Native.GWL_STYLE);
-            if (on)
+            Size work = WorkArea();
+            int fitting = Scale.Fitting(Scale.Normalize(AppliedScale), work);
+            Size min = MinSize(fitting, work);
+            double w = Math.Max(min.Width, Math.Min(work.Width, bounds.Width)), h = Math.Max(min.Height, Math.Min(work.Height, bounds.Height));
+            Width = w;
+            Height = h;
+            Left = bounds.Left;
+            Top = bounds.Top;
+            if (maximized) WindowState = WindowState.Maximized;
+        }
+
+        /// <summary>
+        /// Sizes the window for a step: <paramref name="size"/> when given (the size it has), else the largest size of
+        /// the ladder that fits; centred on <paramref name="centre"/> and kept inside the work area.
+        /// </summary>
+        void Place(int step, Size work, Point centre, Size? size)
+        {
+            int fitting = Scale.Fitting(Scale.Normalize(step), work);
+            double f = fitting / 100.0;
+            Size min = MinSize(fitting, work);
+            double w, h;
+            if (size.HasValue)
             {
-                normalCentre = new Point(Left + Width / 2, Top + Height / 2);
-                IsFullScreen = true;
-                Native.SetWindowLong(hwnd, Native.GWL_STYLE, style & ~Native.WS_CAPTION);
-                Native.Dwm(hwnd, Native.DWMWA_WINDOW_CORNER_PREFERENCE, Native.DWMWCP_DONOTROUND);
-                PlaceFull(AppliedScale);
+                w = Math.Max(min.Width, Math.Min(work.Width, size.Value.Width));
+                h = Math.Max(min.Height, Math.Min(work.Height, size.Value.Height));
             }
             else
             {
-                IsFullScreen = false;
-                Native.SetWindowLong(hwnd, Native.GWL_STYLE, style | Native.WS_CAPTION);
-                Native.Dwm(hwnd, Native.DWMWA_WINDOW_CORNER_PREFERENCE, Native.DWMWCP_ROUND);
-                Place(AppliedScale, WorkArea(), normalCentre);
+                Size logical = Scale.LogicalSize(fitting, work) ?? Scale.Ladder[Scale.Ladder.Length - 1];
+                w = Math.Round(logical.Width * f);
+                h = Math.Round(logical.Height * f);
             }
-            UpdateFrame();
-            FullScreenChanged?.Invoke();
-        }
-
-        void Place(int step, Size work, Point centre)
-        {
-            int fitting = Scale.Fitting(Scale.Normalize(step), work);
-            Size logical = Scale.LogicalSize(fitting, work) ?? Scale.Ladder[Scale.Ladder.Length - 1];
-            double f = fitting / 100.0;
-            double w = Math.Round(logical.Width * f), h = Math.Round(logical.Height * f);
             Rect area = hwnd != IntPtr.Zero ? AreaRect(work) : SystemParameters.WorkArea;
-            Apply(fitting, logical, new Rect(
+            Apply(fitting, new Rect(
                 Math.Max(area.Left, Math.Min(area.Right - w, centre.X - w / 2)),
-                Math.Max(area.Top, Math.Min(area.Bottom - h, centre.Y - h / 2)), w, h), TitleBar.BarHeight * f);
+                Math.Max(area.Top, Math.Min(area.Bottom - h, centre.Y - h / 2)), w, h));
         }
 
-        void PlaceFull(int step)
+        /// <summary>The smallest window of a step: the last size of the ladder scaled, never larger than the work area.</summary>
+        static Size MinSize(int step, Size work)
         {
-            Native.RECT? r = Native.MonitorBounds(hwnd);
-            if (r == null) return;
-            double k = VisualTreeHelper.GetDpi(this).DpiScaleX, f = step / 100.0;
-            var bounds = new Rect(r.Value.Left / k, r.Value.Top / k, (r.Value.Right - r.Value.Left) / k, (r.Value.Bottom - r.Value.Top) / k);
-            // No caption while full: the bar must not move the window off the monitor.
-            Apply(step, new Size(Math.Floor(bounds.Width / f), Math.Floor(bounds.Height / f)), bounds, 0);
+            Size last = Scale.Ladder[Scale.Ladder.Length - 1];
+            double f = step / 100.0;
+            return new Size(Math.Min(work.Width, Math.Round(last.Width * f)), Math.Min(work.Height, Math.Round(last.Height * f)));
         }
 
-        void Apply(int step, Size logical, Rect bounds, double caption)
+        void Apply(int step, Rect? bounds)
         {
             double f = step / 100.0;
             AppliedScale = step;
-            LogicalSize = logical;
             Prefs.UiScale = step;
-            Root.Width = logical.Width;
-            Root.Height = logical.Height;
             Root.LayoutTransform = step == 100 ? Transform.Identity : new ScaleTransform(f, f);
-            chrome.CaptionHeight = caption;
-            // Drop the old limits first: a smaller size would otherwise be coerced up to the previous minimum.
-            MinWidth = MinHeight = 0;
-            MaxWidth = MaxHeight = double.PositiveInfinity;
-            Width = bounds.Width;
-            Height = bounds.Height;
-            MinWidth = MaxWidth = bounds.Width;
-            MinHeight = MaxHeight = bounds.Height;
-            Left = bounds.Left;
-            Top = bounds.Top;
-            if (Root.Overlay.CurrentSheet is Sheet s) s.MaxHeight = Math.Max(120, logical.Height - OverlayHost.TopInset - OverlayHost.BottomInset);
+            chrome.CaptionHeight = TitleBar.BarHeight * f;
+            chrome.ResizeBorderThickness = new Thickness(ResizeBorder * f);
+            Size min = MinSize(step, WorkArea());
+            MinWidth = min.Width;
+            MinHeight = min.Height;
+            if (bounds.HasValue)
+            {
+                Width = bounds.Value.Width;
+                Height = bounds.Value.Height;
+                Left = bounds.Value.Left;
+                Top = bounds.Value.Top;
+            }
+            UpdateLayout();
+            if (Root.Overlay.CurrentSheet is Sheet s) s.MaxHeight = Math.Max(120, LogicalSize.Height - OverlayHost.TopInset - OverlayHost.BottomInset);
             ScaleApplied?.Invoke();
         }
 

@@ -495,10 +495,12 @@ namespace Retake.Core
         /// Moves a frame note to <paramref name="frame"/>; the note keeps its id, kind, text, region and order. An image
         /// with a plain name gets the name of the new timecode: the file is renamed, or <paramref name="imagePng"/> (when
         /// not empty) is written under the new name and the old file deleted. The same frame without a new image changes
-        /// nothing. Throws <see cref="SessionException"/> for no open video, an unknown note, an unknown frame rate, a
-        /// general note or a negative frame. A failed write keeps the move in memory, publishes the state, then throws.
+        /// nothing. A null <paramref name="frame"/> makes the note a general one (its region and image are dropped); a
+        /// frame given to a general note makes it a frame note without a region. Throws <see cref="SessionException"/>
+        /// for no open video, an unknown note, an unknown frame rate or a negative frame. A failed write keeps the move
+        /// in memory, publishes the state, then throws.
         /// </summary>
-        public SessionState MoveNote(string noteId, int frame, byte[]? imagePng)
+        public SessionState MoveNote(string noteId, int? frame, byte[]? imagePng)
         {
             lock (_lock)
             {
@@ -506,8 +508,22 @@ namespace Retake.Core
                 Note note = Find(noteId);
                 TimecodeBase? tb = Tb();
                 if (tb == null) throw new SessionException(RateUnknownEditing);
-                if (note.IsGeneral) throw new SessionException("A general note has no frame");
-                if (frame < 0) throw new SessionException(FrameNotValid);
+                if (frame.HasValue && frame.Value < 0) throw new SessionException(FrameNotValid);
+                if (!frame.HasValue || note.IsGeneral)
+                {
+                    if (frame == note.Frame) return GetState();
+                    string? dropped = note.Image;
+                    note.Frame = frame;
+                    note.Region = null;
+                    note.Image = null;
+                    string? error = WriteNotes();
+                    if (!UsedByOther(dropped, note))
+                    {
+                        DeleteImage(dropped);
+                        PruneImagesDir();
+                    }
+                    return Finish(error);
+                }
                 bool hasImage = NotesLayout.IsPlainName(note.Image);
                 bool hasBytes = hasImage && imagePng != null && imagePng.Length > 0;
                 if (frame == note.Frame && !hasBytes) return GetState();

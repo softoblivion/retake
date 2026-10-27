@@ -20,11 +20,10 @@ namespace Retake.Views
         public const string OpenTip = "Open a video (Ctrl+O)";
         public const string RecentTip = "Recent videos";
         public const string CopyTip = "Copy the notes as text";
-        public const string CopyNotes = "Notes file", CopyReadable = "Text for a chat";
+        public const string CopyNotes = "Notes file", CopyReadable = "Text";
         public const string CopyNotesTip = "The data file as it is on disk", CopyReadableTip = "Plain lines without formatting, ready to paste into a message";
         public const string KeysTip = "Keyboard shortcuts (?)";
         public const string PanelHideTip = "Hide the notes list", PanelShowTip = "Show the notes list";
-        public const string FullTip = "Full screen (F11)", FullExitTip = "Leave full screen (F11)";
         public const string DoneLabel = "Done", DoneTip = "Pack the notes and their frames into a zip to send (Ctrl+E)", DoneOffTip = "Add a note first";
 
         // Empty state.
@@ -45,13 +44,16 @@ namespace Retake.Views
         public const string Deleted = "Deleted {0} and {1}", DeletedEmpty = "Deleted the empty notes folder";
 
         // Transport.
-        public const string FirstTip = "First frame (Home)", BackTip = "Previous frame (←)", ForwardTip = "Next frame (→)", LastTip = "Last frame (End)";
+        public const string BackTip = "Previous frame (←)", ForwardTip = "Next frame (→)";
         public const string PlayTip = "Play (Space)", PauseTip = "Pause (Space)";
         public const string SpeedTip = "Playback speed (L)";
         public const string TimecodeTip = "Copy the timecode", DurationTip = "Copy the duration", FrameTip = "Copy the frame number";
         public const string FrameLabel = "frame ";
-        public const string FixLabel = "Fix", AddLabel = "Add", RemoveLabel = "Remove";
-        public const string FixTip = "New note: something to correct (1)", AddTip = "New note: something missing (2)", RemoveTip = "New note: something to take out (3)";
+        public const string FixLabel = "Fix", AddLabel = "Add", RemoveLabel = "Remove", LikeLabel = "Like", DislikeLabel = "Dislike";
+        public const string FixTip = "New note at this frame: something to correct (1)", AddTip = "New note at this frame: something missing (2)",
+            RemoveTip = "New note at this frame: something to take out (3)", LikeTip = "New note at this frame: something that works (5)",
+            DislikeTip = "New note at this frame: something that does not work (6)";
+        public const string GeneralTip = "New note about the whole video (4)";
 
         // Composer and hint over the video.
         public const string HintCreate = "Drag to mark a region, click to put a point";
@@ -59,19 +61,20 @@ namespace Retake.Views
         public const string HintGeneral = "A note about the whole video";
         public const string KeysCreate = "Enter saves · Esc cancels";
         public const string KeysEdit = "Backspace in the empty field removes it · Enter saves · Esc cancels";
-        public const string FixPlaceholder = "What to fix", AddPlaceholder = "What to add", RemovePlaceholder = "What to remove";
+        public const string FixPlaceholder = "What to fix", AddPlaceholder = "What to add", RemovePlaceholder = "What to remove",
+            LikePlaceholder = "What works", DislikePlaceholder = "What does not work";
         public const string FieldTip = "One line; Enter saves, Esc cancels";
         public const string NeedText = "Type the note first";
         public const string KindChipTip = "Change the type (Ctrl+{0})";
+        public const string PlaceFrameTip = "Keep the note on this frame (Ctrl+4)", PlaceGeneralTip = "Make it a note about the whole video (Ctrl+4)";
 
         // Notes list.
         public const string NotesTitle = "Notes";
         public const string NotesEmpty = "No notes yet";
-        public const string NotesEmptyHint = "Pause on a frame and press 1, 2 or 3. G adds a note about the whole video.";
+        public const string NotesEmptyHint = "Pause on a frame and press a key from 1 to 6, or use the buttons under the video.";
         public const string NoteRowTip = "Go to this frame · double-click to edit (F2) · right-click for more";
         public const string GeneralRowTip = "Select · double-click to edit (F2) · right-click for more";
         public const string GeneralLabel = "General";
-        public const string AddGeneralTip = "New general note, about the whole video (G)";
         public const string NoText = "No text";
 
         // Timeline.
@@ -84,10 +87,9 @@ namespace Retake.Views
         public const string MenuMoveHere = "Move to the playhead", MenuRemoveNote = "Delete";
         public const string MenuMoveHereTip = "Puts the note on the frame shown now";
         public const string MenuPlay = "Play", MenuPause = "Pause";
-        public const string MenuNewFix = "New FIX note", MenuNewAdd = "New ADD note", MenuNewRemove = "New REMOVE note", MenuNewGeneral = "New general note";
-        public const string MenuNewFixHere = "New FIX note here", MenuNewAddHere = "New ADD note here", MenuNewRemoveHere = "New REMOVE note here";
-        public const string MenuFull = "Full screen", MenuFullExit = "Leave full screen", MenuFit = "Fit the whole video";
-        public const string MenuCopyNotes = "Copy the notes file", MenuCopyReadable = "Copy the text for a chat", MenuDone = "Done: pack into a zip";
+        public const string MenuNew = "New {0} note", MenuNewHere = "New {0} note here", MenuNewGeneral = "New general note";
+        public const string MenuFit = "Fit the whole video";
+        public const string MenuCopyNotes = "Copy the notes file", MenuCopyReadable = "Copy the notes as text", MenuDone = "Done: pack into a zip";
 
         // Key map.
         public const string KeysTitle = "Keyboard", KeysCloseTip = "Close (Esc)";

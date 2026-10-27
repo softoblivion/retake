@@ -15,7 +15,7 @@ namespace Retake.Design
     {
         public const string Title = "Settings", CloseTip = "Close settings (Esc)";
         public const string ThemeLabel = "Theme", ThemeHint = "Background colour and accent of the window";
-        public const string ScaleLabel = "Scale", ScaleHint = "Size of the window and its text", ScaleOff = "Too large for this screen";
+        public const string ScaleLabel = "Scale", ScaleHint = "Size of the text and controls", ScaleOff = "Too large for this screen";
         public const string AutoLabel = "Download updates automatically", AutoHint = "Checked every 5 minutes; installing still needs a restart";
         public const string AutoOnTip = "On: new versions download in the background", AutoOffTip = "Off: new versions wait until you install them";
         public const string AuthorLabel = "Author name", AuthorHint = "Shown beside the notes you write", AuthorTip = "Saved as you type";
@@ -28,11 +28,11 @@ namespace Retake.Design
 
         public static readonly string[] ScaleTips =
         {
-            "Window and text at the size Windows sets",
-            "Window and text a quarter larger",
-            "Window and text half as large again",
-            "Window and text three quarters larger",
-            "Window and text twice as large",
+            "Text and controls at the size Windows sets",
+            "Text and controls a quarter larger",
+            "Text and controls half as large again",
+            "Text and controls three quarters larger",
+            "Text and controls twice as large",
         };
 
         public readonly Sheet Sheet;

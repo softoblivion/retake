@@ -242,5 +242,14 @@ namespace Retake.Tests
             Check.False(WindowPlace.Savable(-32000, -32000), "the parking place of a minimized window");
             Check.True(WindowPlace.Savable(-20, 0));
         }
+
+        [Test("views.recent.short_folder")]
+        public static void ShortFolder(TestEnv t)
+        {
+            Check.Equal(@"C:\clips", PathText.ShortFolder(@"C:\clips"));
+            Check.Equal(@"C:\a\b", PathText.ShortFolder(@"C:\a\b"));
+            Check.Equal(@"…\Review\review-3", PathText.ShortFolder(@"C:\Users\me\Review\review-3"));
+            Check.Equal(@"…\b\c", PathText.ShortFolder(@"\\server\share\a\b\c\"));
+        }
     }
 }

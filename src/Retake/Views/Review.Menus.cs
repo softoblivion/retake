@@ -87,23 +87,20 @@ namespace Retake.Views
             return menu;
         }
 
-        /// <summary>The menu of the video: play or pause, the new notes, full screen.</summary>
+        /// <summary>The menu of the video: play or pause, the new notes in the order of their keys.</summary>
         PopMenu VideoMenu()
         {
-            var menu = new PopMenu(230);
+            var menu = new PopMenu(240);
             menu.Add(playing ? Copy.MenuPause : Copy.MenuPlay, playing ? Icons.Pause : Icons.Play, "Space", null, TogglePlay);
             menu.AddSeparator();
             AddNewNotes(menu, null);
-            menu.Add(Copy.MenuNewGeneral, Icons.Note, "G", null, StartGeneralNote);
-            menu.AddSeparator();
-            menu.Add(window.IsFullScreen ? Copy.MenuFullExit : Copy.MenuFull, window.IsFullScreen ? Icons.Collapse : Icons.Expand, "F11", null, window.ToggleFullScreen);
             return menu;
         }
 
         /// <summary>The menu of a frame of the timeline (a right click on the ruler or the empty track).</summary>
         PopMenu TrackMenu(int at)
         {
-            var menu = new PopMenu(240);
+            var menu = new PopMenu(250);
             AddNewNotes(menu, at);
             menu.AddSeparator();
             menu.Add(Copy.MenuFit, Icons.Expand, "0", null, Timeline.ResetZoom);
@@ -115,7 +112,7 @@ namespace Retake.Views
         {
             var menu = new PopMenu(260);
             if (!videoLoaded) return menu;
-            menu.Add(Copy.MenuNewGeneral, Icons.Note, "G", null, StartGeneralNote);
+            menu.Add(Copy.MenuNewGeneral, Icons.Whole, NoteKinds.GeneralKey, null, () => _ = StartNote(null));
             menu.AddSeparator();
             menu.Add(Copy.MenuCopyReadable, Icons.Note, "Ctrl+Shift+C", Copy.CopyReadableTip, () => CopyNotes(true));
             menu.Add(Copy.MenuCopyNotes, Icons.File, "Ctrl+C", Copy.CopyNotesTip, () => CopyNotes(false));
@@ -124,12 +121,19 @@ namespace Retake.Views
             return menu;
         }
 
-        /// <summary>The three new-note entries; with <paramref name="at"/> the note goes on that frame.</summary>
+        /// <summary>
+        /// The new-note entries in the order of their keys; with <paramref name="at"/> the frame notes go on that frame
+        /// and the general note (which has no frame) is left out.
+        /// </summary>
         void AddNewNotes(PopMenu menu, int? at)
         {
-            menu.Add(at.HasValue ? Copy.MenuNewFixHere : Copy.MenuNewFix, "", "1", null, () => _ = StartNote("FIX", at));
-            menu.Add(at.HasValue ? Copy.MenuNewAddHere : Copy.MenuNewAdd, "", "2", null, () => _ = StartNote("ADD", at));
-            menu.Add(at.HasValue ? Copy.MenuNewRemoveHere : Copy.MenuNewRemove, "", "3", null, () => _ = StartNote("REMOVE", at));
+            for (int i = 0; i < NoteKinds.All.Length; i++)
+            {
+                string kind = NoteKinds.All[i];
+                if (i == 3 && !at.HasValue) menu.Add(Copy.MenuNewGeneral, Icons.Whole, NoteKinds.GeneralKey, null, () => _ = StartNote(null));
+                string label = string.Format(CultureInfo.InvariantCulture, at.HasValue ? Copy.MenuNewHere : Copy.MenuNew, kind);
+                menu.Add(label, NoteKinds.Glyph(kind), NoteKinds.Key(kind), null, () => _ = StartNote(kind, at));
+            }
         }
 
         // --- recent actions ---------------------------------------------------------------------------------------
