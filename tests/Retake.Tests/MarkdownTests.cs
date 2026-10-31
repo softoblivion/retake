@@ -84,8 +84,8 @@ namespace Retake.Tests
             Check.Equal("\\---", Body("---"));
             Check.Equal("\\> quote", Body("> quote"));
             Check.Equal("see <https://example.com/a_b?q=1&r=*2*> and \\*this\\*", Body("see https://example.com/a_b?q=1&r=*2* and *this*"));
-            string cyrillic = "Логотип мигает " + char.ConvertFromUtf32(0x1F642);
-            Check.Equal(cyrillic, Body(cyrillic));
+            string nonLatin = "Το λογότυπο αναβοσβήνει " + char.ConvertFromUtf32(0x1F642);
+            Check.Equal(nonLatin, Body(nonLatin));
             // emoji shortcodes stay text (a word joiner after the first colon); timecodes and plain colons stay as typed
             string wj = char.ConvertFromUtf32(0x2060);
             Check.Equal("fix :" + wj + "tada: at end, :" + wj + "+1: and :" + wj + "-1:", Body("fix :tada: at end, :+1: and :-1:"));
