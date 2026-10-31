@@ -1,4 +1,6 @@
 using System;
+using System.Runtime.InteropServices;
+using System.IO;
 using System.Collections.Generic;
 using Retake.Core;
 using Retake.Player;
@@ -250,6 +252,141 @@ namespace Retake.Tests
             Check.Equal(@"C:\a\b", PathText.ShortFolder(@"C:\a\b"));
             Check.Equal(@"…\Review\review-3", PathText.ShortFolder(@"C:\Users\me\Review\review-3"));
             Check.Equal(@"…\b\c", PathText.ShortFolder(@"\\server\share\a\b\c\"));
+        }
+    
+
+        [Test("views.frames.rational_rates_do_not_drift")]
+        public static void RationalRatesDoNotDrift(TestEnv t)
+        {
+            foreach (int n in new[] { 24, 30, 48, 60, 120 })
+            {
+                double player = FrameMath.SnapPlayerRate(n * 1000.0 / 1001.0 + 0.00002)!.Value;
+                double fps = Timecode.BaseFor(player).Fps;
+                Check.Equal(n * 1000.0 / 1001.0, fps, "rate " + n);
+                foreach (int f in new[] { 500, 1000, 3000, 100000, 1000000 })
+                {
+                    // the timestamp of frame f of a file at n * 1000 / 1001, in whole milliseconds as WebM keeps it
+                    double pts = Math.Round(f * 1001.0 / (n * 1000.0) * 1000) / 1000;
+                    Check.Equal(f, FrameMath.FrameAt(pts, 0, fps), "rate " + n + " frame " + f);
+                    Check.Equal(f, FrameMath.FrameAt(FrameMath.SeekTarget(0, f, fps), 0, fps));
+                }
+            }
+        }
+
+        [Test("views.note_edit.move_and_text_both_stay_when_the_move_cannot_be_saved")]
+        public static void NoteEditKeepsTextWhenTheMoveIsNotSaved(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            string id = c.Session.AddNote(307, "FIX", "old text", null, null).Notes[0].Id;
+            string target = c.Path_("dummy_notes", "dummy_notes.txt");
+            File.Delete(target);
+            Directory.CreateDirectory(target);
+            SessionException ex = Check.Throws<SessionException>(() => NoteEdit.Save(c.Session, id, true, null, "new text", null, false, null, "ADD"));
+            Check.True(ex.NotSaved);
+            NoteState n = c.Session.GetState().Notes[0];
+            Check.True(n.IsGeneral, "the move is in memory");
+            Check.Equal("new text", n.Text, "and so is the text");
+            Check.Equal("ADD", n.Kind);
+            Directory.Delete(target);
+            c.Session.Save();
+            Check.Equal("# Frame Notes 1\n# source: dummy.mp4\n# fps: 25\n-\tADD\tnew text\n", c.Text("dummy_notes", "dummy_notes.txt"));
+            // an edit that changes nothing writes nothing
+            Check.Equal(1, NoteEdit.Save(c.Session, id, false, null, null, null, false, null, null).Notes.Count);
+        }
+
+        [Test("views.thumbs.cache_keeps_a_value_while_the_file_is_unchanged")]
+        public static void FileCacheKeepsValues(TestEnv t)
+        {
+            string a = t.Combine("a.png"), b = t.Combine("b.png");
+            File.WriteAllBytes(a, new byte[] { 1, 2, 3 });
+            File.WriteAllBytes(b, new byte[] { 4 });
+            int made = 0;
+            var cache = new FileCache<string>(2);
+            Func<string, string?> make = p => { made++; return p + "#" + made; };
+            string? first = cache.Get(a, 128, make);
+            Check.Equal(first, cache.Get(a, 128, make), "the same file: the kept value");
+            Check.Equal(1, made);
+            cache.Get(a, 228, make);
+            Check.Equal(2, made, "another size is another entry");
+            File.WriteAllBytes(a, new byte[] { 9, 9, 9, 9 });
+            File.SetLastWriteTimeUtc(a, DateTime.UtcNow.AddMinutes(1));
+            Check.NotEqual(first, cache.Get(a, 128, make), "a changed file is made again");
+            cache.Get(b, 128, make);
+            Check.Equal(2, cache.Count, "the least recently used entry goes");
+            File.Delete(b);
+            Check.Null(cache.Get(b, 128, make), "a missing file has no value");
+            Check.Null(cache.Get(null, 128, make));
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr CreateWindowEx(int exStyle, string className, string name, int style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+        [DllImport("user32.dll")]
+        static extern bool DestroyWindow(IntPtr hwnd);
+
+        [Test("views.unsaved.a_discard_covers_only_the_move_it_was_given_for")]
+        public static void DiscardCoversOneMove(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            var gate = new UnsavedGate(c.Session);
+            c.Session.AddNote(5, "FIX", "first", null, null);
+            string target = c.Path_("dummy_notes", "dummy_notes.txt");
+            File.Delete(target);
+            Directory.CreateDirectory(target);
+            SessionException ex = Check.Throws<SessionException>(() => c.Session.AddNote(6, "ADD", "second", null, null));
+            gate.Failed(ex);
+            Check.True(gate.MustAsk, "a failed write asks before the notes leave memory");
+            gate.Discard();
+            Check.False(gate.MustAsk, "the move the reviewer discarded for goes on without asking");
+            // the open fails: the old video and its notes stay, and the next move asks again
+            Check.Throws<SessionException>(() => gate.Open(c.Path_("missing.mp4")));
+            Check.True(gate.MustAsk, "after a failed open");
+            Check.Equal("dummy.mp4", c.Session.GetState().Video!.Name);
+            // a restart that did not quit
+            gate.Discard();
+            gate.Revoke();
+            Check.True(gate.MustAsk, "after a restart that did not quit");
+            // a newer failed write after a Discard: closing must ask
+            gate.Discard();
+            ex = Check.Throws<SessionException>(() => c.Session.AddNote(7, "ADD", "third", null, null));
+            gate.Failed(ex);
+            Check.True(gate.MustAsk, "a newer failed write asks again");
+            Check.Equal(3, c.Session.GetState().Notes.Count);
+            // a refused call (not a failed write) leaves a Discard in force
+            gate.Discard();
+            gate.Failed(Check.Throws<SessionException>(() => c.Session.AddNote(8, "FIX", "  ", null, null)));
+            Check.False(gate.MustAsk);
+            gate.Close();
+            Check.False(gate.MustAsk, "closed: nothing in memory");
+            Directory.Delete(target);
+        }
+
+        [Test("views.video_windows.a_window_that_has_a_video_open_is_found_by_its_path")]
+        public static void VideoWindowsFindTheOwner(TestEnv t)
+        {
+            string video = t.Combine("clips", "Promo.mp4");
+            Check.Equal(VideoWindows.Key(video), VideoWindows.Key(video.ToLowerInvariant().Replace('\\', '/')), "one key for every spelling");
+            Check.NotEqual(VideoWindows.Key(video), VideoWindows.Key(t.Combine("clips", "other.mp4")));
+            // a hidden top-level window of this process stands for another review window (it is never shown)
+            IntPtr hwnd = CreateWindowEx(0, "STATIC", "", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            Check.True(hwnd != IntPtr.Zero, "window created");
+            try
+            {
+                Check.Equal(IntPtr.Zero, VideoWindows.Find(video, IntPtr.Zero));
+                VideoWindows.Claim(hwnd, video);
+                Check.Equal(hwnd, VideoWindows.Find(video.ToUpperInvariant(), IntPtr.Zero));
+                Check.Equal(IntPtr.Zero, VideoWindows.Find(video, hwnd), "the window itself does not count");
+                VideoWindows.Claim(hwnd, t.Combine("clips", "other.mp4"));
+                Check.Equal(IntPtr.Zero, VideoWindows.Find(video, IntPtr.Zero), "a new video replaces the mark");
+                VideoWindows.Claim(hwnd, null);
+                Check.Equal(IntPtr.Zero, VideoWindows.Find(t.Combine("clips", "other.mp4"), IntPtr.Zero));
+            }
+            finally
+            {
+                DestroyWindow(hwnd);
+            }
         }
     }
 }

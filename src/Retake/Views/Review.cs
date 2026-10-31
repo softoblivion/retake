@@ -78,7 +78,7 @@ namespace Retake.Views
         IPlayer? player;
         Retake.Player.Player? mpv;
         bool engineReady;
-        string? engineError, pendingOpen;
+        string? engineError, pendingOpen, launchPath;
         SessionState state = new SessionState();
         string? openPath;
         bool videoLoaded;
@@ -92,6 +92,8 @@ namespace Retake.Views
         string? selectedId;
         Edit? edit;
         bool starting, saving, closing, closed, reverseHeld, freezing, packing;
+        // A Discard of notes that could not be saved covers only the move it was given for.
+        readonly UnsavedGate unsaved;
         Task? commitTask;
         DateTime keyMapToggled;
         readonly DispatcherTimer settle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
@@ -104,6 +106,7 @@ namespace Retake.Views
             fake = fakePlayer;
             ui = window.Dispatcher;
             session = new Session(settings, s => { });
+            unsaved = new UnsavedGate(session);
             Video = new VideoView(window, fake);
 
             openButton = TitleIcon(Icons.Video, "Open", Copy.OpenTip, "OpenButton");
@@ -236,6 +239,8 @@ namespace Retake.Views
             Video.Overlay.Composer.KindChanged += SetEditKind;
             Video.Overlay.Composer.PlaceChanged += SetEditPlace;
             Video.FrameChanged += () => { if (edit != null) PlaceComposer(); };
+            // The card grows and shrinks with the text: it is placed again, so it stays inside the area.
+            Video.Overlay.Composer.SizeChanged += (s, e) => { if (edit != null && e.HeightChanged) PlaceComposer(); };
             Themes.Changed += () => { Video.Overlay.Region.Retint(); Timeline.InvalidateVisual(); };
 
             Empty.OpenButton.Click += (s, e) => OpenDialog();
@@ -290,7 +295,6 @@ namespace Retake.Views
             overlay.SheetChanged += open => { if (open && playing) player?.Pause(); };
             overlay.MenuChanged += open => { if (open && playing) player?.Pause(); };
             overlay.CoverChanged += on => UpdateCover();
-            window.StateChanged += (s, e) => { if (window.WindowState == WindowState.Minimized && edit != null) CancelEdit(); };
 
             window.Activated += (s, e) => Video.ReclaimFocus();
             window.Deactivated += (s, e) => reverseHeld = false;
@@ -357,14 +361,17 @@ namespace Retake.Views
             p.PlayingChanged += OnPlaying;
         }
 
-        /// <summary>Opens a video now, or once the player is ready.</summary>
+        /// <summary>Opens a video now, or once the player is ready (the command line). A video another window has open brings that window to the front, and this one, still empty, closes.</summary>
         public void OpenWhenReady(string path)
         {
+            launchPath = path;
             if (engineReady || engineError != null) Open(path);
             else pendingOpen = path;
         }
 
         // --- opening ------------------------------------------------------------------------------------------
+
+        IntPtr WindowHandle => new System.Windows.Interop.WindowInteropHelper(window).Handle;
 
         public void OpenPath(string path) => Open(path);
 
@@ -376,16 +383,29 @@ namespace Retake.Views
                 else pendingOpen = path;
                 return;
             }
+            bool launch = launchPath != null && path == launchPath;
+            launchPath = null;
+            // One window per video: the window that has it open comes to the front instead.
+            IntPtr other = VideoWindows.Find(path, WindowHandle);
+            if (other != IntPtr.Zero)
+            {
+                VideoWindows.BringToFront(other);
+                if (launch && openPath == null) { _ = ui.BeginInvoke(new Action(window.Close)); return; }
+                window.Root.Toasts.Show(ToastLevel.Info, string.Format(CultureInfo.InvariantCulture, Copy.OpenElsewhere, Path.GetFileName(path)));
+                return;
+            }
             if (edit != null) await Commit(true);
             if (edit != null) return;
+            if (!await ResolveUnsaved()) return;
             SessionState st;
-            try { st = session.Open(path); }
+            try { st = unsaved.Open(path); }
             catch (SessionException ex)
             {
                 Banner.Show(ex.Message);
                 if (openPath == null) Empty.SetRecent(RecentItem.Read(settings, null));
                 return;
             }
+            VideoWindows.Claim(WindowHandle, st.Video!.FilePath);
             Banner.Hide();
             player!.Unload();
             videoLoaded = false;
@@ -447,7 +467,8 @@ namespace Retake.Views
         {
             if (edit != null) EndEditUi();
             edit = null;
-            session.Close();
+            unsaved.Close();
+            VideoWindows.Claim(WindowHandle, null);
             player?.Unload();
             videoLoaded = false;
             openPath = null;
@@ -528,7 +549,7 @@ namespace Retake.Views
         {
             if (state.Video == null) return;
             try { Apply(session.SetFps(fps)); }
-            catch (SessionException ex) { Banner.Show(ex.Message); Apply(session.GetState()); }
+            catch (SessionException ex) { Apply(session.GetState()); Report(ex); }
         }
 
         string Format(int f) => tb != null ? Timecode.FrameToTimecode(Math.Max(0, f), tb) : Clock(f / rate);

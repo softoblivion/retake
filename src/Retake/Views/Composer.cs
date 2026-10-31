@@ -15,14 +15,21 @@ namespace Retake.Views
     /// The note editor over the video: a near-opaque card (--menu-tint, radius 14). The first row says where the
     /// note belongs: its frame (the timecode) or the whole video (General); a click or Ctrl+4 switches. The second row
     /// holds the five types as chips with their glyphs, the current one lit; a click or Ctrl+1 2 3 5 6 changes the
-    /// type. Below them the text field. Enter saves, Esc cancels, Backspace in the empty field removes the region. A
-    /// note needs text: Enter with an empty field keeps the editor open and says so under the field.
+    /// type. Below them the text field, which wraps a long text and grows to <see cref="MaxLines"/> lines, then
+    /// scrolls; the card keeps the width its place gives it (<see cref="CardWidth"/>). Enter saves, Esc cancels,
+    /// Backspace in the empty field removes the region. A note needs text: Enter with an empty field keeps the editor
+    /// open and says so under the field.
     /// </summary>
     public sealed class Composer : Grid
     {
         protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new PanePeer(this);
 
-        public readonly TextField Field = new TextField("", 420);
+        /// <summary>The widest card, in logical pixels (the overlay scales it with the Scale step).</summary>
+        public const double WidestCard = 420;
+        /// <summary>Lines the field grows to before it scrolls.</summary>
+        public const int MaxLines = 6;
+
+        public readonly TextField Field = new TextField("", WidestCard);
         readonly TextBlock warning = Typography.Text(Copy.NeedText, Typography.Caption, "warn-ink");
         readonly Chip[] chips = new Chip[NoteKinds.All.Length];
         readonly Chip atFrame, atWhole;
@@ -67,6 +74,7 @@ namespace Retake.Views
             stack.Children.Add(kinds);
 
             AutomationProperties.SetAutomationId(Field, "NoteText");
+            Field.Wrap(MaxLines);
             Field.HorizontalAlignment = HorizontalAlignment.Stretch;
             Field.Width = double.NaN;
             Tip.Set(Field, Copy.FieldTip);
@@ -79,6 +87,9 @@ namespace Retake.Views
             stack.Children.Add(warning);
             Children.Add(stack);
         }
+
+        /// <summary>The width of the card in an area <paramref name="areaWidth"/> wide: 420, or the area less 8 on each side.</summary>
+        public static double CardWidth(double areaWidth) => Math.Max(0, Math.Min(WidestCard, areaWidth - 16));
 
         public string Kind => kind;
         public bool General => general;

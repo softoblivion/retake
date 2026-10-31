@@ -47,13 +47,20 @@ namespace Retake
             Look.Init(app, options.Prefs);
             var window = new ShellWindow(options.Prefs, "Retake");
             var review = new Review(window, settings, paths, options.FakePlayer);
-            if (options.Video != null) review.OpenWhenReady(Path.GetFullPath(options.Video));
-            var updates = new UpdateHost(window, paths, window.Close);
+            if (options.Video != null) review.OpenWhenReady(FullPath(options.Video));
+            var updates = new UpdateHost(window, paths, window.Close, () => review.HasUnsaved, review.ConfirmRestart, review.RestartDropped);
             app.DispatcherUnhandledException += (s, e) => Log.Error("unhandled error", e.Exception);
             int code = app.Run(window);
             Log.Info("Retake closed");
             Log.Close();
             return code;
+        }
+
+        /// <summary>The full form of a path from the command line; a path that has none is passed on as it is (the open reports it).</summary>
+        static string FullPath(string path)
+        {
+            try { return Path.GetFullPath(path); }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException) { return path; }
         }
     }
 }

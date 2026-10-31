@@ -31,9 +31,9 @@
   note lands on the exact frame, also at drop-frame rates and on files whose video starts late.
 - **Timecodes the editor can use.** `0:00:12:07` as in the After Effects timeline (drop-frame `0;00;12;07` for
   29.97 and 59.94), computed from the file's real frame rate.
-- **One folder next to the video.** `promo_v3.mp4` gets `promo_v3_notes\` with the notes as a plain text file and
-  the frame images. **Done** packs both into one zip, and the notes copy as plain text that reads the same in any
-  chat.
+- **One folder next to the video.** `promo_v3.mp4` gets `promo_v3_notes\` with the notes as a plain text file, the
+  same notes as a Markdown file with their frame images, and the frame images. **Done** packs them into one zip, and
+  the notes copy as plain text that reads the same in any chat.
 - **Free, open source, portable.** GPL-3.0, one exe with a data folder next to it. No account, no telemetry; videos
   and notes never leave the machine.
 
@@ -62,7 +62,7 @@ admin rights.
 | **Note types** | FIX, ADD and REMOVE for change requests, LIKE and DISLIKE for reactions, and general notes about the whole video; each type has its key, colour and icon. |
 | **Notes list** | General notes for the whole video first, then every frame note with its type icon and thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes. |
 | **Right-click menus** | Notes, the video, the timeline and the list offer their actions with the key of each, so nobody has to learn the keys first. |
-| **Send the review** | **Done** packs the notes and their frame images into one zip; `Ctrl+Shift+C` copies the notes as plain text for a chat or an e-mail; a click on any timecode copies it for the time field of After Effects or Premiere. |
+| **Send the review** | **Done** packs the notes (plain text and Markdown) and their frame images into one zip; the notes folder keeps the Markdown file with the reviewer's name, ready for any Markdown viewer; `Ctrl+Shift+C` copies the notes as plain text for a chat or an e-mail; a click on any timecode copies it for the time field of After Effects or Premiere. |
 | **Any window size** | Resize the window or maximize it; the video takes the room, and the size is remembered. |
 | **Recent videos** | The start screen lists recent videos with their note counts and opens them at the frame they were left on. |
 | **Glass look** | Crystal Black and Crystal Sky themes and a Scale setting from 100 to 200 % for the whole window. |

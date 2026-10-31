@@ -104,7 +104,7 @@ namespace Retake.Design.Controls
         public readonly ButtonSize Size;
         readonly PlateVisual plate;
         readonly ShadowLayer? drop, pressGlow;
-        readonly StackPanel label;
+        readonly DockPanel label;
         readonly Spinner spinner;
         readonly TextBlock text;
         bool busy;
@@ -142,14 +142,18 @@ namespace Retake.Design.Controls
             plate = new PlateVisual(kind == ButtonKind.Ghost ? PlateKind.Ghost : kind == ButtonKind.Tinted ? PlateKind.Tinted : kind == ButtonKind.Danger ? PlateKind.Danger : PlateKind.Plain);
             root.Children.Add(plate);
 
-            label = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(pad, 0, pad, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            // A dock panel, not a stack: a button with a MaxWidth gives the caption the room left after the icon, and a
+            // caption longer than that ends with an ellipsis.
+            label = new DockPanel { LastChildFill = true, Margin = new Thickness(pad, 0, pad, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             if (icon != null)
             {
                 FrameworkElement ic = Icons.Make(icon, iconSize);
                 ic.Margin = new Thickness(0, 0, gap, 0);
+                DockPanel.SetDock(ic, Dock.Left);
                 label.Children.Add(ic);
             }
             text = Typography.Text(caption, role, null);
+            text.TextTrimming = TextTrimming.CharacterEllipsis;
             label.Children.Add(text);
             root.Children.Add(label);
 

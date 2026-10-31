@@ -22,12 +22,17 @@ Requirements: Windows 10 or 11, 64-bit. Nothing else is installed: the video eng
    the whole video instead ("the music is too loud overall").
 4. Optionally drag a rectangle around the element on the video, or click to put a point.
 5. Type the note and press `Enter`. A note needs text: with an empty field `Enter` keeps the editor open and asks for
-   it. `Esc` cancels: a new note is removed, an edit is reverted.
+   it. `Esc` cancels: a new note is removed, an edit is reverted. A long note wraps inside the editor, which grows to
+   six lines and then scrolls; pasted text with several lines arrives whole, joined into one line.
 6. When the review is finished, press **Done**: the notes and their frame images are packed into one zip, ready to
    send.
 
-The notes are saved after every change; there is no Save button and nothing to lose when the window closes.
-Several windows can be open at once, one review each. A right click on a note, the video, the timeline or the notes
+The notes are saved after every change; there is no Save button. If the notes folder cannot be written (a
+read-only or unplugged drive, a sync program holding the file), the notes stay in the app and a message
+**The notes are not saved** offers **Retry**; closing the window, opening another video or restarting for an update
+then asks first: **Retry**, **Discard** (go on without the changes since the last save) or **Cancel**.
+Several windows can be open at once, one review each; opening a video that another window already has open brings
+that window to the front instead. A right click on a note, the video, the timeline or the notes
 list shows what can be done there, with the key of each action on its right.
 
 ### Marking the element
@@ -68,15 +73,15 @@ timecode, the duration and the frame number, and the six note buttons with their
 ### Mini timeline
 
 A ruler with timecodes, the playhead and one marker per note with the first words of its text, coloured by type.
-Resting on a marker shows the whole note and its frame image; a click selects the note and moves to its frame, a
+Resting on a marker shows the note (a very long one up to 12 lines) and its frame image; a click selects the note and moves to its frame, a
 double click edits it. **Drag a marker** to move its note to another frame: the video follows while you drag, and a
 note with a mark gets a new frame image at the frame where it lands; `Esc` cancels the drag. The mouse wheel zooms,
 `Shift` + wheel pans, `0` shows the whole video again; a click or a drag in the ruler moves the playhead.
 
 ### Notes list
 
-General notes first, then every frame note with the icon of its type, its timecode, type, text and a thumbnail of
-its frame image, in timecode order; the heading counts the notes of each type. `↑` / `↓` select (the video follows), `F2` or a double click edits, `Delete` removes, a right click
+General notes first, then every frame note with the icon of its type, its timecode, type, text (three lines; the
+selected note shows its whole text) and a thumbnail of its frame image, in timecode order; the heading counts the notes of each type. `↑` / `↓` select (the video follows), `F2` or a double click edits, `Delete` removes, a right click
 offers Edit, Copy the timecode, Copy the text, Move to the playhead and Delete. The list button in the title bar
 hides and shows it.
 
@@ -110,14 +115,14 @@ FIX — music is too loud overall
 0:00:40:00 ADD — subtitle for the second speaker
 ```
 
-**Done** (the button in the title bar, or `Ctrl+E`) packs the same text as `notes.txt` and every frame image into
-`<name>_notes\<name>_notes.zip`; the message that confirms it has a **Show** button that selects the zip in Explorer,
+**Done** (the button in the title bar, or `Ctrl+E`) packs the same text as `notes.txt`, the Markdown notes file as
+`notes.md` (see [The notes file](#the-notes-file)) and every frame image into `<name>_notes\<name>_notes.zip`; the message that confirms it has a **Show** button that selects the zip in Explorer,
 ready to drag into a chat or an e-mail. Pressing Done again replaces the zip with the current notes.
 
 ### Recent videos
 
-The start screen and the **Recent** menu list recent videos with their last position and note counts; a click
-opens a video at the frame it was left on. Right click an entry to open it, show its notes folder in Explorer,
+The start screen and the **Recent** menu list recent videos with their last position and note counts (a long list
+scrolls); a click opens a video at the frame it was left on. Right click an entry to open it, show its notes folder in Explorer,
 delete its notes (asks once more first) or take it off the list.
 
 ## Keyboard
@@ -158,7 +163,7 @@ The gear in the title bar (or `Ctrl+,`) opens Settings. Every change applies at 
 | **Theme** | Crystal Black (dark glass on a near-black scene, the default) or Crystal Sky (light glass on a pale blue scene). |
 | **Scale** | The size of the text and controls: 100, 125, 150, 175 or 200 %, on top of the scaling Windows applies. On a large monitor at Windows' 100 % (2560 x 1440, for example), 125 or 150 % reads comfortably. A step whose smallest window does not fit the screen is unavailable. |
 | **Download updates automatically** | On (default): a new version downloads in the background and waits for a restart. Off: it waits until you install it. |
-| **Author name** | Your name, kept in the settings. This version does not write it into the notes file yet. |
+| **Author name** | Your name: the Markdown notes file and the one in the Done zip name you as the reviewer (`Reviewer: <name>`). |
 
 The window opens at 1280 x 800 at 100 % Scale (smaller on a small screen), can be resized down to 960 x 600 at that
 Scale or maximized, and remembers its place, size and maximized state. Scale makes text and controls larger; a larger
@@ -172,6 +177,7 @@ Everything of one review sits in one folder next to the video:
 promo_v3.mp4
 promo_v3_notes\
     promo_v3_notes.txt          the notes (the app reads this file back)
+    promo_v3_notes.md           the same notes to read, with their frame images
     promo_v3_notes.zip          the package made by Done, if you made one
     frames\0-00-12-07_FIX.png   one image per note that has a region
 ```
@@ -199,14 +205,23 @@ does not understand are kept, so hand edits survive.
 The file is rewritten with an atomic replace. Removing a note deletes its image; removing every note keeps the folder
 with a header-only file, so the editor can see that the review happened and found nothing. A video you only watched
 gets no folder. A folder in the older 1.0 layout (`promo_v3_notes.txt` beside the video) is moved into this layout the
-first time the video is opened. The readable `promo_v3_notes.md` that earlier versions wrote is no longer made and is
-removed from the folder; the readable text now comes from the Copy menu and from Done.
+first time the video is opened.
+
+**`promo_v3_notes.md`** is the same review for reading: open it in any Markdown viewer or editor (VS Code, Obsidian,
+Typora, GitHub when the folder is uploaded with `frames\`). It is written again after every change and never read
+back, so edit the `.txt`, not the `.md`. It starts with the video name, a line with the frame rate, duration, frame
+size and the number of notes of each type, and `Reviewer: <name>` when the Author name setting is set; then the
+general notes, and one heading per frame note (its timecode and type) with the text and, when the note has a frame
+image, the image itself. Characters that mean something in Markdown are escaped, so every note reads as typed. An
+older `promo_v3_notes.md` from Frame Notes 1.x is replaced by this file when the video is opened.
 
 ## Timecodes
 
 Timecodes follow the After Effects timeline display: `h:mm:ss:ff`, frames counted from zero, two digits (three at
-100 fps and above). Integer rates and 23.976 use non-drop-frame timecode with `:`; 29.97 and 59.94 use drop-frame
-with `;` (`0;00;12;07`), the same as After Effects applies to NTSC footage by default. Typing the timecode into the
+100 fps and above). Integer rates and 23.976, 47.952 and 119.88 use non-drop-frame timecode with `:`; 29.97 and
+59.94 use drop-frame with `;` (`0;00;12;07`), the same as After Effects applies to NTSC footage by default. The
+rates of NTSC footage (23.976, 29.97, 47.952, 59.94, 119.88) are counted at their exact value (48000/1001 for
+47.952), so frames do not drift late in a long clip. Typing the timecode into the
 AE or Premiere time field lands on the frame the note was made on.
 
 ## Supported video
@@ -262,8 +277,8 @@ Release notes: [`releases/`](releases/).
 **Can I edit the notes file by hand?** Yes. Keep the tab-separated columns; lines Retake does not understand are
 kept as they are.
 
-**How do I send the notes to someone?** Press **Done** and send the zip, or paste the text from **Copy → Text for a
-chat** into a message.
+**How do I send the notes to someone?** Press **Done** and send the zip, or paste the text from **Copy → Text**
+into a message. The zip holds the notes as plain text and as a Markdown file with the frame images.
 
 **Why does the first start take a moment?** The video engine is unpacked from the exe into `retake_data\bin\` once,
 and again after an update that brings a new engine.

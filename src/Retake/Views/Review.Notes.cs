@@ -131,12 +131,13 @@ namespace Retake.Views
             BeginEdit();
         }
 
-        void BeginEdit()
+        /// <param name="text">The text the field opens with: the note's own (null), or the text of a save that was refused.</param>
+        void BeginEdit(string? text = null)
         {
             Edit e = edit!;
             Trace();
             OverlayWindow o = Video.Overlay;
-            o.Composer.Open(e.Kind, Format(e.AtFrame), e.General, e.OrigText);
+            o.Composer.Open(e.Kind, Format(e.AtFrame), e.General, text ?? e.OrigText);
             ShowPlace();
             o.SetTyping(true);
         }
@@ -182,7 +183,10 @@ namespace Retake.Views
             Box frameBox = Video.FrameBox;
             double areaW = Video.Area.ActualWidth, areaH = Video.Area.ActualHeight;
             o.Hint.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            o.Composer.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            // A fixed width: the field wraps a long text and the card grows downward, never past the area's edges.
+            double width = Composer.CardWidth(areaW);
+            if (o.Composer.Width != width) o.Composer.Width = width;
+            o.Composer.Measure(new Size(width, double.PositiveInfinity));
             Size hint = o.Hint.DesiredSize, box = o.Composer.DesiredSize;
             OverlayWindow.Put(o.Hint, Math.Max(8, frameBox.X + (frameBox.W - hint.Width) / 2), Math.Max(8, frameBox.Y + 10));
             double left, topY;
@@ -279,6 +283,7 @@ namespace Retake.Views
             Video.Overlay.Region.Show(e.General ? null : e.Region, e.Kind);
             byte[]? png = null;
             string? imageError = null;
+            Edit? reopen = null;
             try
             {
                 if (needImage)
@@ -299,24 +304,29 @@ namespace Retake.Views
                 }
                 if (e.Create)
                 {
-                    SessionState st = session.AddNote(e.Frame, e.Kind, text, e.General ? null : e.Region, png);
-                    NoteState? added = st.Notes.OrderByDescending(n => n.Order).FirstOrDefault();
+                    int before = state.Notes.Count == 0 ? 0 : state.Notes.Max(n => n.Order);
+                    try
+                    {
+                        session.AddNote(e.Frame, e.Kind, text, e.General ? null : e.Region, png);
+                    }
+                    finally
+                    {
+                        // A note kept in memory after a failed write is the selected one all the same.
+                        NoteState? added = session.GetState().Notes.Where(n => n.Order > before).OrderByDescending(n => n.Order).FirstOrDefault();
+                        if (added != null) selectedId = added.Id;
+                    }
                     edit = null;
-                    selectedId = added?.Id;
-                    Apply(st);
+                    Apply(session.GetState());
                 }
                 else
                 {
                     bool textChanged = text != e.OrigText;
                     bool regionChanged = !e.General && (e.RegionDirty || (placeChanged && e.Region != null));
                     edit = null;
-                    // The place first: a note that comes to a frame can take a region only once it has the frame.
-                    if (placeChanged) Apply(session.MoveNote(e.Id, e.Frame, null));
-                    if (textChanged || regionChanged || kindChanged)
+                    if (placeChanged || textChanged || regionChanged || kindChanged)
                     {
-                        SessionState st = session.UpdateNote(e.Id, textChanged ? text : null,
-                            regionChanged ? e.Region : null, regionChanged && e.Region == null, png, kindChanged ? e.Kind : null);
-                        Apply(st);
+                        Apply(NoteEdit.Save(session, e.Id, placeChanged, e.Frame, textChanged ? text : null,
+                            regionChanged ? e.Region : null, regionChanged && e.Region == null, png, kindChanged ? e.Kind : null));
                     }
                 }
                 if (imageError != null) Banner.Show(string.Format(CultureInfo.InvariantCulture, Copy.ImageFailed, imageError));
@@ -324,17 +334,88 @@ namespace Retake.Views
             catch (SessionException ex)
             {
                 edit = null;
-                Banner.Show(ex.Message);
                 Apply(session.GetState());
+                // A change the session refused took nothing: the editor comes back with the text, so nothing typed is lost.
+                // A change kept in memory without its write is in the list; the notice offers to write it again.
+                Report(ex);
+                if (!ex.Changed && videoLoaded && !closing && (e.Create || Note(e.Id) != null)) reopen = e;
             }
             finally
             {
                 edit = null;
                 saving = false;
-                Select(selectedId, false);
+                if (reopen != null)
+                {
+                    edit = reopen;
+                    BeginEdit(text);
+                }
+                else Select(selectedId, false);
                 Trace();
             }
         }
+
+        /// <summary>Reports a failed session call: a change kept in memory without its write gets the notice with Retry, anything else the banner.</summary>
+        void Report(SessionException ex)
+        {
+            unsaved.Failed(ex);
+            if (ex.NotSaved) ShowUnsaved(ex.Message);
+            else Banner.Show(ex.Message);
+        }
+
+        /// <summary>The notice that the notes are not saved, with Retry; it stays until it is clicked, and its tooltip has the reason.</summary>
+        void ShowUnsaved(string reason)
+        {
+            Toast t = window.Root.Toasts.Show(ToastLevel.Error, Copy.NotSaved, Copy.Retry, () => _ = RetrySave(), sticky: true);
+            Tip.Set(t, reason);
+        }
+
+        /// <summary>Writes the notes again after a failed write: a toast confirms, a new failure shows the notice again.</summary>
+        Task RetrySave()
+        {
+            if (state.Video == null) return Task.CompletedTask;
+            try
+            {
+                Apply(session.Save());
+                window.Root.Toasts.Show(ToastLevel.Success, Copy.Saved);
+            }
+            catch (SessionException ex)
+            {
+                Apply(session.GetState());
+                Report(ex);
+            }
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Before the notes leave memory (closing, another video, a restart for an update): while they are not saved, the
+        /// question "Notes are not saved" with Retry, Discard and Cancel. True to go on (saved, or discarded), false to stay.
+        /// </summary>
+        async Task<bool> ResolveUnsaved()
+        {
+            string? reason = null;
+            while (unsaved.MustAsk)
+            {
+                UnsavedChoice choice = await UnsavedQuestion.Ask(window.Root.Overlay, reason);
+                if (choice == UnsavedChoice.Cancel) return false;
+                if (choice == UnsavedChoice.Discard)
+                {
+                    unsaved.Discard();
+                    break;
+                }
+                try { Apply(session.Save()); }
+                catch (SessionException ex) { reason = ex.Message; Apply(session.GetState()); }
+            }
+            return true;
+        }
+
+        /// <summary>True while notes are in memory that the data file does not have.</summary>
+        public bool HasUnsaved => state.Video != null && unsaved.MustAsk;
+
+        /// <summary>The update's restart asks first, as closing does; true when it may go on.</summary>
+        public Task<bool> ConfirmRestart() => ResolveUnsaved();
+
+        /// <summary>The restart that a Discard was given for did not quit: the next close, open or restart asks again.</summary>
+        public void RestartDropped() => unsaved.Revoke();
 
         /// <summary>
         /// Moves a frame note to another frame (a drag on the timeline, Move to the playhead). A note with a region
@@ -378,8 +459,8 @@ namespace Retake.Views
             }
             catch (SessionException ex)
             {
-                Banner.Show(ex.Message);
                 Apply(session.GetState());
+                Report(ex);
             }
             finally
             {
@@ -407,8 +488,8 @@ namespace Retake.Views
             }
             catch (SessionException ex)
             {
-                Banner.Show(ex.Message);
                 Apply(session.GetState());
+                Report(ex);
             }
         }
 

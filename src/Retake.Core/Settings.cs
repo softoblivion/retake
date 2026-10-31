@@ -28,8 +28,8 @@ namespace Retake.Core
 
     /// <summary>
     /// Persistent application settings (<c>settings.json</c> in the data folder). Owns the defaults, tolerant loading
-    /// (a corrupt file is moved aside), the recent list and the per-video frame rate overrides. Keys this version does
-    /// not know are kept and written back. Methods lock; the property values themselves are plain fields, so a caller that
+    /// (a corrupt file is moved aside), the merge with the file on disk when several windows save, the recent list and
+    /// the per-video frame rate overrides. Keys this version does not know are kept and written back. Methods lock; the property values themselves are plain fields, so a caller that
     /// shares the object between threads reads and writes them from one thread or under its own lock.
     /// </summary>
     public sealed class Settings
@@ -56,6 +56,8 @@ namespace Retake.Core
         private JsonObject _extra = new JsonObject();
         private int _uiScale = 100;
         private string _theme = "black";
+        // The file as this object last read or wrote it (normal form); null when it held none. Save merges against it.
+        private JsonObject? _baseline;
 
         /// <summary>Creates settings with the default values for the file at <paramref name="filePath"/>; call <see cref="Load"/> to read it.</summary>
         public Settings(string filePath)
@@ -91,7 +93,7 @@ namespace Retake.Core
         /// <summary>Whether the notes panel is shown. Default true.</summary>
         public bool NotesPanelOpen { get; set; } = true;
 
-        /// <summary>Author name written into exports; empty by default.</summary>
+        /// <summary>The reviewer's name, written into the Markdown notes file and the package; empty by default.</summary>
         public string Author { get; set; } = "";
 
         /// <summary>Interface scale in percent, one of <see cref="UiScaleSteps"/> (default 100). A value outside the steps throws <see cref="ArgumentOutOfRangeException"/>.</summary>
@@ -147,42 +149,89 @@ namespace Retake.Core
             _extra = new JsonObject();
         }
 
+        /// <summary>The comparison key of a path: the full path, <c>/</c> as <c>\</c>, lower case; a path that has no full form (invalid characters) keys as written.</summary>
         private static string PathKey(string path)
         {
-            return Path.GetFullPath(path).Replace('/', '\\').ToLowerInvariant();
+            return (FullPathOrNull(path) ?? path).Replace('/', '\\').ToLowerInvariant();
+        }
+
+        private static string? FullPathOrNull(string path)
+        {
+            try
+            {
+                return Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException || ex is System.Security.SecurityException)
+            {
+                return null;
+            }
         }
 
         private static bool IsInt(object? value) { return value is long; }
 
-        /// <summary>Reads the file. A missing file gives the defaults; an unreadable or corrupt file gives the defaults and becomes <c>settings.json.bad</c>.</summary>
+        private const int ReadAttempts = 4;
+
+        /// <summary>The text of the settings file, read with a short retry while another program (another window's replace, a scanner) holds it.</summary>
+        private string ReadFileText()
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    return TextFile.ReadAllText(FilePath);
+                }
+                catch (Exception ex) when (attempt < ReadAttempts - 1 && !(ex is FileNotFoundException) && !(ex is DirectoryNotFoundException)
+                                           && (ex is IOException || ex is UnauthorizedAccessException))
+                {
+                    System.Threading.Thread.Sleep(40 * (attempt + 1));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reads the file. A missing file gives the defaults. A file that is not valid UTF-8 or JSON, or whose top level is
+        /// not an object, gives the defaults and becomes <c>settings.json.bad</c>. A file that cannot be read (locked,
+        /// access denied) gives the defaults for this run and stays as it is: <see cref="Save"/> does not write over it
+        /// while it cannot be read.
+        /// </summary>
         public void Load()
         {
             lock (_lock)
             {
                 SetDefaults();
+                _baseline = null;
                 string raw;
                 try
                 {
-                    raw = TextFile.ReadAllText(FilePath);
+                    raw = ReadFileText();
                 }
                 catch (FileNotFoundException) { return; }
                 catch (DirectoryNotFoundException) { return; }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is DecoderFallbackException)
+                catch (DecoderFallbackException)
                 {
                     MoveAside();
                     return;
                 }
-                object? loaded;
-                try { loaded = Json.Parse(raw); }
-                catch (JsonFormatException) { loaded = null; }
-                JsonObject? root = loaded as JsonObject;
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    Log.Warning("the settings file cannot be read, the defaults are used: " + ex.Message);
+                    return;
+                }
+                JsonObject? root = ParseRoot(raw);
                 if (root == null)
                 {
                     MoveAside();
                     return;
                 }
                 Apply(root);
+                _baseline = ToJson();
             }
+        }
+
+        private static JsonObject? ParseRoot(string raw)
+        {
+            try { return Json.Parse(raw) as JsonObject; }
+            catch (JsonFormatException) { return null; }
         }
 
         private void Apply(JsonObject root)
@@ -260,6 +309,8 @@ namespace Retake.Core
                 if (entry == null) continue;
                 object? path;
                 if (!entry.TryGetValue("path", out path) || !(path is string) || ((string)path).Length == 0) continue;
+                // A path with no full form (invalid characters, a second colon) cannot be opened or compared: skipped.
+                if (FullPathOrNull((string)path) == null) continue;
                 object? lastFrame;
                 object? openedAt;
                 entry.TryGetValue("last_frame", out lastFrame);
@@ -299,12 +350,186 @@ namespace Retake.Core
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { }
         }
 
-        /// <summary>Writes the file atomically.</summary>
+        /// <summary>
+        /// Writes the file atomically, merged with the file on disk, so several windows keep each other's changes: a value
+        /// this object changed since it read or wrote the file wins; any other value is taken from the disk (and into this
+        /// object). The recent lists are joined (the newer entry of a video wins, removals are kept) and the frame rate
+        /// overrides are merged per video. Windows of the machine are serialised with a named mutex. Throws
+        /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> when the file exists but cannot be read
+        /// (it is not written over) or cannot be written.
+        /// </summary>
         public void Save()
         {
             lock (_lock)
             {
-                Paths.AtomicWriteJson(FilePath, ToJson());
+                using (var gate = new FileGate(FilePath))
+                {
+                    JsonObject mine = ToJson();
+                    JsonObject? disk = ReadDiskForMerge();
+                    JsonObject result = mine;
+                    if (disk != null)
+                    {
+                        JsonObject merged = Merge(_baseline ?? new Settings(FilePath).ToJson(), mine, disk);
+                        if (Json.Write(merged) != Json.Write(mine))
+                        {
+                            SetDefaults();
+                            Apply(merged);
+                            result = ToJson();
+                        }
+                    }
+                    Paths.AtomicWriteJson(FilePath, result);
+                    _baseline = result;
+                }
+            }
+        }
+
+        /// <summary>The file on disk in this object's normal form; null when it is missing or not a settings object. Throws when it exists but cannot be read.</summary>
+        private JsonObject? ReadDiskForMerge()
+        {
+            string raw;
+            try
+            {
+                raw = ReadFileText();
+            }
+            catch (FileNotFoundException) { return null; }
+            catch (DirectoryNotFoundException) { return null; }
+            catch (DecoderFallbackException) { return null; }
+            JsonObject? root = ParseRoot(raw);
+            if (root == null) return null;
+            var other = new Settings(FilePath);
+            other.Apply(root);
+            return other.ToJson();
+        }
+
+        private static bool SameJson(object? a, object? b)
+        {
+            return Json.Write(a) == Json.Write(b);
+        }
+
+        private static object? Get(JsonObject o, string key)
+        {
+            object? value;
+            return o.TryGetValue(key, out value) ? value : null;
+        }
+
+        /// <summary>The three-way merge of <see cref="Save"/>: <paramref name="baseline"/> is the file as this object last saw it.</summary>
+        private static JsonObject Merge(JsonObject baseline, JsonObject mine, JsonObject disk)
+        {
+            var result = new JsonObject();
+            var keys = new List<string>(disk.Keys);
+            foreach (string key in mine.Keys) if (!keys.Contains(key)) keys.Add(key);
+            foreach (string key in keys)
+            {
+                bool inMine = mine.ContainsKey(key), inDisk = disk.ContainsKey(key), inBase = baseline.ContainsKey(key);
+                if (key == "recent" && inMine && inDisk)
+                {
+                    result[key] = MergeRecent(Get(baseline, key) as List<object?>, Get(mine, key) as List<object?>, Get(disk, key) as List<object?>);
+                    continue;
+                }
+                if (key == "fps_overrides" && inMine && inDisk)
+                {
+                    result[key] = MergeMap(Get(baseline, key) as JsonObject ?? new JsonObject(), Get(mine, key) as JsonObject ?? new JsonObject(), Get(disk, key) as JsonObject ?? new JsonObject());
+                    continue;
+                }
+                bool mineChanged = inMine != inBase || (inMine && !SameJson(Get(mine, key), Get(baseline, key)));
+                if (mineChanged)
+                {
+                    if (inMine) result[key] = Get(mine, key);
+                }
+                else if (inDisk)
+                {
+                    result[key] = Get(disk, key);
+                }
+            }
+            return result;
+        }
+
+        private static JsonObject MergeMap(JsonObject baseline, JsonObject mine, JsonObject disk)
+        {
+            var result = new JsonObject();
+            var keys = new List<string>(disk.Keys);
+            foreach (string key in mine.Keys) if (!keys.Contains(key)) keys.Add(key);
+            foreach (string key in keys)
+            {
+                bool inMine = mine.ContainsKey(key), inBase = baseline.ContainsKey(key);
+                bool mineChanged = inMine != inBase || (inMine && !SameJson(Get(mine, key), Get(baseline, key)));
+                if (mineChanged) { if (inMine) result[key] = Get(mine, key); }
+                else if (disk.ContainsKey(key)) result[key] = Get(disk, key);
+            }
+            return result;
+        }
+
+        private static string EntryKey(object? entry)
+        {
+            return entry is JsonObject o && Get(o, "path") is string p ? PathKey(p) : "";
+        }
+
+        private static long EntryTime(object? entry)
+        {
+            return entry is JsonObject o && Get(o, "opened_at") is long t ? t : 0;
+        }
+
+        /// <summary>Joins two recent lists: an entry removed on one side (and untouched on the other) goes, the newer entry of a video wins, newest first.</summary>
+        private static List<object?> MergeRecent(List<object?>? baseline, List<object?>? mine, List<object?>? disk)
+        {
+            baseline = baseline ?? new List<object?>();
+            mine = mine ?? new List<object?>();
+            disk = disk ?? new List<object?>();
+            if (SameJson(disk, baseline)) return mine;
+            if (SameJson(mine, baseline)) return disk;
+            var before = new Dictionary<string, object?>();
+            foreach (object? e in baseline) before[EntryKey(e)] = e;
+            var mineByKey = new Dictionary<string, object?>();
+            foreach (object? e in mine) mineByKey[EntryKey(e)] = e;
+            var diskByKey = new Dictionary<string, object?>();
+            foreach (object? e in disk) diskByKey[EntryKey(e)] = e;
+            var picked = new List<KeyValuePair<object?, int>>();
+            var seen = new HashSet<string>();
+            int index = 0;
+            foreach (object? e in mine.Concat(disk))
+            {
+                string key = EntryKey(e);
+                index++;
+                if (!seen.Add(key)) continue;
+                object? m = mineByKey.TryGetValue(key, out object? mv) ? mv : null;
+                object? d = diskByKey.TryGetValue(key, out object? dv) ? dv : null;
+                object? b = before.TryGetValue(key, out object? bv) ? bv : null;
+                // Removed on one side and not touched on the other since: it stays removed.
+                if (m == null && b != null && SameJson(d, b)) continue;
+                if (d == null && b != null && SameJson(m, b)) continue;
+                object? winner = m == null ? d : d == null ? m : (EntryTime(d) > EntryTime(m) ? d : m);
+                picked.Add(new KeyValuePair<object?, int>(winner, index));
+            }
+            return picked.OrderByDescending(p => EntryTime(p.Key)).ThenBy(p => p.Value).Select(p => p.Key).Take(MaxRecent).ToList();
+        }
+
+        /// <summary>A machine-wide lock of one settings file (a named mutex), held while it is read, merged and written.</summary>
+        private sealed class FileGate : IDisposable
+        {
+            private readonly System.Threading.Mutex? _mutex;
+            private readonly bool _owned;
+
+            public FileGate(string path)
+            {
+                uint hash = 2166136261;
+                foreach (char c in PathKey(path)) { hash ^= c; hash *= 16777619; }
+                try
+                {
+                    _mutex = new System.Threading.Mutex(false, @"Local\Retake.Settings." + hash.ToString("x8", System.Globalization.CultureInfo.InvariantCulture));
+                    try { _owned = _mutex.WaitOne(3000); }
+                    catch (System.Threading.AbandonedMutexException) { _owned = true; }
+                }
+                catch (Exception ex) when (ex is UnauthorizedAccessException || ex is IOException || ex is System.Threading.WaitHandleCannotBeOpenedException)
+                {
+                    _mutex = null;
+                }
+            }
+
+            public void Dispose()
+            {
+                if (_mutex == null) return;
+                if (_owned) _mutex.ReleaseMutex();
+                _mutex.Dispose();
             }
         }
 
@@ -352,7 +577,7 @@ namespace Retake.Core
             lock (_lock)
             {
                 _recent.RemoveAll(item => PathKey(item.Path) == key);
-                _recent.Insert(0, new RecentEntry(Path.GetFullPath(path), Math.Max(0, lastFrame), DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+                _recent.Insert(0, new RecentEntry(FullPathOrNull(path) ?? path, Math.Max(0, lastFrame), DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
                 if (_recent.Count > MaxRecent) _recent.RemoveRange(MaxRecent, _recent.Count - MaxRecent);
             }
         }

@@ -120,6 +120,13 @@ namespace Retake.Views
             try
             {
                 await Commit(true);
+                if (!await ResolveUnsaved())
+                {
+                    // Cancel: the window stays, with its notes in memory.
+                    closing = false;
+                    return;
+                }
+                VideoWindows.Claim(WindowHandle, null);
                 // A maximized window saves the place and size it returns to; a minimized one saves nothing.
                 if (window.WindowState != WindowState.Minimized)
                 {

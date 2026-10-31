@@ -80,8 +80,8 @@ namespace Retake.Core
             return Path.Combine(NotesDirFor(video), StemOf(video) + "_notes.txt");
         }
 
-        /// <summary>The Markdown export <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.md</c> written by Frame Notes 1.x and Retake 2.0; Retake only removes it.</summary>
-        public static string LegacyExportPathFor(string video)
+        /// <summary>The Markdown notes file <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.md</c>: a readable view of the data file, written by <see cref="Session"/>, never read back.</summary>
+        public static string MarkdownPathFor(string video)
         {
             return Path.Combine(NotesDirFor(video), StemOf(video) + "_notes.md");
         }
@@ -90,26 +90,6 @@ namespace Retake.Core
         public static string PackagePathFor(string video)
         {
             return Path.Combine(NotesDirFor(video), StemOf(video) + "_notes.zip");
-        }
-
-        /// <summary>
-        /// Deletes the stale legacy export of the video when its data file exists. True when a file was removed. A failed
-        /// delete is logged as a warning and never thrown; a folder that holds only the export is left alone.
-        /// </summary>
-        internal static bool RemoveLegacyExport(string video)
-        {
-            string export = LegacyExportPathFor(video);
-            try
-            {
-                if (!File.Exists(NotesPathFor(video)) || !File.Exists(export)) return false;
-                File.Delete(export);
-                return true;
-            }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-            {
-                Log.Warning("cannot delete " + export + ": " + ex.Message);
-                return false;
-            }
         }
 
         /// <summary>The frame images folder <c>&lt;stem&gt;_notes\frames</c>.</summary>
@@ -192,9 +172,10 @@ namespace Retake.Core
             return File.Exists(path) || Directory.Exists(path);
         }
 
-        private static bool SameName(string a, string b)
+        /// <summary>The source line of a data file names this video: both in their one-line form (the file keeps the name stripped), case-insensitive.</summary>
+        internal static bool SameName(string source, string videoName)
         {
-            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(Note.NormalizeText(source), Note.NormalizeText(videoName), StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary><c>*.png</c> files directly inside the folder (the 1.0 images folder), sorted by name.</summary>
@@ -315,7 +296,7 @@ namespace Retake.Core
         {
             string folder = NotesDirFor(video);
             string dataFile = NotesPathFor(video);
-            string export = LegacyExportPathFor(video);
+            string export = MarkdownPathFor(video);
             string package = PackagePathFor(video);
             string legacy = LegacyNotesPathFor(video);
             string frames = ImagesDirFor(video);
@@ -386,7 +367,7 @@ namespace Retake.Core
                 notesCount = legacyNf.Notes.Count;
             }
 
-            // Images first, then the package and the export, the data file last: an interrupted delete keeps the notes readable.
+            // Images first, then the package and the Markdown file, the data file last: an interrupted delete keeps the notes readable.
             string dataLower = dataName.ToLowerInvariant();
             string exportLower = exportName.ToLowerInvariant();
             string packageLower = packageName.ToLowerInvariant();

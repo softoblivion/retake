@@ -12,14 +12,20 @@ namespace Retake.Design.Controls
     /// <summary>
     /// The text field of the kit: 32 px, radius 10, the --well fill with an inner top shade and a hairline rim,
     /// text in the mono role. Focus shows the 2 px ring flush with the edge. An optional placeholder in ink-4
-    /// shows while the field is empty; it must not restate the row label or the hint.
+    /// shows while the field is empty; it must not restate the row label or the hint. <see cref="Wrap"/> makes a
+    /// wrapping field (Retake's option, not in the kit): one line high at first, it grows with the text up to a
+    /// number of lines and then scrolls; the text stays one line (Enter is not taken, a typed or pasted line break
+    /// becomes a space).
     /// </summary>
     public sealed class TextField : TextBox
     {
-        static readonly ControlTemplate FieldTemplate = MakeTemplate();
+        /// <summary>Inner padding of a wrapping field, top and bottom: a one-line wrapping field is as high as a plain one.</summary>
+        public const double WrapPad = 7;
+        static readonly ControlTemplate FieldTemplate = MakeTemplate(false);
+        static readonly ControlTemplate WrapTemplate = MakeTemplate(true);
         readonly WellVisual well = new WellVisual(10, "well", "inset-field", "well-rim") { FocusOffset = 0 };
         readonly TextBlock hint;
-        bool showFocus;
+        bool showFocus, wraps;
 
         public TextField(string placeholder = "", double width = 220)
         {
@@ -40,16 +46,17 @@ namespace Retake.Design.Controls
             IsEnabledChanged += (s, e) => Opacity = IsEnabled ? 1 : 0.4;
         }
 
-        static ControlTemplate MakeTemplate()
+        static ControlTemplate MakeTemplate(bool wrap)
         {
             var root = new FrameworkElementFactory(typeof(Grid));
             var chrome = new FrameworkElementFactory(typeof(Border), "chrome");
             var hintHost = new FrameworkElementFactory(typeof(Border), "hintHost");
             var host = new FrameworkElementFactory(typeof(ScrollViewer), "PART_ContentHost");
-            host.SetValue(MarginProperty, new Thickness(9, 0, 9, 0));
-            host.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
-            host.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Hidden);
-            host.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+            host.SetValue(MarginProperty, wrap ? new Thickness(9, WrapPad, 9, WrapPad) : new Thickness(9, 0, 9, 0));
+            host.SetValue(VerticalAlignmentProperty, wrap ? VerticalAlignment.Stretch : VerticalAlignment.Center);
+            host.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, wrap ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden);
+            // A wrapping field scrolls to the caret past its last line without showing a bar.
+            host.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, wrap ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Disabled);
             root.AppendChild(chrome);
             root.AppendChild(hintHost);
             root.AppendChild(host);
@@ -66,6 +73,53 @@ namespace Retake.Design.Controls
         }
 
         public bool ShowFocus { get => showFocus; set { showFocus = value; Ring(false); } }
+
+        /// <summary>True for a wrapping field (<see cref="Wrap"/>).</summary>
+        public bool Wraps => wraps;
+
+        /// <summary>The height of one line of a wrapping field's text.</summary>
+        public static double LineHeight => Design.Typography.Mono.LineHeight;
+
+        /// <summary>The height of a wrapping field that shows <paramref name="lines"/> lines.</summary>
+        public static double WrapHeight(int lines) => Math.Ceiling(lines * LineHeight + 2 * WrapPad);
+
+        /// <summary>
+        /// Makes the field wrap its text: at least 32 px, it grows line by line up to <paramref name="maxLines"/> lines,
+        /// then scrolls to the caret. Enter is left to the owner (not accepted as text); line breaks that are typed or
+        /// pasted become spaces, so the whole pasted text arrives on one line.
+        /// </summary>
+        public void Wrap(int maxLines)
+        {
+            if (wraps) return;
+            wraps = true;
+            Template = WrapTemplate;
+            TextWrapping = TextWrapping.Wrap;
+            AcceptsReturn = false;
+            AcceptsTab = false;
+            VerticalContentAlignment = VerticalAlignment.Top;
+            Height = double.NaN;
+            MinHeight = 32;
+            MaxHeight = WrapHeight(Math.Max(1, maxLines));
+            TextBlock.SetLineHeight(this, LineHeight);
+            TextBlock.SetLineStackingStrategy(this, LineStackingStrategy.BlockLineHeight);
+            hint.VerticalAlignment = VerticalAlignment.Top;
+            hint.Margin = new Thickness(11, WrapPad, 11, 0);
+            hint.TextTrimming = TextTrimming.CharacterEllipsis;
+            DataObject.AddPastingHandler(this, OnPaste);
+        }
+
+        // WPF cuts a paste at the first line break when Enter is not accepted; the text goes in whole, on one line.
+        void OnPaste(object sender, DataObjectPastingEventArgs e)
+        {
+            if (!e.SourceDataObject.GetDataPresent(DataFormats.UnicodeText, true)) return;
+            if (!(e.SourceDataObject.GetData(DataFormats.UnicodeText, true) is string text)) return;
+            string line = Retake.Core.Note.OneLine(text);
+            if (line == text) return;
+            var data = new DataObject();
+            data.SetData(DataFormats.UnicodeText, line);
+            data.SetData(DataFormats.Text, line);
+            e.DataObject = data;
+        }
 
         /// <summary>The placeholder shown while the field is empty.</summary>
         public string Placeholder { get => hint.Text; set => hint.Text = value ?? ""; }

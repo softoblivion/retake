@@ -162,6 +162,8 @@ namespace Retake.Design.Controls
             var popup = (IPopup)next;
             popup.Picked = () => { if (menu == next) CloseMenu(); };
             floatLayer.Children.Add(next);
+            // Never taller than the room under the title bar: a menu longer than that scrolls.
+            if (next is PopMenu) next.MaxHeight = Math.Max(120, ActualHeight - TopInset - 8);
             next.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             Size size = next.DesiredSize;
             double x = Math.Max(8, Math.Min(ActualWidth - size.Width - 8, left));
@@ -299,8 +301,9 @@ namespace Retake.Design.Controls
     /// <summary>
     /// A menu: a near-opaque --menu-tint capsule (radius 14, padding 5, --shadow-m) with 30 px entries (icon,
     /// label in the body role, key in the caption role), separators, a danger entry in --rose-ink and disabled
-    /// entries at 0.36. It appears with a 6 px rise and a 0.96 -> 1 scale over 180 ms. For rare actions only:
-    /// a primary function never hides behind a menu.
+    /// entries at 0.36. It appears with a 6 px rise and a 0.96 -> 1 scale over 180 ms; it is never taller than the
+    /// room under the title bar, and a longer list scrolls inside it. For rare actions only: a primary function never
+    /// hides behind a menu.
     /// </summary>
     public sealed class PopMenu : Grid, IPopup
     {
@@ -319,7 +322,8 @@ namespace Retake.Design.Controls
             VerticalAlignment = VerticalAlignment.Top;
             Children.Add(new ShadowLayer("shadow-m", 14));
             Children.Add(new SurfaceVisual(14, "stroke-2", null, "menu-tint"));
-            Children.Add(list);
+            // A menu taller than the window (a long recent list) scrolls inside its card.
+            Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false });
             RenderTransform = new TransformGroup { Children = { scale, rise } };
             RenderTransformOrigin = new Point(0.2, 0);
         }

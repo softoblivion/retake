@@ -18,7 +18,7 @@ namespace Retake.Tests
         {
             string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fixtures", "differential", "cases.txt");
             string[] lines = File.ReadAllLines(path);
-            int tc = 0, nom = 0, reg = 0, rep = 0, sec = 0;
+            int tc = 0, nom = 0, reg = 0, rep = 0, sec = 0, changed = 0;
             foreach (string line in lines)
             {
                 if (line.Length == 0) continue;
@@ -35,10 +35,22 @@ namespace Retake.Tests
                         break;
                     }
                     case "nom":
-                        Check.Equal(D(f[2]), Timecode.NominalRate(D(f[1])), line);
-                        Check.Equal(f[3], Timecode.FormatFps(D(f[1])), line);
+                    {
+                        // Retake 2.3 added 47.952 and 119.88 to the table and keeps 24.975, 49.95 and 99.9 as they are; a
+                        // rate the 1.x core snapped differently must give exactly one of those answers.
+                        double input = D(f[1]), old = D(f[2]), now = Timecode.NominalRate(input);
+                        if (now != old)
+                        {
+                            bool newEntry = (now == 47.952 || now == 119.88) && Math.Abs(input - now) / now <= 0.005
+                                && (old == input || Math.Abs(input - now) < Math.Abs(input - old));
+                            bool kept = now == input && (old == 25 || old == 50 || old == 100);
+                            Check.True(newEntry || kept, line + ": " + now.ToString("R", CultureInfo.InvariantCulture));
+                            changed++;
+                        }
+                        Check.Equal(f[3], Timecode.FormatFps(input), line);
                         nom++;
                         break;
+                    }
                     case "reg":
                     {
                         double v = D(f[1]);
@@ -60,6 +72,7 @@ namespace Retake.Tests
                 }
             }
             Check.True(tc > 700 && nom == 300 && reg == 400 && rep == 300 && sec == 200, tc + " " + nom + " " + reg + " " + rep + " " + sec);
+            Check.True(changed > 0 && changed < 40, "rates snapped differently from the 1.x core: " + changed);
         }
     }
 }

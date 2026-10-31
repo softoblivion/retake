@@ -165,7 +165,7 @@ namespace Retake.Views
                 if (isOpen)
                 {
                     selectedId = null;
-                    Apply(session.Open(openPath!));
+                    Apply(unsaved.Open(openPath!));
                 }
                 if (openPath == null) Empty.SetRecent(RecentItem.Read(settings, null));
                 return true;

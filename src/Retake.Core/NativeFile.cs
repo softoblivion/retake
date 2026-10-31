@@ -20,11 +20,26 @@ namespace Retake.Core
         /// </summary>
         public static void Replace(string source, string target)
         {
-            if (MoveFileEx(source, target, MoveReplaceExisting | MoveWriteThrough)) return;
+            if (MoveFileEx(LongPath(source), LongPath(target), MoveReplaceExisting | MoveWriteThrough)) return;
             int error = Marshal.GetLastWin32Error();
             Exception? mapped = Marshal.GetExceptionForHR(unchecked((int)0x80070000) | error);
             if (mapped == null) mapped = new IOException("The file could not be moved (Win32 error " + error + ")");
             throw mapped;
+        }
+
+        /// <summary>
+        /// The extended-length form of a path (<c>\\?\C:\...</c>, <c>\\?\UNC\server\share\...</c>), so the native calls
+        /// accept paths over 260 characters while the system's long-path policy is off. A path that already has a
+        /// device prefix, or that cannot be made absolute, is returned as it is.
+        /// </summary>
+        internal static string LongPath(string path)
+        {
+            if (path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\\.\", StringComparison.Ordinal)) return path;
+            string full;
+            try { full = Path.GetFullPath(path); }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException) { return path; }
+            if (full.StartsWith(@"\\", StringComparison.Ordinal)) return @"\\?\UNC\" + full.Substring(2);
+            return @"\\?\" + full;
         }
 
         private const uint ReparseTagMountPoint = 0xA0000003;
@@ -59,7 +74,7 @@ namespace Retake.Core
         public static bool IsLink(string path)
         {
             FindData data;
-            IntPtr handle = FindFirstFileW(path.TrimEnd('\\'), out data);
+            IntPtr handle = FindFirstFileW(LongPath(path.TrimEnd('\\')), out data);
             if (handle == InvalidHandle) return false;
             FindClose(handle);
             if ((data.FileAttributes & ReparsePointAttribute) == 0) return false;

@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Retake.Core;
@@ -19,7 +20,7 @@ namespace Retake.Update
     /// <para>
     /// Order in <c>Program.Main</c>: the apply mode first of all; the host after the window and the review are
     /// built; <see cref="Start"/> runs once the window has rendered (cleanup, the "Updated to" toast, the launch
-    /// check, then a check every 5 minutes); the window's close path disposes it first.
+    /// check, then a check every 5 minutes); it is disposed once the window has closed.
     /// </para>
     /// </summary>
     internal sealed class UpdateHost : IDisposable
@@ -32,12 +33,15 @@ namespace Retake.Update
         readonly UpdateSheet sheet;
         readonly UpdatePopover popover;
         readonly UpdateRows rows;
-        bool started, disposed;
+        bool started, disposed, confirmed, replacingWarning, quitting;
 
         /// <param name="window">The application window.</param>
         /// <param name="paths">Where the downloads and the apply marker live (<c>retake_data\updates</c>).</param>
         /// <param name="quit">The window's own close path: settings saved, player shut down, exit.</param>
-        internal UpdateHost(ShellWindow window, Paths paths, Action quit)
+        /// <param name="unsaved">True while notes are in memory that could not be written (null: never).</param>
+        /// <param name="confirm">The question before such notes leave memory; true to go on (saved or discarded).</param>
+        /// <param name="dropped">Called when the restart that <paramref name="confirm"/> allowed did not quit (the update could not be applied).</param>
+        internal UpdateHost(ShellWindow window, Paths paths, Action quit, Func<bool>? unsaved = null, Func<Task<bool>>? confirm = null, Action? dropped = null)
         {
             this.window = window;
             this.paths = paths;
@@ -47,8 +51,20 @@ namespace Retake.Update
             Updater.AutoDownload = () => window.Prefs.AutoDownloadUpdates;
             // Status changes arrive on worker threads; the presenter runs them on the dispatcher.
             Presenter = new UpdatePresenter(Updater, a => dispatcher.BeginInvoke(a));
-            Presenter.OnQuit = quit;
+            Presenter.OnQuit = () => { quitting = true; quit(); };
             Presenter.OnToast = Toast;
+            if (unsaved != null && confirm != null)
+            {
+                // Restart to update with notes that are not saved: the review's own question (Retry, Discard,
+                // Cancel) comes before the update helper starts, in place of the library's warning toast.
+                Presenter.HasActiveWork = () =>
+                {
+                    if (confirmed || !unsaved()) return false;
+                    replacingWarning = true;
+                    _ = AskThenRestart(confirm, dropped);
+                    return true;
+                };
+            }
             Presenter.Changed = Render;
             scheduler = new UpdateScheduler(Updater);
 
@@ -59,7 +75,8 @@ namespace Retake.Update
             window.PillClicked += PillClicked;
             window.Root.Overlay.SheetChanged += _ => SheetChanged();
             window.Prefs.Changed += key => { if (key == "auto_download_updates") Presenter.AutoDownloadChanged(window.Prefs.AutoDownloadUpdates); };
-            window.Closing += (s, e) => Dispose();
+            // Closed, not Closing: a close the review cancels (notes that are not saved) keeps the checks running.
+            window.Closed += (s, e) => Dispose();
             window.ContentRendered += (s, e) => Start();
             Render(Presenter.View);
         }
@@ -133,9 +150,28 @@ namespace Retake.Update
             }
         }
 
+        async Task AskThenRestart(Func<Task<bool>> confirm, Action? dropped)
+        {
+            if (!await confirm()) return;
+            confirmed = true;
+            quitting = false;
+            try { Presenter.Restart(); }
+            finally
+            {
+                confirmed = false;
+                // A Discard covers only this restart: when it did not quit, notes still in memory ask again.
+                if (!quitting) dropped?.Invoke();
+            }
+        }
+
         void Toast(UpdateToast t)
         {
             if (disposed) return;
+            if (replacingWarning && t.Text == Presenter.RestartWarning)
+            {
+                replacingWarning = false;
+                return;
+            }
             window.Root.Toasts.Show(Level(t.Level), t.Text, t.ActionLabel, t.Action, t.Sticky);
         }
 

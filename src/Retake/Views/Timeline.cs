@@ -488,7 +488,10 @@ namespace Retake.Views
             HoverCard.Show(new HoverCard(CardContent(n, true), 260), this, at);
         }
 
-        /// <summary>The hover card of a note: type and timecode, the whole text, the frame image; on the timeline also what the pointer can do.</summary>
+        /// <summary>The most lines of note text a hover card shows.</summary>
+        public const int CardLines = 12;
+
+        /// <summary>The hover card of a note: type and timecode, the text (at most <see cref="CardLines"/> lines), the frame image; on the timeline also what the pointer can do.</summary>
         public static UIElement CardContent(NoteState n, bool onTimeline = false)
         {
             var panel = new StackPanel();
@@ -502,6 +505,10 @@ namespace Retake.Views
             panel.Children.Add(head);
             TextBlock text = Typography.Text(n.Text.Length > 0 ? n.Text : Copy.NoText, Typography.Body, n.Text.Length > 0 ? "ink-1" : "ink-4");
             text.TextWrapping = TextWrapping.Wrap;
+            // A very long note stops at CardLines lines with an ellipsis, so the card stays on the screen; the list row
+            // of the selected note shows the whole text.
+            text.TextTrimming = TextTrimming.CharacterEllipsis;
+            text.MaxHeight = Typography.Body.LineHeight * CardLines;
             text.Margin = new Thickness(0, 6, 0, 0);
             panel.Children.Add(text);
             BitmapSource? thumb = Thumbs.Load(n.ImagePath, 228);
@@ -517,12 +524,18 @@ namespace Retake.Views
         }
     }
 
-    /// <summary>Thumbnails of frame images, decoded small and without locking the file (it is replaced in place on edits).</summary>
+    /// <summary>
+    /// Thumbnails of frame images, decoded small and without locking the file (it is replaced in place on edits), kept
+    /// while the file is unchanged, so a list rebuilt after every change does not decode every image again.
+    /// </summary>
     public static class Thumbs
     {
-        public static BitmapSource? Load(string? path, int width)
+        static readonly FileCache<BitmapSource> Cache = new FileCache<BitmapSource>(400);
+
+        public static BitmapSource? Load(string? path, int width) => Cache.Get(path, width, p => Decode(p, width));
+
+        static BitmapSource? Decode(string path, int width)
         {
-            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return null;
             try
             {
                 var b = new BitmapImage();

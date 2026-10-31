@@ -16,7 +16,7 @@ namespace Retake.Core
             Separator = separator;
         }
 
-        /// <summary>Exact rate used for frame / seconds conversion (23.976 is 24000/1001, 29.97 is 30000/1001, 59.94 is 60000/1001).</summary>
+        /// <summary>Exact rate used for frame / seconds conversion (23.976 is 24000/1001, 29.97 is 30000/1001, 47.952 is 48000/1001, 59.94 is 60000/1001, 119.88 is 120000/1001).</summary>
         public double Fps { get; private set; }
 
         /// <summary>Frames per timecode second.</summary>
@@ -52,22 +52,34 @@ namespace Retake.Core
     public static class Timecode
     {
         /// <summary>The frame rates a rate within 0.5 % of is snapped to.</summary>
-        public static readonly double[] NominalRates = { 23.976, 24.0, 25.0, 29.97, 30.0, 48.0, 50.0, 59.94, 60.0, 100.0, 120.0 };
+        public static readonly double[] NominalRates = { 23.976, 24.0, 25.0, 29.97, 30.0, 47.952, 48.0, 50.0, 59.94, 60.0, 100.0, 119.88, 120.0 };
+
+        /// <summary>The 1001-based rates of <see cref="NominalRates"/>: <c>n * 1000 / 1001</c> for n = 24, 30, 48, 60, 120.</summary>
+        public static readonly double[] RationalRates = { 23.976, 29.97, 47.952, 59.94, 119.88 };
 
         private const double SnapTolerance = 0.005;
+
+        /// <summary>A rate this close (relative) to <c>n * 1000 / 1001</c> of a table rate n that has no 1001-based entry keeps its own value.</summary>
+        private const double RationalTolerance = 0.0002;
 
         private static readonly Regex TimecodePattern = new Regex(@"\A[0-9]+(?:[:;][0-9]+){1,3}\z", RegexOptions.CultureInvariant);
         private static readonly Regex FpsPattern = new Regex(@"\A(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\z", RegexOptions.CultureInvariant);
 
         private static double ExactRate(double nominal)
         {
-            if (nominal == 23.976) return 24000.0 / 1001.0;
-            if (nominal == 29.97) return 30000.0 / 1001.0;
-            if (nominal == 59.94) return 60000.0 / 1001.0;
+            foreach (double rate in RationalRates)
+            {
+                if (nominal == rate) return Math.Round(rate * 1.001) * 1000.0 / 1001.0;
+            }
             return nominal;
         }
 
-        /// <summary>Snaps <paramref name="fps"/> to the nearest entry of <see cref="NominalRates"/> when within 0.5 %, else returns it unchanged. Throws <see cref="ArgumentException"/> for a value that is not a positive finite number.</summary>
+        /// <summary>
+        /// Snaps <paramref name="fps"/> to the nearest entry of <see cref="NominalRates"/> when within 0.5 %, else returns it
+        /// unchanged. A rate that lies within 0.02 % of <c>n * 1000 / 1001</c> for a table rate n without a 1001-based entry
+        /// (25, 50, 100: 24.975, 49.95, 99.9) is a rate of its own and is returned unchanged. Throws
+        /// <see cref="ArgumentException"/> for a value that is not a positive finite number.
+        /// </summary>
         public static double NominalRate(double fps)
         {
             if (double.IsNaN(fps) || double.IsInfinity(fps) || fps <= 0) throw new ArgumentException("The frame rate must be a positive number");
@@ -82,7 +94,23 @@ namespace Retake.Core
                     bestDistance = distance;
                 }
             }
-            return bestDistance >= 0 ? best : fps;
+            if (bestDistance < 0) return fps;
+            if (Array.IndexOf(RationalRates, best) < 0 && !HasRationalEntry(best))
+            {
+                double rational = best * 1000.0 / 1001.0;
+                if (Math.Abs(fps - rational) / rational <= RationalTolerance) return fps;
+            }
+            return best;
+        }
+
+        /// <summary>True when the table holds the 1001-based rate of the integer rate <paramref name="rate"/>.</summary>
+        private static bool HasRationalEntry(double rate)
+        {
+            foreach (double r in RationalRates)
+            {
+                if (Math.Round(r * 1.001) == rate) return true;
+            }
+            return false;
         }
 
         /// <summary>Builds the <see cref="TimecodeBase"/> of a frame rate (snapped with <see cref="NominalRate"/>).</summary>

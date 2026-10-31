@@ -232,7 +232,7 @@ namespace Retake.Tests
             Check.Equal(c.Text("dummy_notes", "dummy_notes.txt"), c.Session.NotesText());
             Check.True(File.Exists(video));
             Check.Equal("dummy.mp4\n\n0:00:12:07 FIX" + Em + "logo flickers now\n", c.Session.ReadableText());
-            Check.Equal(new[] { "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
             Check.Equal(c.Path_("dummy_notes"), data.Video!.NotesDir);
             Check.Equal(c.Path_("dummy_notes", "dummy_notes.zip"), data.Video.PackagePath);
             Check.Equal(c.Path_("dummy_notes", "frames"), data.Video.ImagesDir);
@@ -296,7 +296,7 @@ namespace Retake.Tests
             Check.Equal("# Frame Notes 1\n# source: dummy.mp4\n# fps: 25\n", c.Text("dummy_notes", "dummy_notes.txt"));
             Check.Equal(0, c.Events[c.Events.Count - 1].Notes.Count);
             Check.Equal(2, c.Events.Count);
-            Check.Equal(new[] { "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
             Check.Equal("dummy.mp4\n\nNo notes.\n", c.Session.ReadableText());
         }
 
@@ -497,7 +497,7 @@ namespace Retake.Tests
             Check.True(logs.Any(l => l.StartsWith("INFO moved the notes of promo.mp4", StringComparison.Ordinal)));
             string folder = c.Path_("promo_notes");
             Check.Equal(new[] { "promo.mp4", "promo_notes" }, c.ClipNames());
-            Check.Equal(new[] { "frames", "promo_notes.txt" }, Fx.Names(folder));
+            Check.Equal(new[] { "frames", "promo_notes.md", "promo_notes.txt" }, Fx.Names(folder));
             Check.Equal(Legacy, Fx.ReadText(Path.Combine(folder, "promo_notes.txt")));
             Check.Equal(SessionCase.Png, File.ReadAllBytes(Path.Combine(folder, "frames", "0-00-12-07_FIX.png")));
             Check.Equal(Path.Combine(folder, "frames", "0-00-12-07_FIX.png"), data.Notes[0].ImagePath);
@@ -511,7 +511,7 @@ namespace Retake.Tests
             var c = new SessionCase(t);
             string video = MakeLegacy(c, false);
             c.Session.Open(video);
-            Check.Equal(new[] { "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
+            Check.Equal(new[] { "promo_notes.md", "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
             string other = c.MakeVideo("other.mp4");
             Fx.WriteBytes(c.Path_("other_notes", "a.png"), SessionCase.Png);
             SessionState data = c.Session.Open(other);
@@ -586,6 +586,63 @@ namespace Retake.Tests
             Check.Equal(0, c.Session.GetState().Video!.LastFrame);
             c.Session.Close();
             Check.True(File.Exists(c.Paths.SettingsFile), "close saves");
+        }
+    
+
+        [Test("session.a_video_name_with_a_leading_space_opens_again_after_a_save")]
+        public static void LeadingSpaceInTheName(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo(" intro.mp4");
+            c.Session.Open(video);
+            c.Session.AddNote(5, "FIX", "x", null, null);
+            Check.Contains("# source: intro.mp4\n", c.Text(" intro_notes", " intro_notes.txt"));
+            c.Session.Close();
+            Check.Equal(1, c.Session.Open(video).Notes.Count, "the stripped source names this video");
+            Check.Equal(1, NotesLayout.NotesSummaryFor(video)!.Notes);
+            c.Session.Close();
+            Check.Equal(1, NotesLayout.DeleteNotes(video).Notes);
+        }
+
+        [Test("session.open_refuses_a_path_without_a_full_form")]
+        public static void OpenRefusesAnInvalidPath(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            Check.Equal("The video path is not valid", Check.Throws<SessionException>(() => c.Session.Open(@"C:\a|b.mp4")).Message);
+            Check.Equal("The video path is not valid", Check.Throws<SessionException>(() => c.Session.Open(@"C:\a\b:c.mp4")).Message);
+        }
+
+        [Test("session.pack_takes_the_notes_under_the_lock_and_writes_after_it")]
+        public static void PackWritesOutsideTheLock(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(307, "FIX", "held", SessionCase.Rect(), SessionCase.Png);
+            string zip = c.Path_("dummy_notes", "dummy_notes.zip");
+            c.Session.Pack();
+            // While the package cannot replace the old zip (another program holds it; the replace retries for most of a
+            // second), the session answers other calls: the archive is written after the session lock is released.
+            Exception? failure = null;
+            var worker = new System.Threading.Thread(() =>
+            {
+                try { c.Session.Pack(); }
+                catch (Exception ex) { failure = ex; }
+            });
+            long waited;
+            using (new FileStream(zip, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                worker.Start();
+                var wait = System.Diagnostics.Stopwatch.StartNew();
+                while (!File.Exists(zip + ".part") && wait.ElapsedMilliseconds < 5000) System.Threading.Thread.Sleep(5);
+                Check.True(File.Exists(zip + ".part"), "the package is being written");
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                c.Session.GetState();
+                c.Session.SetLastFrame(12);
+                waited = clock.ElapsedMilliseconds;
+            }
+            worker.Join();
+            Check.True(waited < 150, "the session waited " + waited + " ms for the package");
+            Check.True(failure == null || failure is SessionException, failure?.ToString() ?? "");
         }
     }
 }

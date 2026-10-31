@@ -10,10 +10,10 @@ namespace Retake.Core
 {
     /// <summary>
     /// The review session: one open video, its notes in memory and the notes folder on disk. Owns probing the video,
-    /// loading and saving the data file, the note images, the notes package and the frame rate choice; the 1.0
-    /// layout is moved into the notes folder on open. Every mutation writes the files and then calls the change callback
-    /// with the new state. All public methods are serialised with one lock; the callback runs while the lock is held, so
-    /// it must only hand the state over (for example enqueue it).
+    /// loading and saving the data file, the Markdown notes file, the note images, the notes package and the frame rate
+    /// choice; the 1.0 layout is moved into the notes folder on open. Every mutation writes the files and then calls the
+    /// change callback with the new state. All public methods are serialised with one lock; the callback runs while the
+    /// lock is held, so it must only hand the state over (for example enqueue it).
     /// </summary>
     public sealed class Session
     {
@@ -24,6 +24,7 @@ namespace Retake.Core
         private readonly Settings _settings;
         private readonly Action<SessionState> _onChange;
         private readonly object _lock = new object();
+        private readonly object _packLock = new object();
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private double _lastSettingsSave;
 
@@ -39,6 +40,15 @@ namespace Retake.Core
         private bool _notesFileExists;
         private int _lastFrame;
         private int _nextOrder = 1;
+        private bool _unsaved;
+
+        // Image files that the data file on disk may still name: deleted after the next successful write.
+        private readonly HashSet<string> _pendingDeletes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // New image files written since the last successful write of the data file, which therefore names none of
+        // them: deleted when the session forgets notes that were not saved (Close, another video).
+        private readonly HashSet<string> _unwrittenImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Renames made for the write in progress: undone, newest first, when the write fails.
+        private readonly List<Action> _undo = new List<Action>();
 
         /// <summary>Creates a session over the settings; <paramref name="onChange"/> receives the state after every successful or failed change.</summary>
         public Session(Settings settings, Action<SessionState> onChange)
@@ -50,6 +60,8 @@ namespace Retake.Core
 
         private void Reset()
         {
+            if (_unsaved && _video != null) DropUnwrittenImages();
+            _unwrittenImages.Clear();
             _video = null;
             _probe = null;
             _probeFps = null;
@@ -62,16 +74,19 @@ namespace Retake.Core
             _notesFileExists = false;
             _lastFrame = 0;
             _nextOrder = 1;
-        }
-
-        private static bool SameName(string a, string b)
-        {
-            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+            _unsaved = false;
+            _pendingDeletes.Clear();
+            _undo.Clear();
         }
 
         private static bool IsFileError(Exception ex)
         {
             return ex is IOException || ex is UnauthorizedAccessException;
+        }
+
+        private static bool IsPathError(Exception ex)
+        {
+            return ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException;
         }
 
         // --- opening and closing ---------------------------------------------------------------------------------
@@ -81,7 +96,15 @@ namespace Retake.Core
         {
             lock (_lock)
             {
-                string path = Path.GetFullPath(video);
+                string path;
+                try
+                {
+                    path = Path.GetFullPath(video);
+                }
+                catch (Exception ex) when (IsPathError(ex))
+                {
+                    throw new SessionException("The video path is not valid");
+                }
                 string name = Path.GetFileName(path);
                 if (!File.Exists(path)) throw new SessionException("The video file was not found");
                 ProbeResult info;
@@ -138,7 +161,7 @@ namespace Retake.Core
                     {
                         throw new SessionException(ex.Message);
                     }
-                    if (!SameName(parsed.Source, name))
+                    if (!NotesLayout.SameName(parsed.Source, name))
                     {
                         throw new SessionException("The notes file " + Path.GetFileName(notesPath) + " belongs to " + parsed.Source + ", not to " + name);
                     }
@@ -169,23 +192,40 @@ namespace Retake.Core
                 _settings.TouchRecent(path, _lastFrame);
                 _settings.LastDir = Path.GetDirectoryName(path) ?? "";
                 SaveSettings();
-                if (exists) NotesLayout.RemoveLegacyExport(path);
+                if (exists) WriteMarkdown(true);
                 Log.Info("opened " + path + " (fps " + (_fps.HasValue ? Timecode.FormatFps(_fps.Value) : "unknown") + ", " + notes.Count + " notes)");
                 return GetState();
             }
         }
 
-        /// <summary>Saves the settings (recent list, last frame) and forgets the video. No other file is written.</summary>
+        /// <summary>Saves the settings (recent list, last frame) and forgets the video. No notes file is written: notes that failed to save are dropped (<see cref="SessionState.Unsaved"/> tells the caller to ask first).</summary>
         public void Close()
         {
             lock (_lock)
             {
                 if (_video != null)
                 {
+                    if (_unsaved) Log.Warning("closed " + _video + " with notes that are not saved");
                     _settings.TouchRecent(_video, _lastFrame);
                     SaveSettings();
                 }
                 Reset();
+            }
+        }
+
+        /// <summary>
+        /// Writes the notes again after a failed write (the retry of the reviewer). Returns the state; writes nothing when
+        /// everything is saved. Throws <see cref="SessionException"/> for no open video or when the write fails again.
+        /// </summary>
+        public SessionState Save()
+        {
+            lock (_lock)
+            {
+                RequireVideo();
+                if (!_unsaved) return GetState();
+                string? error = WriteNotes();
+                if (error == null) Log.Info("saved the notes of " + _video + " after a failed write");
+                return Finish(error);
             }
         }
 
@@ -323,10 +363,12 @@ namespace Retake.Core
                     FpsSource = _fpsSource,
                     NotesDir = NotesLayout.NotesDirFor(video),
                     NotesPath = NotesLayout.NotesPathFor(video),
+                    MarkdownPath = NotesLayout.MarkdownPathFor(video),
                     PackagePath = NotesLayout.PackagePathFor(video),
                     ImagesDir = NotesLayout.ImagesDirFor(video),
                     LastFrame = _lastFrame,
                 };
+                state.Unsaved = _unsaved;
                 if (tb != null) state.Timecode = new TimecodeInfo { Base = tb.Base, Drop = tb.Drop, Digits = tb.Digits, Separator = tb.Separator };
                 return state;
             }
@@ -408,7 +450,7 @@ namespace Retake.Core
                 _nextOrder++;
                 _notes.Add(note);
                 string? writeError = WriteNotes();
-                return Finish(imageError ?? writeError);
+                return Finish(writeError, imageError);
             }
         }
 
@@ -448,13 +490,12 @@ namespace Retake.Core
                 if (imageGiven && note.Image != null && !NotesLayout.IsPlainName(note.Image)) throw new SessionException("The image name is not valid");
 
                 string? oldImage = note.Image;
-                bool dropOldImage = false;
                 string? error = null;
                 bool regionRemoved = clearRegion || (newRegion == null && note.Region != null);
                 if (kindChanged) note.Kind = newKind!;
                 if (regionRemoved)
                 {
-                    dropOldImage = oldImage != null;
+                    if (oldImage != null) _pendingDeletes.Add(oldImage);
                     note.Image = null;
                 }
                 else if (newRegion == null)
@@ -482,12 +523,7 @@ namespace Retake.Core
                 note.Region = newRegion;
                 if (newText != null) note.Text = newText;
                 string? writeError = WriteNotes();
-                if (dropOldImage && !UsedByOther(oldImage, note))
-                {
-                    DeleteImage(oldImage);
-                    PruneImagesDir();
-                }
-                return Finish(error ?? writeError);
+                return Finish(writeError, error);
             }
         }
 
@@ -512,17 +548,11 @@ namespace Retake.Core
                 if (!frame.HasValue || note.IsGeneral)
                 {
                     if (frame == note.Frame) return GetState();
-                    string? dropped = note.Image;
+                    if (note.Image != null) _pendingDeletes.Add(note.Image);
                     note.Frame = frame;
                     note.Region = null;
                     note.Image = null;
-                    string? error = WriteNotes();
-                    if (!UsedByOther(dropped, note))
-                    {
-                        DeleteImage(dropped);
-                        PruneImagesDir();
-                    }
-                    return Finish(error);
+                    return Finish(WriteNotes());
                 }
                 bool hasImage = NotesLayout.IsPlainName(note.Image);
                 bool hasBytes = hasImage && imagePng != null && imagePng.Length > 0;
@@ -530,7 +560,7 @@ namespace Retake.Core
                 note.Frame = frame;
                 string? imageError = hasImage ? RelocateImage(note, tb, hasBytes ? imagePng : null) : null;
                 string? writeError = WriteNotes();
-                return Finish(imageError ?? writeError);
+                return Finish(writeError, imageError);
             }
         }
 
@@ -543,76 +573,97 @@ namespace Retake.Core
                 Note note = Find(noteId);
                 if (Tb() == null) throw new SessionException(RateUnknownEditing);
                 _notes.Remove(note);
-                string? error = WriteNotes();
-                if (!UsedByOther(note.Image, note))
-                {
-                    DeleteImage(note.Image);
-                    PruneImagesDir();
-                }
-                Finish(error);
+                if (note.Image != null) _pendingDeletes.Add(note.Image);
+                Finish(WriteNotes());
             }
         }
 
         /// <summary>
-        /// Writes <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.zip</c>: <c>notes.txt</c> (the readable text, CRLF) and
-        /// <c>frames/&lt;image&gt;</c> for every note image that exists. Streams into a part file and replaces the zip in
-        /// one step. Not a mutation: the state does not change and nothing is published. Throws
-        /// <see cref="SessionException"/> for no open video, an unknown frame rate, no notes or a failed write.
+        /// Writes <c>&lt;stem&gt;_notes\&lt;stem&gt;_notes.zip</c>: <c>notes.txt</c> (the readable text, CRLF),
+        /// <c>notes.md</c> (the Markdown notes file) and <c>frames/&lt;image&gt;</c> for every note image that exists.
+        /// The notes are taken under the session lock; the archive is written after it is released (into a part file that
+        /// replaces the zip in one step), so the other calls do not wait for it. Not a mutation: the state does not change
+        /// and nothing is published. Throws <see cref="SessionException"/> for no open video, an unknown frame rate, no
+        /// notes or a failed write.
         /// </summary>
         public PackResult Pack()
         {
+            string zip;
+            byte[] text;
+            NotesFile snapshot;
+            int? width, height;
+            string author;
+            var images = new List<KeyValuePair<string, string>>();
             lock (_lock)
             {
                 string video = RequireVideo();
                 if (Tb() == null) throw new SessionException(RateUnknownEditing);
                 if (_notes.Count == 0) throw new SessionException("There are no notes to pack");
-                string zip = NotesLayout.PackagePathFor(video);
-                string part = zip + ".part";
-                var images = new List<KeyValuePair<string, string>>();
+                zip = NotesLayout.PackagePathFor(video);
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (Note note in SortedNotes(_notes))
                 {
                     string? file = ImageFile(note.Image);
-                    if (file == null || !File.Exists(file) || !seen.Add(note.Image!)) continue;
-                    images.Add(new KeyValuePair<string, string>(NotesFile.FramesDirName + "/" + note.Image, file));
+                    if (file == null || !seen.Add(note.Image!)) continue;
+                    images.Add(new KeyValuePair<string, string>(note.Image!, file));
                 }
-                byte[] text = new UTF8Encoding(false).GetBytes(BuildNotesFile().RenderReadable().Replace("\n", "\r\n"));
-                int packed = 0;
-                try
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(zip)!);
-                    using (var stream = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
-                    {
-                        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
-                        {
-                            ZipArchiveEntry notesEntry = archive.CreateEntry("notes.txt", CompressionLevel.Optimal);
-                            using (Stream target = notesEntry.Open()) target.Write(text, 0, text.Length);
-                            foreach (KeyValuePair<string, string> image in images)
-                            {
-                                // An image another program holds without sharing is left out of the package, not fatal.
-                                FileStream? source = OpenImage(image.Value);
-                                if (source == null) continue;
-                                using (source)
-                                {
-                                    ZipArchiveEntry entry = archive.CreateEntry(image.Key, CompressionLevel.NoCompression);
-                                    using (Stream target = entry.Open()) source.CopyTo(target);
-                                }
-                                packed++;
-                            }
-                        }
-                        stream.Flush(true);
-                    }
-                    Paths.ReplaceFile(part, zip);
-                }
-                catch (Exception ex) when (IsFileError(ex) || ex is InvalidDataException)
-                {
-                    try { File.Delete(part); } catch (Exception) { }
-                    Log.Error("cannot write " + zip, ex);
-                    throw new SessionException("The notes could not be packed into " + zip);
-                }
-                Log.Info("packed " + _notes.Count + " notes and " + packed + " frames into " + zip);
-                return new PackResult { Path = zip, Notes = _notes.Count, Frames = packed };
+                snapshot = BuildNotesFile(true);
+                text = new UTF8Encoding(false).GetBytes(snapshot.RenderReadable().Replace("\n", "\r\n"));
+                width = _probe != null ? _probe.Width : null;
+                height = _probe != null ? _probe.Height : null;
+                author = _settings.Author ?? "";
             }
+            lock (_packLock)
+            {
+                return WritePackage(zip, text, snapshot, width, height, author, images);
+            }
+        }
+
+        private static PackResult WritePackage(string zip, byte[] text, NotesFile snapshot, int? width, int? height, string author, List<KeyValuePair<string, string>> images)
+        {
+            string part = zip + ".part";
+            var sources = new List<KeyValuePair<string, FileStream>>();
+            try
+            {
+                foreach (KeyValuePair<string, string> image in images)
+                {
+                    // An image another program holds without sharing is left out of the package, not fatal.
+                    if (!File.Exists(image.Value)) continue;
+                    FileStream? source = OpenImage(image.Value);
+                    if (source != null) sources.Add(new KeyValuePair<string, FileStream>(image.Key, source));
+                }
+                byte[] markdown = new UTF8Encoding(false).GetBytes(snapshot.RenderMarkdown(width, height, author, sources.Select(s => s.Key).ToList()));
+                Directory.CreateDirectory(Path.GetDirectoryName(zip)!);
+                using (var stream = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, true))
+                    {
+                        ZipArchiveEntry notesEntry = archive.CreateEntry("notes.txt", CompressionLevel.Optimal);
+                        using (Stream target = notesEntry.Open()) target.Write(text, 0, text.Length);
+                        ZipArchiveEntry markdownEntry = archive.CreateEntry("notes.md", CompressionLevel.Optimal);
+                        using (Stream target = markdownEntry.Open()) target.Write(markdown, 0, markdown.Length);
+                        foreach (KeyValuePair<string, FileStream> source in sources)
+                        {
+                            ZipArchiveEntry entry = archive.CreateEntry(NotesFile.FramesDirName + "/" + source.Key, CompressionLevel.NoCompression);
+                            using (Stream target = entry.Open()) source.Value.CopyTo(target);
+                        }
+                    }
+                    stream.Flush(true);
+                }
+                Paths.ReplaceFile(part, zip);
+            }
+            catch (Exception ex) when (IsFileError(ex) || ex is InvalidDataException)
+            {
+                try { File.Delete(part); } catch (Exception) { }
+                Log.Error("cannot write " + zip, ex);
+                throw new SessionException("The notes could not be packed into " + zip);
+            }
+            finally
+            {
+                foreach (KeyValuePair<string, FileStream> source in sources) source.Value.Dispose();
+            }
+            Log.Info("packed " + snapshot.Notes.Count + " notes and " + sources.Count + " frames into " + zip);
+            return new PackResult { Path = zip, Notes = snapshot.Notes.Count, Frames = sources.Count };
         }
 
         /// <summary>An image file opened for reading, or null (logged) when it cannot be read.</summary>
@@ -666,19 +717,38 @@ namespace Retake.Core
             throw new SessionException("The note was not found");
         }
 
-        private NotesFile BuildNotesFile()
+        /// <param name="copy">True for a snapshot whose notes are copies (the package is written after the lock is released).</param>
+        private NotesFile BuildNotesFile(bool copy = false)
         {
             var nf = new NotesFile(Path.GetFileName(_video!), _fps!.Value, DurationFrames());
-            nf.Notes.AddRange(_notes);
+            if (copy)
+            {
+                foreach (Note n in _notes) nf.Notes.Add(new Note(n.Id, n.Frame, n.Kind, n.Text) { Region = n.Region, Image = n.Image, Order = n.Order });
+            }
+            else
+            {
+                nf.Notes.AddRange(_notes);
+            }
             nf.Extra.AddRange(_extra);
             return nf;
         }
 
-        /// <summary>Writes the notes file when it exists or has notes. Returns an error sentence or null.</summary>
+        /// <summary>
+        /// Writes the data file when it exists or has notes. After a successful write: the images that only the old file
+        /// named are deleted, an emptied <c>frames</c> folder is removed and the Markdown notes file is written. After a
+        /// failed write the renames made for it are undone, so the images on disk still match the data file on disk, and
+        /// the session is marked unsaved. Returns an error sentence or null.
+        /// </summary>
         private string? WriteNotes()
         {
             if (_video == null || _fps == null) return null;
-            if (_notes.Count == 0 && !_notesFileExists) return null;
+            if (_notes.Count == 0 && !_notesFileExists)
+            {
+                // Nothing was ever saved and nothing is left to save.
+                _unsaved = false;
+                FinishImages();
+                return null;
+            }
             string path = NotesLayout.NotesPathFor(_video);
             try
             {
@@ -687,11 +757,65 @@ namespace Retake.Core
             catch (Exception ex) when (IsFileError(ex))
             {
                 Log.Error("cannot write " + path, ex);
+                for (int i = _undo.Count - 1; i >= 0; i--) _undo[i]();
+                _undo.Clear();
+                _unsaved = true;
                 return "The notes could not be saved to " + path;
             }
+            _undo.Clear();
             _notesFileExists = true;
-            NotesLayout.RemoveLegacyExport(_video);
+            _unsaved = false;
+            FinishImages();
+            WriteMarkdown(false);
             return null;
+        }
+
+        /// <summary>Deletes the images waiting for a successful write that no note names any more.</summary>
+        private void FinishImages()
+        {
+            _undo.Clear();
+            _unwrittenImages.Clear();
+            if (_pendingDeletes.Count == 0) return;
+            foreach (string name in _pendingDeletes.ToList())
+            {
+                if (_notes.Any(n => string.Equals(n.Image, name, StringComparison.OrdinalIgnoreCase))) continue;
+                DeleteImage(name);
+            }
+            _pendingDeletes.Clear();
+            PruneImagesDir();
+        }
+
+        private string RenderMarkdown(NotesFile nf)
+        {
+            var present = new List<string>();
+            foreach (Note note in nf.Notes)
+            {
+                string? file = ImageFile(note.Image);
+                if (file != null && File.Exists(file)) present.Add(note.Image!);
+            }
+            return nf.RenderMarkdown(_probe != null ? _probe.Width : null, _probe != null ? _probe.Height : null, _settings.Author, present);
+        }
+
+        /// <summary>
+        /// Writes the Markdown notes file beside the data file (atomic replace); <paramref name="whenDifferent"/> leaves an
+        /// equal file untouched. Only while the data file exists. A failure is logged as a warning and never thrown: the
+        /// data file is the source of truth.
+        /// </summary>
+        private void WriteMarkdown(bool whenDifferent)
+        {
+            if (_video == null || _fps == null) return;
+            string path = NotesLayout.MarkdownPathFor(_video);
+            try
+            {
+                if (!File.Exists(NotesLayout.NotesPathFor(_video))) return;
+                byte[] bytes = new UTF8Encoding(false).GetBytes(RenderMarkdown(BuildNotesFile()));
+                if (whenDifferent && File.Exists(path) && File.ReadAllBytes(path).SequenceEqual(bytes)) return;
+                Paths.AtomicWriteBytes(path, bytes);
+            }
+            catch (Exception ex) when (IsFileError(ex))
+            {
+                Log.Warning("cannot write " + path + ": " + ex.Message);
+            }
         }
 
         private static bool SameRegion(Region? a, Region? b)
@@ -714,8 +838,9 @@ namespace Retake.Core
 
         /// <summary>
         /// Gives the image of the note the name its current kind and frame call for (names of other notes taken): the bytes
-        /// are written under the new name and the old file deleted, or, without bytes, the file is renamed. A failed rename
-        /// is logged and the old name stays. Returns an error sentence for a failed write, else null.
+        /// are written under the new name and the old file deleted after the data file is written, or, without bytes, the
+        /// file is renamed (undone when the data file cannot be written). A failed rename is logged and the old name stays.
+        /// Returns an error sentence for a failed write, else null.
         /// </summary>
         private string? RelocateImage(Note note, TimecodeBase tb, byte[]? bytes)
         {
@@ -728,7 +853,7 @@ namespace Retake.Core
                 string? error = TryWriteImage(newName, bytes);
                 if (error != null) return error;
                 note.Image = newName;
-                if (!sameFile && !shared) DeleteImage(old);
+                if (!sameFile && !shared) _pendingDeletes.Add(old);
                 return null;
             }
             if (string.Equals(old, newName, StringComparison.Ordinal)) return null;
@@ -740,8 +865,19 @@ namespace Retake.Core
                 // A file that another note of a hand-edited file also names is copied, not taken away from it.
                 if (File.Exists(source))
                 {
-                    if (shared) File.Copy(source, target, true);
-                    else NativeFile.Replace(source, target);
+                    if (shared)
+                    {
+                        File.Copy(source, target, true);
+                    }
+                    else
+                    {
+                        NativeFile.Replace(source, target);
+                        _undo.Add(() =>
+                        {
+                            try { NativeFile.Replace(target, source); note.Image = old; }
+                            catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image " + newName + " back to " + old + ": " + ex.Message); }
+                        });
+                    }
                 }
             }
             catch (Exception ex) when (IsFileError(ex))
@@ -753,8 +889,13 @@ namespace Retake.Core
             return null;
         }
 
-        /// <summary>Publishes the new state; a failed write is reported after the UI has seen the in-memory notes.</summary>
-        private SessionState Finish(string? error)
+        /// <summary>
+        /// Publishes the new state; a failed write is reported after the UI has seen the in-memory notes. A failed write of
+        /// the data file (<paramref name="writeError"/>) throws a <see cref="SessionException"/> with
+        /// <see cref="SessionException.NotSaved"/> set; another error (an image) throws one with only
+        /// <see cref="SessionException.Changed"/> set.
+        /// </summary>
+        private SessionState Finish(string? writeError, string? otherError = null)
         {
             SessionState data = GetState();
             try
@@ -765,7 +906,8 @@ namespace Retake.Core
             {
                 Log.Error("on_change callback failed", ex);
             }
-            if (error != null) throw new SessionException(error);
+            if (writeError != null) throw new SessionException(writeError, true, true);
+            if (otherError != null) throw new SessionException(otherError, true, false);
             return data;
         }
 
@@ -778,7 +920,8 @@ namespace Retake.Core
 
         private List<string> TakenImages(Note? exclude)
         {
-            return _notes.Where(n => !string.IsNullOrEmpty(n.Image) && !ReferenceEquals(n, exclude)).Select(n => n.Image!).ToList();
+            // Files waiting for their delete still exist: a new name must not take them.
+            return _notes.Where(n => !string.IsNullOrEmpty(n.Image) && !ReferenceEquals(n, exclude)).Select(n => n.Image!).Concat(_pendingDeletes).ToList();
         }
 
         /// <summary>Path of an image in the images folder; null for no image or a name that is not a plain file name.</summary>
@@ -792,9 +935,11 @@ namespace Retake.Core
         {
             string? target = ImageFile(name);
             if (target == null) throw new SessionException("The image name is not valid");
+            bool fresh = !File.Exists(target);
             try
             {
                 Paths.AtomicWriteBytes(target, data);
+                if (fresh) _unwrittenImages.Add(name);
             }
             catch (Exception ex) when (IsFileError(ex))
             {
@@ -817,6 +962,13 @@ namespace Retake.Core
             }
         }
 
+        /// <summary>Deletes the image files that only notes which were never saved name (the reviewer discarded them).</summary>
+        private void DropUnwrittenImages()
+        {
+            foreach (string name in _unwrittenImages) DeleteImage(name);
+            if (_unwrittenImages.Count > 0) PruneImagesDir();
+        }
+
         private void PruneImagesDir()
         {
             if (_video == null) return;
@@ -831,11 +983,11 @@ namespace Retake.Core
             }
         }
 
-        /// <summary>Renames the image files to the timecodes of the new frame rate (two steps, all or nothing).</summary>
+        /// <summary>Renames the image files to the timecodes of the new frame rate (two steps, all or nothing; undone when the data file cannot be written).</summary>
         private void RenameImages(TimecodeBase tb)
         {
             var plan = new List<KeyValuePair<Note, string>>();
-            var taken = new List<string>();
+            var taken = new List<string>(_pendingDeletes);
             foreach (Note note in SortedNotes(_notes))
             {
                 if (string.IsNullOrEmpty(note.Image) || ImageFile(note.Image) == null) continue;
@@ -866,6 +1018,7 @@ namespace Retake.Core
                 }
                 return;
             }
+            var done = new List<KeyValuePair<Note, string>>();
             foreach (KeyValuePair<Note, string> item in plan)
             {
                 string old = item.Key.Image!;
@@ -875,12 +1028,40 @@ namespace Retake.Core
                 {
                     if (File.Exists(temp) || Directory.Exists(temp)) NativeFile.Replace(temp, target);
                     item.Key.Image = item.Value;
+                    done.Add(new KeyValuePair<Note, string>(item.Key, old));
                 }
                 catch (Exception ex) when (IsFileError(ex))
                 {
                     Log.Warning("cannot rename image " + old + " to " + item.Value + ": " + ex.Message);
                 }
             }
+            if (done.Count == 0) return;
+            _undo.Add(() =>
+            {
+                // Back to the names the data file on disk still has: aside first, then to the old names.
+                var aside = new List<KeyValuePair<Note, string>>();
+                foreach (KeyValuePair<Note, string> item in done)
+                {
+                    string current = ImageFile(item.Key.Image)!;
+                    string temp = Path.Combine(Path.GetDirectoryName(current)!, item.Key.Id + ".rename");
+                    try
+                    {
+                        if (File.Exists(current)) NativeFile.Replace(current, temp);
+                        aside.Add(item);
+                    }
+                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image " + item.Key.Image + " back: " + ex.Message); }
+                }
+                foreach (KeyValuePair<Note, string> item in aside)
+                {
+                    string temp = Path.Combine(Path.GetDirectoryName(ImageFile(item.Key.Image)!)!, item.Key.Id + ".rename");
+                    try
+                    {
+                        if (File.Exists(temp)) NativeFile.Replace(temp, ImageFile(item.Value)!);
+                        item.Key.Image = item.Value;
+                    }
+                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image back to " + item.Value + ": " + ex.Message); }
+                }
+            });
         }
     }
 }

@@ -13,10 +13,14 @@ namespace Retake.Design.Controls
     /// errors), hairline, bevel, --shadow-m; a 24 px round icon in the level's fill and ink, the text in the
     /// body role at medium weight, an optional action. A click anywhere on it closes it (the action runs first).
     /// Info and success close after 3 s, warning and error after 10 s; the timer waits while the pointer rests
-    /// on the toast. A sticky toast has no timer and stays until it is clicked (see <see cref="ToastTiming"/>).
+    /// on the toast. A sticky toast has no timer and stays until it is clicked (see <see cref="ToastTiming"/>). A
+    /// message wider than <see cref="MaxTextWidth"/> ends with an ellipsis and shows whole in the tooltip.
     /// </summary>
     public sealed class Toast : Grid
     {
+        /// <summary>The widest message; a longer one is cut with an ellipsis.</summary>
+        public const double MaxTextWidth = 520;
+
         public readonly ToastLevel Level;
         public readonly string Message;
         public readonly bool Sticky;
@@ -52,6 +56,12 @@ namespace Retake.Design.Controls
             row.Children.Add(badge);
             TextBlock t = Typography.Text(text, Typography.BodyMedium);
             t.Margin = new Thickness(9, 0, 0, 0);
+            // A long message (a copied note, a long file name) ends with an ellipsis; the tooltip has it whole.
+            t.MaxWidth = MaxTextWidth;
+            t.TextTrimming = TextTrimming.CharacterEllipsis;
+            TextBlock whole = Typography.Text(text, Typography.BodyMedium);
+            whole.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            if (whole.DesiredSize.Width > MaxTextWidth + 0.5) Tip.Set(this, text);
             row.Children.Add(t);
             if (actionLabel != null)
             {

@@ -87,6 +87,15 @@ namespace Retake.Tests
         {
             SortedDictionary<string, byte[]> expected = Fx.Tree(expectedRoot);
             SortedDictionary<string, byte[]> actual = Fx.Tree(actualRoot);
+            // The Markdown notes file is Retake's own view beside the data file (the 1.x core wrote another one): it is
+            // not part of the 1.x comparison, and it is there wherever a data file is.
+            foreach (string md in actual.Keys.Where(k => k.EndsWith("_notes.md", StringComparison.Ordinal)).ToList())
+            {
+                Check.True(actual.ContainsKey(md.Substring(0, md.Length - ".md".Length) + ".txt"), md + " without a data file");
+                actual.Remove(md);
+            }
+            foreach (string txt in actual.Keys.Where(k => k.Contains("_notes/") && k.EndsWith("_notes.txt", StringComparison.Ordinal)))
+                Check.True(File.Exists(Path.Combine(actualRoot, txt.Substring(0, txt.Length - ".txt".Length) + ".md")), txt + " has no Markdown notes file");
             Check.Equal(expected.Keys, actual.Keys, "files");
             foreach (KeyValuePair<string, byte[]> file in expected)
             {

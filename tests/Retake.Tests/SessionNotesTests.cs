@@ -8,7 +8,7 @@ using Retake.Core;
 
 namespace Retake.Tests
 {
-    /// <summary>General notes, empty-text refusal, kind change, move, the stale legacy export and the package.</summary>
+    /// <summary>General notes, empty-text refusal, kind change, move, the Markdown notes file, failed writes and the package.</summary>
     public static class SessionNotesTests
     {
         private static readonly string Em = " " + (char)0x2014 + " ";
@@ -394,67 +394,218 @@ namespace Retake.Tests
             Check.Equal(9, c.Events[0].Notes[0].Frame);
         }
 
-        // --- the stale legacy export -----------------------------------------------------------------------------------
+        // --- the Markdown notes file ---------------------------------------------------------------------------------
 
-        [Test("session.open_deletes_a_stale_markdown_export_beside_a_data_file")]
-        public static void OpenDeletesAStaleExport(TestEnv t)
+        private static string Md(SessionCase c, string stem = "dummy")
         {
-            var c = new SessionCase(t);
-            string video = c.MakeVideo();
-            Fx.WriteText(c.Path_("promo_notes", "promo_notes.txt"), "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n0:00:01:00\tFIX\tx\n");
-            Fx.WriteText(c.Path_("promo_notes", "promo_notes.md"), "# promo.mp4\n");
-            c.Session.Open(video);
-            Check.Equal(new[] { "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
+            return Fx.ReadText(c.Path_(stem + "_notes", stem + "_notes.md"));
         }
 
-        [Test("session.open_leaves_a_folder_with_only_an_export_alone")]
-        public static void OpenLeavesAnExportWithoutDataFileAlone(TestEnv t)
+        [Test("session.open_rewrites_a_stale_or_1x_markdown_file_beside_a_data_file")]
+        public static void OpenRewritesAStaleMarkdownFile(TestEnv t)
         {
             var c = new SessionCase(t);
             string video = c.MakeVideo();
-            Fx.WriteText(c.Path_("promo_notes", "promo_notes.md"), "# promo.mp4\n");
+            Fx.WriteRaw(c.Path_("promo_notes", "promo_notes.txt"), "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n0:00:01:00\tFIX\tx\n");
+            Fx.WriteText(c.Path_("promo_notes", "promo_notes.md"), "# promo.mp4\n\n- **0:00:01:00** · FIX · x\n");
             c.Session.Open(video);
-            Check.Equal(new[] { "promo_notes.md" }, Fx.Names(c.Path_("promo_notes")));
-            // the first note creates the data file and the stale export goes
+            Check.Equal(new[] { "promo_notes.md", "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
+            string md = Md(c, "promo");
+            Check.Contains("## `0:00:01:00` FIX\n\nx\n", md);
+            Check.Equal("# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n0:00:01:00\tFIX\tx\n", Fx.ReadText(c.Path_("promo_notes", "promo_notes.txt")), "the data file is not written on open");
+        }
+
+        [Test("session.open_leaves_an_equal_markdown_file_untouched")]
+        public static void OpenLeavesAnEqualMarkdownFile(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo();
+            c.Session.Open(video);
             c.Session.AddNote(5, "FIX", "x", null, null);
-            Check.Equal(new[] { "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
+            string md = c.Path_("promo_notes", "promo_notes.md");
+            var old = new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            File.SetLastWriteTimeUtc(md, old);
+            c.Session.Close();
+            c.Session.Open(video);
+            Check.Equal(old, File.GetLastWriteTimeUtc(md), "an equal file is not written again");
+            // a changed author changes the file: the next open writes it
+            c.Settings.Author = "Ann";
+            c.Session.Close();
+            c.Session.Open(video);
+            Check.Contains("Reviewer: Ann", Md(c, "promo"));
         }
 
-        [Test("session.every_write_removes_an_export_that_1x_wrote_again")]
-        public static void EveryWriteRemovesTheExport(TestEnv t)
+        [Test("session.a_folder_with_only_a_markdown_file_is_left_alone_until_the_first_note")]
+        public static void OpenLeavesAMarkdownFileWithoutDataFileAlone(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo();
+            Fx.WriteText(c.Path_("promo_notes", "promo_notes.md"), "# promo.mp4\n");
+            c.Session.Open(video);
+            Check.Equal("# promo.mp4\n", Md(c, "promo"));
+            c.Session.AddNote(5, "FIX", "x", null, null);
+            Check.Equal(new[] { "promo_notes.md", "promo_notes.txt" }, Fx.Names(c.Path_("promo_notes")));
+            Check.Contains("FIX 1", Md(c, "promo"));
+        }
+
+        [Test("session.every_write_of_the_data_file_writes_the_markdown_file")]
+        public static void EveryWriteWritesTheMarkdownFile(TestEnv t)
         {
             var c = new SessionCase(t);
             c.OpenUnknown();
-            string id = c.Session.AddNote(5, "FIX", "x", null, null).Notes[0].Id;
-            string md = c.Path_("dummy_notes", "dummy_notes.md");
-            Fx.WriteText(md, "# dummy.mp4\n");
-            c.Session.UpdateNote(id, text: "y");
-            Check.False(File.Exists(md));
-            Fx.WriteText(md, "# dummy.mp4\n");
+            Check.False(Directory.Exists(c.Path_("dummy_notes")), "no notes, no folder");
+            string id = c.Session.AddNote(307, "FIX", "logo", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            Check.Contains("## `0:00:12:07` FIX\n\nlogo\n\n![0:00:12:07 FIX](frames/0-00-12-07_FIX.png)\n", Md(c));
+            c.Session.UpdateNote(id, text: "logo flickers");
+            Check.Contains("\n\nlogo flickers\n", Md(c));
+            c.Session.UpdateNote(id, kind: "ADD");
+            Check.Contains("## `0:00:12:07` ADD\n\nlogo flickers\n\n![0:00:12:07 ADD](frames/0-00-12-07_ADD.png)\n", Md(c));
+            c.Session.MoveNote(id, 25, null);
+            Check.Contains("![0:00:01:00 ADD](frames/0-00-01-00_ADD.png)", Md(c));
+            c.Session.SetFps(50);
+            Check.Contains("## `0:00:00:25` ADD", Md(c));
+            Check.Contains("![0:00:00:25 ADD](frames/0-00-00-25_ADD.png)", Md(c));
+            c.Session.MoveNote(id, null, null);
+            Check.Contains("## General\n\n- **ADD**" + Em + "logo flickers\n", Md(c));
+            Check.NotContains("frames/", Md(c));
             c.Session.RemoveNote(id);
-            Check.False(File.Exists(md));
-            Fx.WriteText(md, "# dummy.mp4\n");
-            c.Session.SetFps(24);
-            Check.False(File.Exists(md));
+            Check.Equal("# dummy.mp4\n\n50 fps\n\nNo notes.\n", Md(c));
         }
 
-        [Test("session.a_locked_export_is_a_warning_only")]
-        public static void ALockedExportIsAWarningOnly(TestEnv t)
+        [Test("session.markdown_file_layout_meta_reviewer_general_notes_and_notes_on_frames")]
+        public static void MarkdownLayout(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo();
+            c.Settings.Author = "  Ann Lee ";
+            c.Session.Open(video);
+            c.Session.AddNote(null, "FIX", "music is too loud overall", null, null);
+            c.Session.AddNote(2000, "ADD", "subtitle for the second speaker", null, null);
+            c.Session.AddNote(307, "FIX", "logo flickers", SessionCase.Rect(), SessionCase.Png);
+            c.Session.AddNote(null, "LIKE", "the colour", null, null);
+            string md = Md(c, "promo");
+            string expected = "# promo.mp4\n\n25 fps · 0:01:32:10 · 1920 × 1080 · 4 notes: FIX 2, ADD 1, LIKE 1\n\nReviewer: Ann Lee\n\n"
+                + "## General\n\n- **FIX**" + Em + "music is too loud overall\n- **LIKE**" + Em + "the colour\n\n"
+                + "## `0:00:12:07` FIX\n\nlogo flickers\n\n![0:00:12:07 FIX](frames/0-00-12-07_FIX.png)\n\n"
+                + "## `0:01:20:00` ADD\n\nsubtitle for the second speaker\n";
+            Check.Equal(expected, md);
+            // the image link goes when the file is gone, at the next write
+            File.Delete(c.Path_("promo_notes", "frames", "0-00-12-07_FIX.png"));
+            c.Session.AddNote(5, "REMOVE", "x", null, null);
+            Check.NotContains("frames/", Md(c, "promo"));
+        }
+
+        [Test("session.a_locked_markdown_file_is_a_warning_only")]
+        public static void ALockedMarkdownFileIsAWarningOnly(TestEnv t)
         {
             var c = new SessionCase(t);
             c.OpenUnknown();
             c.Session.AddNote(5, "FIX", "x", null, null);
             string md = c.Path_("dummy_notes", "dummy_notes.md");
-            Fx.WriteText(md, "# dummy.mp4\n");
             var logs = new List<string>();
             Log.Listener = (level, message) => logs.Add(level + " " + message);
             using (new FileStream(md, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 SessionState data = c.Session.AddNote(6, "ADD", "y", null, null);
                 Check.Equal(2, data.Notes.Count);
+                Check.False(data.Unsaved);
             }
-            Check.True(logs.Any(l => l.StartsWith("WARNING cannot delete", StringComparison.Ordinal)), string.Join("|", logs));
-            Check.True(File.Exists(md));
+            Check.True(logs.Any(l => l.StartsWith("WARNING cannot write", StringComparison.Ordinal) && l.Contains("dummy_notes.md")), string.Join("|", logs));
+            Check.Contains("\ty", NotesTxt(c));
+        }
+
+        // --- failed writes ---------------------------------------------------------------------------------------------
+
+        private static void BlockDataFile(SessionCase c)
+        {
+            string target = c.Path_("dummy_notes", "dummy_notes.txt");
+            if (File.Exists(target)) File.Delete(target);
+            Directory.CreateDirectory(target);
+        }
+
+        private static void UnblockDataFile(SessionCase c)
+        {
+            Directory.Delete(c.Path_("dummy_notes", "dummy_notes.txt"), true);
+        }
+
+        [Test("session.a_failed_write_marks_the_session_unsaved_and_save_writes_it_later")]
+        public static void FailedWriteIsUnsavedUntilSave(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(5, "FIX", "first", null, null);
+            BlockDataFile(c);
+            SessionException ex = Check.Throws<SessionException>(() => c.Session.AddNote(6, "ADD", "second", null, null));
+            Check.True(ex.NotSaved && ex.Changed);
+            Check.True(c.Session.GetState().Unsaved);
+            Check.Equal(2, c.Session.GetState().Notes.Count, "the note stays in memory");
+            Check.True(Check.Throws<SessionException>(() => c.Session.Save()).NotSaved, "still blocked");
+            UnblockDataFile(c);
+            SessionState saved = c.Session.Save();
+            Check.False(saved.Unsaved);
+            Check.Equal(Header + "0:00:00:05\tFIX\tfirst\n0:00:00:06\tADD\tsecond\n", NotesTxt(c));
+            Check.Contains("second", Md(c));
+            Check.Equal(saved.Notes.Count, c.Session.Save().Notes.Count, "nothing to save: no write");
+        }
+
+        [Test("session.a_refused_call_is_not_a_change")]
+        public static void RefusedCallIsNotAChange(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            SessionException ex = Check.Throws<SessionException>(() => c.Session.AddNote(5, "FIX", "  ", null, null));
+            Check.False(ex.Changed || ex.NotSaved);
+            Check.False(c.Session.GetState().Unsaved);
+        }
+
+        [Test("session.a_failed_write_keeps_the_images_of_the_data_file_on_disk")]
+        public static void FailedWriteKeepsImagesOnDisk(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            string a = c.Session.AddNote(307, "FIX", "a", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            string b = c.Session.AddNote(500, "ADD", "b", SessionCase.Rect(), PngB).Notes.First(n => n.Text == "b").Id;
+            string frames = c.Path_("dummy_notes", "frames");
+            BlockDataFile(c);
+            // a kind change, a move, a removal and a rate change: the files the data file on disk names stay
+            Check.Throws<SessionException>(() => c.Session.UpdateNote(a, kind: "REMOVE"));
+            Check.Throws<SessionException>(() => c.Session.MoveNote(b, 900, null));
+            Check.Equal(new[] { "0-00-12-07_FIX.png", "0-00-20-00_ADD.png" }, Fx.Names(frames));
+            Check.Throws<SessionException>(() => c.Session.RemoveNote(a));
+            Check.Throws<SessionException>(() => c.Session.SetFps(50));
+            Check.Equal(new[] { "0-00-12-07_FIX.png", "0-00-20-00_ADD.png" }, Fx.Names(frames));
+            Check.Equal(new[] { "0-00-20-00_ADD.png" }, c.Session.GetState().Notes.Select(n => n.Image).ToList(), "memory names the files that exist");
+            // the next successful write saves everything and removes what no note names
+            UnblockDataFile(c);
+            c.Session.Save();
+            Check.Equal(new[] { "0-00-20-00_ADD.png" }, Fx.Names(frames));
+            Check.Equal("# Frame Notes 1\n# source: dummy.mp4\n# fps: 50\n0:00:18:00\tADD\tb\trect 0.540,0.360 0.880,0.800\t0-00-20-00_ADD.png\n", NotesTxt(c));
+        }
+
+        [Test("session.new_images_of_notes_that_were_never_saved_go_when_the_notes_are_dropped")]
+        public static void DroppedNotesTakeTheirNewImages(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            c.Session.AddNote(307, "FIX", "saved", SessionCase.Rect(), SessionCase.Png);
+            string frames = c.Path_("dummy_notes", "frames");
+            BlockDataFile(c);
+            string id = c.Session.GetState().Notes[0].Id;
+            Check.Throws<SessionException>(() => c.Session.AddNote(500, "ADD", "dropped", SessionCase.Rect(), PngB));
+            Check.Throws<SessionException>(() => c.Session.UpdateNote(id, imagePng: PngB));
+            Check.Equal(new[] { "0-00-12-07_FIX.png", "0-00-20-00_ADD.png" }, Fx.Names(frames), "written before the data file");
+            c.Session.Close();
+            Check.Equal(new[] { "0-00-12-07_FIX.png" }, Fx.Names(frames), "a file the saved notes name stays, a new one goes");
+            UnblockDataFile(c);
+
+            // a retry that saves keeps the new image
+            c.OpenUnknown();
+            BlockDataFile(c);
+            Check.Throws<SessionException>(() => c.Session.AddNote(500, "ADD", "kept", SessionCase.Rect(), PngB));
+            UnblockDataFile(c);
+            c.Session.Save();
+            c.Session.Close();
+            Check.Equal(new[] { "0-00-12-07_FIX.png", "0-00-20-00_ADD.png" }, Fx.Names(frames));
         }
 
         // --- Pack ------------------------------------------------------------------------------------------------------
@@ -495,22 +646,27 @@ namespace Retake.Tests
             Check.Equal(2, result.Frames);
             Check.Equal(0, c.Events.Count);
             Check.Equal(before, NotesTxt(c));
-            Check.Equal(new[] { "dummy_notes.txt", "dummy_notes.zip", "frames" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt", "dummy_notes.zip", "frames" }, Fx.Names(c.Path_("dummy_notes")));
 
             using (var archive = new ZipArchive(File.OpenRead(zip), ZipArchiveMode.Read))
             {
                 List<ZipArchiveEntry> entries = Entries(archive);
-                Check.Equal(new[] { "notes.txt", "frames/0-00-12-07_FIX.png", "frames/0-01-20-00_ADD.png" }, entries.Select(e => e.FullName).ToList());
+                Check.Equal(new[] { "notes.txt", "notes.md", "frames/0-00-12-07_FIX.png", "frames/0-01-20-00_ADD.png" }, entries.Select(e => e.FullName).ToList());
                 byte[] text = ReadEntry(entries[0]);
                 Check.False(text.Length >= 3 && text[0] == 0xEF && text[1] == 0xBB && text[2] == 0xBF, "no byte order mark");
                 string expected = "dummy.mp4\r\n\r\nGeneral\r\nFIX" + Em + "overall\r\n\r\n"
                     + "0:00:12:07 FIX" + Em + "first\r\n0:00:20:00 REMOVE" + Em + "gone image\r\n0:00:36:00 FIX" + Em + "no image\r\n0:01:20:00 ADD" + Em + "second\r\n";
                 Check.Equal(expected, new UTF8Encoding(false).GetString(text));
                 Check.Equal(c.Session.ReadableText().Replace("\n", "\r\n"), expected);
-                Check.Equal(SessionCase.Png, ReadEntry(entries[1]));
-                Check.Equal(PngB, ReadEntry(entries[2]));
+                // notes.md is the Markdown notes file, with the links of the frames that are packed (the deleted one is left out)
+                string md = new UTF8Encoding(false).GetString(ReadEntry(entries[1]));
+                Check.Contains("## `0:00:20:00` REMOVE\n\ngone image\n\n## ", md);
+                Check.Contains("![0:00:12:07 FIX](frames/0-00-12-07_FIX.png)", md);
+                Check.NotContains("0-00-20-00_REMOVE.png", md);
+                Check.Equal(SessionCase.Png, ReadEntry(entries[2]));
+                Check.Equal(PngB, ReadEntry(entries[3]));
                 // NoCompression writes deflate "stored" blocks: a few bytes of block header on top of the data, never less.
-                Check.True(entries[1].CompressedLength >= entries[1].Length && entries[1].CompressedLength - entries[1].Length <= 16, "frames are stored");
+                Check.True(entries[2].CompressedLength >= entries[2].Length && entries[2].CompressedLength - entries[2].Length <= 16, "frames are stored");
             }
         }
 
@@ -528,10 +684,10 @@ namespace Retake.Tests
             Check.Equal(2, result.Notes);
             Check.Equal(1, result.Frames);
             Check.True(new FileInfo(zip).Length > firstLength);
-            Check.Equal(new[] { "dummy_notes.txt", "dummy_notes.zip", "frames" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt", "dummy_notes.zip", "frames" }, Fx.Names(c.Path_("dummy_notes")));
             using (var archive = new ZipArchive(File.OpenRead(zip), ZipArchiveMode.Read))
             {
-                Check.Equal(new[] { "notes.txt", "frames/0-00-12-07_FIX.png" }, archive.Entries.Select(e => e.FullName).ToList());
+                Check.Equal(new[] { "notes.txt", "notes.md", "frames/0-00-12-07_FIX.png" }, archive.Entries.Select(e => e.FullName).ToList());
             }
         }
 
@@ -546,7 +702,7 @@ namespace Retake.Tests
             string id = c.Session.AddNote(null, "FIX", "x", null, null).Notes[0].Id;
             c.Session.RemoveNote(id);
             Check.Equal("There are no notes to pack", Check.Throws<SessionException>(() => c.Session.Pack()).Message);
-            Check.Equal(new[] { "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt" }, Fx.Names(c.Path_("dummy_notes")));
         }
 
         [Test("session.pack_leaves_out_an_image_it_cannot_read")]
@@ -565,7 +721,7 @@ namespace Retake.Tests
             }
             using (var archive = new ZipArchive(File.OpenRead(zip), ZipArchiveMode.Read))
             {
-                Check.Equal(new[] { "notes.txt", "frames/0-01-20-00_ADD.png" }, archive.Entries.Select(e => e.FullName).ToList());
+                Check.Equal(new[] { "notes.txt", "notes.md", "frames/0-01-20-00_ADD.png" }, archive.Entries.Select(e => e.FullName).ToList());
             }
         }
 
@@ -667,7 +823,7 @@ namespace Retake.Tests
             Directory.CreateDirectory(zip); // a folder in the place of the package
             SessionException ex = Check.Throws<SessionException>(() => c.Session.Pack());
             Check.Equal("The notes could not be packed into " + zip, ex.Message);
-            Check.Equal(new[] { "dummy_notes.txt", "dummy_notes.zip" }, Fx.Names(c.Path_("dummy_notes")));
+            Check.Equal(new[] { "dummy_notes.md", "dummy_notes.txt", "dummy_notes.zip" }, Fx.Names(c.Path_("dummy_notes")));
             Check.True(Directory.Exists(zip));
         }
     }

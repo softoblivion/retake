@@ -63,7 +63,7 @@ namespace Retake.Views
         public const string KeysEdit = "Backspace in the empty field removes it · Enter saves · Esc cancels";
         public const string FixPlaceholder = "What to fix", AddPlaceholder = "What to add", RemovePlaceholder = "What to remove",
             LikePlaceholder = "What works", DislikePlaceholder = "What does not work";
-        public const string FieldTip = "One line; Enter saves, Esc cancels";
+        public const string FieldTip = "Long text wraps; it is saved as one line";
         public const string NeedText = "Type the note first";
         public const string KindChipTip = "Change the type (Ctrl+{0})";
         public const string PlaceFrameTip = "Keep the note on this frame (Ctrl+4)", PlaceGeneralTip = "Make it a note about the whole video (Ctrl+4)";
@@ -105,6 +105,14 @@ namespace Retake.Views
         public const string ImageFailed = "The frame image could not be made, so the note was saved without it ({0})";
         public const string ClipboardBusy = "The clipboard is in use by another program; try again";
         public const string RevealMissing = "Nothing to show yet";
+        public const string OpenElsewhere = "{0} is open in another window";
+
+        // Notes that could not be written: the notice, and the question before they leave memory.
+        public const string NotSaved = "The notes are not saved", Retry = "Retry", Saved = "Notes saved";
+        public const string UnsavedTitle = "Notes are not saved";
+        public const string UnsavedBody = "The last changes could not be written to the notes folder. Retry once the folder can be written to again, or discard the changes since the last save.";
+        public const string UnsavedDiscard = "Discard", UnsavedCancel = "Cancel";
+        public const string UnsavedRetryTip = "Write the notes again", UnsavedDiscardTip = "Go on without the changes that are not saved", UnsavedCancelTip = "Keep the notes open (Esc)";
 
         public static string Count(int n, string one, string many) => n + " " + (n == 1 ? one : many);
         public static string Notes(int n) => Count(n, "note", "notes");

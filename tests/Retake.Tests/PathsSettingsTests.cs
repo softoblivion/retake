@@ -398,5 +398,115 @@ namespace Retake.Tests
                 Check.Throws<JsonFormatException>(() => Json.Parse(bad), "text '" + bad + "'");
             }
         }
+    
+
+        [Test("settings.two_windows_keep_each_others_changes")]
+        public static void TwoWindowsKeepEachOthersChanges(TestEnv t)
+        {
+            string file = t.Combine("home", "settings.json");
+            var first = new Settings(file);
+            first.TouchRecent(@"D:\clips\old.mp4", 3);
+            first.Save();
+            // whole seconds apart: the recent list orders by the time of the last open
+            System.Threading.Thread.Sleep(1100);
+            var a = new Settings(file);
+            a.Load();
+            var b = new Settings(file);
+            b.Load();
+            b.SetFpsOverride(@"D:\clips\x.mp4", 23.976);
+            b.TouchRecent(@"D:\clips\b.mp4", 7);
+            b.Theme = "sky";
+            b.UiScale = 150;
+            b.Save();
+            System.Threading.Thread.Sleep(1100);
+            a.TouchRecent(@"D:\clips\a.mp4", 11);
+            a.NotesPanelOpen = false;
+            a.Save();
+            var check = new Settings(file);
+            check.Load();
+            Check.Equal(23.976, check.FpsOverride(@"D:\clips\x.mp4"), "the other window's override stays");
+            Check.Equal("sky", check.Theme);
+            Check.Equal(150, check.UiScale);
+            Check.False(check.NotesPanelOpen, "this window's change is written");
+            Check.Equal(new[] { @"D:\clips\a.mp4", @"D:\clips\b.mp4", @"D:\clips\old.mp4" }, check.Recent.Select(r => r.Path).ToList());
+            Check.Equal("sky", a.Theme, "the window takes the values it did not change");
+            // a removal on one side stays removed
+            b.ForgetRecent(@"D:\clips\old.mp4");
+            b.Save();
+            a.TouchRecent(@"D:\clips\a.mp4", 12);
+            a.Save();
+            check.Load();
+            Check.Equal(new[] { @"D:\clips\a.mp4", @"D:\clips\b.mp4" }, check.Recent.Select(r => r.Path).ToList());
+            Check.Equal(12, check.LastFrame(@"D:\clips\a.mp4"));
+            // an override removed by one window and left alone by the other goes
+            a.SetFpsOverride(@"D:\clips\x.mp4", null);
+            a.Save();
+            b.Save();
+            check.Load();
+            Check.Null(check.FpsOverride(@"D:\clips\x.mp4"));
+        }
+
+        [Test("settings.a_file_that_cannot_be_read_is_not_moved_aside_or_written_over")]
+        public static void UnreadableFileIsKept(TestEnv t)
+        {
+            string file = t.Combine("home", "settings.json");
+            var first = new Settings(file) { Theme = "sky" };
+            first.Save();
+            byte[] before = File.ReadAllBytes(file);
+            var s = new Settings(file);
+            using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                s.Load();
+                Check.Equal("black", s.Theme, "the defaults for this run");
+                Check.False(File.Exists(file + ".bad"), "not moved aside");
+                Check.ThrowsFileError(() => s.Save());
+            }
+            Check.Equal(before, File.ReadAllBytes(file), "not written over");
+            // once it can be read again, a save keeps its values
+            s.TouchRecent(@"D:\clips\a.mp4", 1);
+            s.Save();
+            var check = new Settings(file);
+            check.Load();
+            Check.Equal("sky", check.Theme);
+            Check.Equal(1, check.Recent.Count);
+        }
+
+        [Test("settings.recent_paths_without_a_full_form_are_skipped")]
+        public static void InvalidRecentPathsAreSkipped(TestEnv t)
+        {
+            string file = t.Combine("home", "settings.json");
+            Fx.WriteRaw(file, "{\"recent\": [{\"path\": \"C:\\\\a|b.mp4\", \"last_frame\": 5}, {\"path\": \"C:\\\\a\\\\b:c.mp4\"}, {\"path\": \"D:\\\\clips\\\\ok.mp4\", \"last_frame\": 9}]}\n");
+            var s = new Settings(file);
+            s.Load();
+            Check.Equal(new[] { @"D:\clips\ok.mp4" }, s.Recent.Select(r => r.Path).ToList());
+            Check.Equal(0, s.LastFrame(@"C:\a|b.mp4"), "no exception for a path without a full form");
+            Check.False(s.ForgetRecent(@"C:\a|b.mp4"));
+            Check.Equal(9, s.LastFrame(@"D:\clips\ok.mp4"));
+        }
+
+        [Test("paths.the_native_replace_takes_paths_over_260_characters")]
+        public static void LongPaths(TestEnv t)
+        {
+            Type native = typeof(Paths).Assembly.GetType("Retake.Core.NativeFile")!;
+            const System.Reflection.BindingFlags Internal = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            var longPath = (Func<string, string>)Delegate.CreateDelegate(typeof(Func<string, string>), native.GetMethod("LongPath", Internal)!);
+            var replace = (Action<string, string>)Delegate.CreateDelegate(typeof(Action<string, string>), native.GetMethod("Replace", Internal)!);
+            Check.Equal(@"\\?\C:\a\b.txt", longPath(@"C:\a\b.txt"));
+            Check.Equal(@"\\?\UNC\server\share\b.txt", longPath(@"\\server\share\b.txt"));
+            Check.Equal(@"\\?\C:\a\b.txt", longPath(@"\\?\C:\a\b.txt"));
+            Check.Equal(@"\\?\C:\a\c.txt", longPath(@"C:\a\b\..\c.txt"));
+            // The test runner has no long-path manifest, like a machine whose long-path policy is off: the files are made
+            // through the extended form, the replace gets the plain one.
+            string folder = t.Combine(new string('d', 120), new string('e', 120));
+            string path = Path.Combine(folder, new string('f', 40) + "_notes.txt");
+            Check.True(path.Length > 260, "length " + path.Length);
+            Directory.CreateDirectory(longPath(folder));
+            File.WriteAllText(longPath(path + ".part"), "two");
+            File.WriteAllText(longPath(path), "one");
+            replace(path + ".part", path);
+            Check.Equal("two", File.ReadAllText(longPath(path)));
+            Check.False(File.Exists(longPath(path + ".part")));
+            Directory.Delete(longPath(t.Combine(new string('d', 120))), true);
+        }
     }
 }

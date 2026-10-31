@@ -63,10 +63,41 @@ namespace Retake.Design
             return 0;
         }
 
+        /// <summary>A note text long enough to wrap past the most lines of the editor's field.</summary>
+        const string SampleLong = "The lower third comes in two frames late and covers the speaker's name; move it up by about ten percent, "
+            + "keep the fade but shorten it, check the same title in the second interview, and make sure the logo bug in the corner "
+            + "does not overlap the safe area on the vertical cut either, the client asked for that twice already";
+
+        /// <summary>
+        /// Measured sizes of the note editor (no window): the card keeps its width with any text, and the field stops
+        /// growing at its most lines. Written to the diag file of a capture.
+        /// </summary>
+        static string EditorMeasure()
+        {
+            var b = new StringBuilder();
+            foreach (double area in new[] { 1000.0, 606.0, 300.0 })
+            {
+                foreach (int chars in new[] { 0, 40, 200, 2000 })
+                {
+                    var c = new Views.Composer { Width = Views.Composer.CardWidth(area) };
+                    string text = chars == 0 ? "" : string.Concat(System.Linq.Enumerable.Repeat(SampleLong + " ", chars / SampleLong.Length + 1)).Substring(0, chars);
+                    c.Open("FIX", "0:00:03:12", false, text);
+                    c.Measure(new Size(c.Width, double.PositiveInfinity));
+                    c.Arrange(new Rect(c.DesiredSize));
+                    c.UpdateLayout();
+                    b.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "editor area {0} text {1}: card {2:0.#} x {3:0.#}, field {4:0.#} x {5:0.#} (max {6:0.#})",
+                        area, chars, c.ActualWidth, c.ActualHeight, c.Field.ActualWidth, c.Field.ActualHeight, c.Field.MaxHeight));
+                }
+            }
+            return b.ToString();
+        }
+
         static string Diagnostics(int pw, int ph)
         {
             var b = new StringBuilder();
             b.AppendLine("capture " + pw + " x " + ph + " px, theme " + Themes.Current.Name);
+            b.Append(EditorMeasure());
             foreach (int w in new[] { 450, 550, 600, 650 })
                 b.AppendLine("Sora " + w + ": embedded=" + Typography.Embedded(Typography.TextFamily, "Sora", FontWeight.FromOpenTypeWeight(w)) + " " + Typography.Describe(Typography.TextFamily, FontWeight.FromOpenTypeWeight(w)));
             b.AppendLine("Geist Mono 450: embedded=" + Typography.Embedded(Typography.MonoFamily, "Geist Mono", FontWeight.FromOpenTypeWeight(450)) + " " + Typography.Describe(Typography.MonoFamily, FontWeight.FromOpenTypeWeight(450)));
@@ -243,6 +274,12 @@ namespace Retake.Design
             fOff.IsEnabled = false;
             block.Children.Add(Table(new[] { "Empty", "Filled", "Focus", "Disabled", "Tooltip" },
                 new List<(string, FrameworkElement?[])> { ("Text field", new FrameworkElement?[] { F(""), F("Alex"), fFocus, fOff, Bubble(SettingsSheet.AuthorTip) }) }));
+            // Wrapping field (Retake's option of the field): one line, a few lines, the most lines with the rest scrolled.
+            TextField W(string text, int lines = 4) { var w = new TextField("What to fix", 170) { Text = text }; w.Wrap(lines); return w; }
+            Grid wraps = Table(new[] { "Empty", "One line", "Grown", "At the most, scrolls", "Tooltip" },
+                new List<(string, FrameworkElement?[])> { ("Wrapping field", new FrameworkElement?[] { W(""), W("Logo sits low"), W(SampleLong.Substring(0, 70)), W(SampleLong, 3), Bubble(Views.Copy.FieldTip) }) });
+            wraps.Margin = new Thickness(0, 12, 0, 0);
+            block.Children.Add(wraps);
 
             // Switch
             Switch S(bool on) => new Switch(on, "Download updates automatically");
@@ -355,18 +392,24 @@ namespace Retake.Design
             body.Children.Add(footer);
             row.Children.Add(Labelled("Popover (the updates popover of the version pill)", new Popover(320) { Body = body }));
 
-            var composer = new Views.Composer();
+            var composer = new Views.Composer { Width = Views.Composer.CardWidth(1000) };
             composer.Open("FIX", "0:00:03:12", false, "Logo badge sits too close to the edge");
-            FrameworkElement composerCell = Labelled("Note editor: the place, the type chips, the field", composer);
+            var longComposer = new Views.Composer { Width = Views.Composer.CardWidth(1000), Margin = new Thickness(0, 12, 0, 0) };
+            longComposer.Open("ADD", "0:00:07:15", false, SampleLong);
+            var composers = new StackPanel();
+            composers.Children.Add(composer);
+            composers.Children.Add(longComposer);
+            FrameworkElement composerCell = Labelled("Note editor: the place, the type chips, the field; a long text wraps", composers);
             composerCell.Margin = new Thickness(36, 0, 0, 0);
             row.Children.Add(composerCell);
 
             var list = new StackPanel { Width = 290 };
             list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "g", Frame = null, Kind = "ADD", Text = "End card with the logo and the date" }));
-            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "f", Frame = 87, Timecode = "0:00:03:12", Kind = "FIX", Text = "Logo badge sits too close to the edge" }) { Selected = true });
+            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "f", Frame = 87, Timecode = "0:00:03:12", Kind = "FIX", Text = "Logo badge sits too close to the edge. " + SampleLong }) { Selected = true });
             list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "l", Frame = 120, Timecode = "0:00:04:20", Kind = "LIKE", Text = "Great transition, keep this timing" }));
             list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "d", Frame = 190, Timecode = "0:00:07:15", Kind = "DISLIKE", Text = "The title font feels too plain" }));
-            FrameworkElement listCell = Labelled("Note rows: a general note, a selected note, a like, a dislike", list);
+            list.Children.Add(new Views.NoteRow(new Retake.Core.NoteState { Id = "r", Frame = 240, Timecode = "0:00:09:15", Kind = "REMOVE", Text = SampleLong }));
+            FrameworkElement listCell = Labelled("Note rows: general, selected (whole text), like, dislike, long (three lines)", list);
             listCell.Margin = new Thickness(36, 0, 0, 0);
             row.Children.Add(listCell);
 

@@ -251,5 +251,84 @@ namespace Retake.Core
             string clean = Note.NormalizeText(text);
             return clean.Length > 0 ? kind + Dash + clean : kind;
         }
+
+        /// <summary>
+        /// The Markdown notes file, a view of the notes for reading: the video name as the title, a line with the frame
+        /// rate, the duration, the frame size and the counts, <c>Reviewer: &lt;author&gt;</c> when an author is given, a
+        /// <c>General</c> block, then one heading per frame note (timecode and type) with its text and its frame image
+        /// (a relative <c>frames/</c> link) when the note's image is in <paramref name="images"/>. User text is escaped,
+        /// so it reads as typed. Lines that did not parse are not exported. LF line ends, one trailing newline; the
+        /// result depends on its inputs only.
+        /// </summary>
+        /// <param name="width">Frame width in pixels, or null when unknown.</param>
+        /// <param name="height">Frame height in pixels, or null when unknown.</param>
+        /// <param name="author">The reviewer's name; null or blank leaves the line out.</param>
+        /// <param name="images">Names of the frame images that exist (compared case-insensitively).</param>
+        public string RenderMarkdown(int? width, int? height, string? author, ICollection<string> images)
+        {
+            TimecodeBase tb = Timecode.BaseFor(Fps);
+            List<Note> notes = Sorted(Notes).ToList();
+            var present = new HashSet<string>(images, StringComparer.OrdinalIgnoreCase);
+            var lines = new List<string> { "# " + MarkdownText.Escape(Note.NormalizeText(Source), false), "" };
+
+            var meta = new List<string> { Timecode.FormatFps(Fps) + " fps" };
+            if (DurationFrames.HasValue) meta.Add(Timecode.FrameToTimecode(DurationFrames.Value, tb));
+            if (width.HasValue && height.HasValue && width.Value > 0 && height.Value > 0)
+                meta.Add(width.Value.ToString(CultureInfo.InvariantCulture) + " × " + height.Value.ToString(CultureInfo.InvariantCulture));
+            if (notes.Count > 0)
+            {
+                var kinds = new List<string>();
+                foreach (string kind in Note.Kinds)
+                {
+                    int n = notes.Count(x => x.Kind == kind);
+                    if (n > 0) kinds.Add(kind + " " + n.ToString(CultureInfo.InvariantCulture));
+                }
+                meta.Add(notes.Count.ToString(CultureInfo.InvariantCulture) + (notes.Count == 1 ? " note: " : " notes: ") + string.Join(", ", kinds));
+            }
+            lines.Add(string.Join(" · ", meta));
+            string reviewer = Note.NormalizeText(author ?? "");
+            if (reviewer.Length > 0)
+            {
+                lines.Add("");
+                lines.Add("Reviewer: " + MarkdownText.Escape(reviewer, false));
+            }
+
+            if (notes.Count == 0)
+            {
+                lines.Add("");
+                lines.Add("No notes.");
+                return string.Join("\n", lines) + "\n";
+            }
+            List<Note> general = notes.Where(n => n.IsGeneral).ToList();
+            if (general.Count > 0)
+            {
+                lines.Add("");
+                lines.Add("## General");
+                lines.Add("");
+                foreach (Note note in general)
+                {
+                    string clean = Note.NormalizeText(note.Text);
+                    lines.Add("- **" + note.Kind + "**" + (clean.Length > 0 ? Dash + MarkdownText.Escape(clean, false) : ""));
+                }
+            }
+            foreach (Note note in notes.Where(n => !n.IsGeneral))
+            {
+                string tc = Timecode.FrameToTimecode(note.Frame!.Value, tb);
+                lines.Add("");
+                lines.Add("## `" + tc + "` " + note.Kind);
+                string clean = Note.NormalizeText(note.Text);
+                if (clean.Length > 0)
+                {
+                    lines.Add("");
+                    lines.Add(MarkdownText.Escape(clean, true));
+                }
+                if (NotesLayout.IsPlainName(note.Image) && present.Contains(note.Image!))
+                {
+                    lines.Add("");
+                    lines.Add("![" + tc + " " + note.Kind + "](" + FramesDirName + "/" + MarkdownText.EncodeLink(note.Image!) + ")");
+                }
+            }
+            return string.Join("\n", lines) + "\n";
+        }
     }
 }

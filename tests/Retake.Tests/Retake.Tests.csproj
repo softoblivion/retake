@@ -12,12 +12,17 @@
     <ProjectReference Include="..\..\src\Retake.Core\Retake.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The pure parts of the application (no WPF): frame formulas, timeline rules, region geometry, window place, path text. -->
+    <!-- The pure parts of the application (no WPF): frame formulas, timeline rules, region geometry, window place, path text,
+         the save of an edit, the file cache of the thumbnails, the window of a video, the Discard of unsaved notes. -->
     <Compile Include="..\..\src\Retake\Player\FrameMath.cs" Link="Linked\FrameMath.cs" />
     <Compile Include="..\..\src\Retake\Views\RegionMath.cs" Link="Linked\RegionMath.cs" />
     <Compile Include="..\..\src\Retake\Views\TimelineMath.cs" Link="Linked\TimelineMath.cs" />
     <Compile Include="..\..\src\Retake\Views\WindowPlace.cs" Link="Linked\WindowPlace.cs" />
     <Compile Include="..\..\src\Retake\Views\PathText.cs" Link="Linked\PathText.cs" />
+    <Compile Include="..\..\src\Retake\Views\NoteEdit.cs" Link="Linked\NoteEdit.cs" />
+    <Compile Include="..\..\src\Retake\Views\FileCache.cs" Link="Linked\FileCache.cs" />
+    <Compile Include="..\..\src\Retake\Views\VideoWindows.cs" Link="Linked\VideoWindows.cs" />
+    <Compile Include="..\..\src\Retake\Views\UnsavedGate.cs" Link="Linked\UnsavedGate.cs" />
     <!-- The self-update wiring without WPF: the version, the setup values, the tooltips, the toast timing and the
          vendored library (compiled as generated code, see src\Retake\vendor\.editorconfig). -->
     <Compile Include="..\..\src\Retake\Version.cs" Link="Linked\Version.cs" />

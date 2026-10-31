@@ -86,14 +86,18 @@ namespace Retake.Views
 
     /// <summary>
     /// One note of the list: the type's badge; a head line with the timecode (copies itself) or General and the type
-    /// in its colour; up to three lines of text; the frame image on the right.
+    /// in its colour; up to three lines of text (the selected row shows the whole text); the frame image on the right.
     /// </summary>
     public sealed class NoteRow : Pressable
     {
         readonly RowPlate plate;
         public readonly NoteState Note;
         public readonly CopyText? Timecode;
+        readonly TextBlock text;
         bool selected;
+
+        /// <summary>Lines of text a row that is not selected shows.</summary>
+        public const int RestLines = 3;
 
         public event Action<NoteRow>? Edit;
         /// <summary>A right click (or the context menu key) on the row, at a point of the row.</summary>
@@ -138,10 +142,9 @@ namespace Retake.Views
             kind.VerticalAlignment = VerticalAlignment.Center;
             head.Children.Add(kind);
             body.Children.Add(head);
-            TextBlock text = Typography.Text(note.Text.Length > 0 ? note.Text : Copy.NoText, Typography.Body, note.Text.Length > 0 ? "ink-1" : "ink-4");
+            text = Typography.Text(note.Text.Length > 0 ? note.Text : Copy.NoText, Typography.Body, note.Text.Length > 0 ? "ink-1" : "ink-4");
             text.TextWrapping = TextWrapping.Wrap;
-            text.TextTrimming = TextTrimming.CharacterEllipsis;
-            text.MaxHeight = Typography.Body.LineHeight * 3;
+            ShowWhole(false);
             text.Margin = new Thickness(0, 1, 0, 0);
             body.Children.Add(text);
             Grid.SetColumn(body, 1);
@@ -168,7 +171,14 @@ namespace Retake.Views
         public bool Selected
         {
             get => selected;
-            set { selected = value; AutomationProperties.SetItemStatus(this, value ? "selected" : ""); Refresh(Motion.Enabled && IsLoaded); }
+            set { selected = value; AutomationProperties.SetItemStatus(this, value ? "selected" : ""); ShowWhole(value); Refresh(Motion.Enabled && IsLoaded); }
+        }
+
+        /// <summary>The whole text (the selected row), or <see cref="RestLines"/> lines with an ellipsis.</summary>
+        void ShowWhole(bool whole)
+        {
+            text.TextTrimming = whole ? TextTrimming.None : TextTrimming.CharacterEllipsis;
+            text.MaxHeight = whole ? double.PositiveInfinity : Typography.Body.LineHeight * RestLines;
         }
 
         protected override void Apply(double hover, double press, double focus, bool animate)

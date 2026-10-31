@@ -214,5 +214,51 @@ namespace Retake.Tests
                 Check.Equal(fps, Timecode.ParseFps(Timecode.FormatFps(fps)));
             }
         }
+    
+
+        [Test("timecode.rates_on_1001_use_exact_rational_math")]
+        public static void RationalRates(TestEnv t)
+        {
+            TimecodeBase b48 = Timecode.BaseFor(47.952);
+            Check.Equal(48000.0 / 1001.0, b48.Fps);
+            Check.Equal(48, b48.Base);
+            Check.False(b48.Drop);
+            Check.Equal(2, b48.Digits);
+            TimecodeBase b120 = Timecode.BaseFor(119.88);
+            Check.Equal(120000.0 / 1001.0, b120.Fps);
+            Check.Equal(120, b120.Base);
+            Check.False(b120.Drop);
+            Check.Equal(3, b120.Digits);
+            Check.Equal(24000.0 / 1001.0, Timecode.BaseFor(23.976).Fps);
+            Check.Equal(30000.0 / 1001.0, Timecode.BaseFor(29.97).Fps);
+            Check.Equal(60000.0 / 1001.0, Timecode.BaseFor(59.94).Fps);
+            // the probed and the player's values snap to the 1001-based entry, the integer rates stay integers
+            Check.Equal(47.952, Timecode.NominalRate(48000.0 / 1001.0));
+            Check.Equal(47.952, Timecode.NominalRate(47.95));
+            Check.Equal(119.88, Timecode.NominalRate(119.880119));
+            Check.Equal(48.0, Timecode.NominalRate(48.0));
+            Check.Equal(48.0, Timecode.NominalRate(47.99));
+            Check.Equal(120.0, Timecode.NominalRate(120.01));
+            Check.Equal(48.0, Timecode.BaseFor(48).Fps);
+            Check.Equal("0:00:01:00", Timecode.FrameToTimecode(48, b48));
+            Check.Equal("0:00:01:005", Timecode.FrameToTimecode(125, b120));
+        }
+
+        [Test("timecode.other_1001_rates_keep_the_probed_value")]
+        public static void OtherRationalRatesKeepTheirValue(TestEnv t)
+        {
+            foreach (int n in new[] { 25, 50, 100 })
+            {
+                double rate = n * 1000.0 / 1001.0;
+                Check.Equal(rate, Timecode.NominalRate(rate), "rate " + rate);
+                TimecodeBase tb = Timecode.BaseFor(rate);
+                Check.Equal(rate, tb.Fps);
+                Check.Equal(n, tb.Base);
+                Check.False(tb.Drop);
+            }
+            Check.Equal(100.0, Timecode.NominalRate(99.98), "nearer to 100: noise of 100");
+            Check.Equal(25.0, Timecode.NominalRate(24.99));
+            Check.Equal(12.5, Timecode.NominalRate(12.5), "far from the table");
+        }
     }
 }

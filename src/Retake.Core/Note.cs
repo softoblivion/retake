@@ -46,6 +46,15 @@ namespace Retake.Core
         /// <summary>One-line form of a note text: tabs, line breaks and the Unicode line separators become spaces, ends stripped.</summary>
         public static string NormalizeText(string text)
         {
+            return Py.Strip(OneLine(text));
+        }
+
+        /// <summary>
+        /// The text on one line, ends kept (for text that goes into the middle of a field, such as a paste): tabs, line
+        /// breaks and the Unicode line separators become spaces, one space per character.
+        /// </summary>
+        public static string OneLine(string text)
+        {
             var sb = new StringBuilder(text.Length);
             foreach (char c in text)
             {
@@ -66,7 +75,7 @@ namespace Retake.Core
                         break;
                 }
             }
-            return Py.Strip(sb.ToString());
+            return sb.ToString();
         }
 
         /// <summary>A random note id: 8 lowercase hex characters, not in <paramref name="taken"/>.</summary>

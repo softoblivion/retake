@@ -90,6 +90,10 @@ namespace Retake.Core
 
         public string NotesDir { get; set; } = "";
         public string NotesPath { get; set; } = "";
+
+        /// <summary>The Markdown notes file beside the data file.</summary>
+        public string MarkdownPath { get; set; } = "";
+
         public string PackagePath { get; set; } = "";
         public string ImagesDir { get; set; } = "";
 
@@ -149,11 +153,29 @@ namespace Retake.Core
         public List<NoteState> Notes { get; set; } = new List<NoteState>();
 
         public KindCounts Counts { get; set; } = new KindCounts();
+
+        /// <summary>True after the data file could not be written: the notes in memory are newer than the file. <see cref="Session.Save"/> retries.</summary>
+        public bool Unsaved { get; set; }
     }
 
     /// <summary>A failure the reviewer can act on; the message is a user-facing English sentence.</summary>
     public sealed class SessionException : Exception
     {
         public SessionException(string message) : base(message) { }
+
+        /// <param name="message">The sentence for the reviewer.</param>
+        /// <param name="changed">True when the change was made in memory before the error (a refused call changes nothing).</param>
+        /// <param name="notSaved">True when the data file could not be written after the change.</param>
+        public SessionException(string message, bool changed, bool notSaved) : base(message)
+        {
+            Changed = changed || notSaved;
+            NotSaved = notSaved;
+        }
+
+        /// <summary>True when the change was made in memory before the error (an image that could not be written, a failed write); false for a refused call, which changes nothing.</summary>
+        public bool Changed { get; private set; }
+
+        /// <summary>True when the change is in memory but the data file could not be written (<see cref="SessionState.Unsaved"/>; <see cref="Session.Save"/> retries).</summary>
+        public bool NotSaved { get; private set; }
     }
 }

@@ -28,15 +28,19 @@ namespace Retake.Views
             var list = new List<RecentItem>();
             foreach (RecentEntry e in settings.Recent)
             {
-                var item = new RecentItem
+                var item = new RecentItem { Path = e.Path, LastFrame = e.LastFrame };
+                try
                 {
-                    Path = e.Path,
-                    Name = System.IO.Path.GetFileName(e.Path),
-                    Folder = System.IO.Path.GetDirectoryName(e.Path) ?? "",
-                    LastFrame = e.LastFrame,
-                    Exists = File.Exists(e.Path),
-                    IsOpen = openPath != null && string.Equals(System.IO.Path.GetFullPath(openPath), System.IO.Path.GetFullPath(e.Path), StringComparison.OrdinalIgnoreCase),
-                };
+                    item.Name = System.IO.Path.GetFileName(e.Path);
+                    item.Folder = System.IO.Path.GetDirectoryName(e.Path) ?? "";
+                    item.Exists = File.Exists(e.Path);
+                    item.IsOpen = openPath != null && string.Equals(System.IO.Path.GetFullPath(openPath), System.IO.Path.GetFullPath(e.Path), StringComparison.OrdinalIgnoreCase);
+                }
+                catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException)
+                {
+                    // A path that is not valid (a hand-edited settings file) is not listed.
+                    continue;
+                }
                 try
                 {
                     item.Summary = NotesLayout.NotesSummaryFor(e.Path);
@@ -208,7 +212,11 @@ namespace Retake.Views
         public EmptyState()
         {
             AutomationProperties.SetAutomationId(this, "EmptyState");
-            var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 64, 0, 0), Width = ListWidth };
+            // Rows: the card, the heading, the recent list in the room that is left (it scrolls when it does not fit).
+            var column = new Grid { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(0, 64, 0, 16), Width = ListWidth };
+            column.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            column.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            column.RowDefinitions.Add(new RowDefinition());
             var card = new Grid { Height = 232 };
             card.Children.Add(new ShadowLayer("card-drop", 22));
             card.Children.Add(new SurfaceVisual(22, "card-rim", null, "card-fill"));
@@ -239,7 +247,10 @@ namespace Retake.Views
             column.Children.Add(card);
             recentHead = Typography.Text(Copy.RecentHeading, Typography.Section, "ink-3");
             recentHead.Margin = new Thickness(14, 26, 0, 8);
+            Grid.SetRow(recentHead, 1);
             column.Children.Add(recentHead);
+            recentCard.VerticalAlignment = VerticalAlignment.Top;
+            Grid.SetRow(recentCard, 2);
             recentCard.Children.Add(new ShadowLayer("card-drop", Review.CardRadius));
             recentCard.Children.Add(new SurfaceVisual(Review.CardRadius, "card-rim", null, "card-fill"));
             var recentScroll = new ScrollViewer { Content = recent, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, MaxHeight = 330, Padding = new Thickness(4) };

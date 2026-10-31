@@ -132,7 +132,7 @@ namespace Retake.Tests
             string video = @"D:\clips\promo_v3.mp4";
             Check.Equal(@"D:\clips\promo_v3_notes", NotesLayout.NotesDirFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.txt", NotesLayout.NotesPathFor(video));
-            Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.md", NotesLayout.LegacyExportPathFor(video));
+            Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.md", NotesLayout.MarkdownPathFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes\promo_v3_notes.zip", NotesLayout.PackagePathFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes\frames", NotesLayout.ImagesDirFor(video));
             Check.Equal(@"D:\clips\promo_v3_notes.txt", NotesLayout.LegacyNotesPathFor(video));

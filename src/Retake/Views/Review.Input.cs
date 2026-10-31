@@ -98,7 +98,17 @@ namespace Retake.Views
                     e.Handled = true;
                     TextField field = Video.Overlay.Composer.Field;
                     if (field.Text.Length == 0) { if (edit.Region != null) SetEditRegion(null); }
-                    else field.Text = field.Text.Substring(0, field.Text.Length - 1);
+                    else
+                    {
+                        // The selection goes, else the character before the caret; the caret stays where the edit was.
+                        int start = field.SelectionStart, length = field.SelectionLength;
+                        if (length == 0 && start > 0) { start--; length = 1; }
+                        if (length > 0)
+                        {
+                            field.Text = field.Text.Remove(start, length);
+                            field.CaretIndex = start;
+                        }
+                    }
                 }
                 else Video.Overlay.SetTyping(true);
                 return;
@@ -161,9 +171,10 @@ namespace Retake.Views
                 // The overlay could not take the activation (another program held the foreground): the typing
                 // reaches the main window, so it goes into the note field here instead of being lost.
                 TextField field = Video.Overlay.Composer.Field;
-                int at = field.CaretIndex;
-                field.Text = field.Text.Insert(at, e.Text);
-                field.CaretIndex = at + e.Text.Length;
+                string typed = Retake.Core.Note.OneLine(e.Text);
+                int at = field.SelectionStart, length = field.SelectionLength;
+                field.Text = field.Text.Remove(at, length).Insert(at, typed);
+                field.CaretIndex = at + typed.Length;
                 e.Handled = true;
                 Video.Overlay.SetTyping(true);
                 return;
