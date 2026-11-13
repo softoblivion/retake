@@ -156,6 +156,12 @@ namespace Retake.Core
 
         /// <summary>True after the data file could not be written: the notes in memory are newer than the file. <see cref="Session.Save"/> retries.</summary>
         public bool Unsaved { get; set; }
+
+        /// <summary>The id the note had that <see cref="Session.Undo"/> brings back or changes back; null when there is nothing to undo.</summary>
+        public string? UndoNoteId { get; set; }
+
+        /// <summary>True when the next <see cref="Session.Undo"/> brings back a removed note.</summary>
+        public bool UndoRestoresRemoved { get; set; }
     }
 
     /// <summary>A failure the reviewer can act on; the message is a user-facing English sentence.</summary>

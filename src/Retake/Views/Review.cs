@@ -92,6 +92,9 @@ namespace Retake.Views
         string? selectedId;
         // A note picked in the list or on the timeline while a save ran (id, seek); applied when the save ends.
         KeyValuePair<string?, bool>? pendingPick;
+        // The notice of the last removal and the note it names: its Undo stands while that removal is the next step to undo.
+        Toast? removedToast;
+        string? removedId;
         Edit? edit;
         bool starting, saving, closing, closed, reverseHeld, freezing, packing, failing;
         // A Discard of notes that could not be saved covers only the move it was given for.
@@ -547,6 +550,11 @@ namespace Retake.Views
             }
             UpdateRegionDisplay();
             ShowDone();
+            if (removedToast != null && !(st.UndoRestoresRemoved && st.UndoNoteId == removedId))
+            {
+                removedToast.Close();
+                removedToast = null;
+            }
             AutomationProperties.SetItemStatus(Notes, st.Notes.Count.ToString(CultureInfo.InvariantCulture));
         }
 

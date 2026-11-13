@@ -118,6 +118,7 @@ namespace Retake.Views
                 if (key == Key.O) { e.Handled = true; OpenDialog(); }
                 else if (key == Key.C && videoLoaded) { e.Handled = true; CopyNotes((mods & ModifierKeys.Shift) != 0); }
                 else if (key == Key.E && videoLoaded) { e.Handled = true; _ = Pack(); }
+                else if (key == Key.Z && mods == ModifierKeys.Control && videoLoaded) { e.Handled = true; UndoNote(); }
                 return;
             }
             if ((mods & ModifierKeys.Alt) != 0) return;

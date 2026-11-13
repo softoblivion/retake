@@ -85,6 +85,11 @@ selected note shows its whole text) and a thumbnail of its frame image, in timec
 offers Edit, Copy the timecode, Copy the text, Move to the playhead and Delete. The list button in the title bar
 hides and shows it.
 
+`Ctrl+Z` undoes the last removal or change of a note, one step at a time: a removed note comes back with its mark
+and its frame image, an edited or moved one gets its text, type, mark, frame and image back. The message that
+confirms a removal has an **Undo** button as well. Adding a note is not undone (remove it instead), and the steps
+are forgotten when another video is opened or the frame rate is changed.
+
 ### Window
 
 The window can be resized from its edges and maximized with the button beside minimize (or a double click on the
@@ -147,6 +152,7 @@ The keys work when no text field has focus; `?` shows them in the app.
 | `Backspace` (empty note field) | Remove the region of the note being written |
 | `F2` | Edit the selected note |
 | `Delete` | Remove the selected note |
+| `Ctrl+Z` | Undo the last removal or change of a note |
 | `↑` `↓` | Previous / next note (moves to it) |
 | `Ctrl+Shift+C` | Copy the notes as text |
 | `Ctrl+C` | Copy the notes file text |

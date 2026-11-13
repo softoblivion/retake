@@ -513,14 +513,41 @@ namespace Retake.Views
                 SessionState st = session.GetState();
                 string? next = st.Notes.Count == 0 ? null : st.Notes[Math.Min(index, st.Notes.Count - 1)].Id;
                 selectedId = next;
+                removedId = n.Id;
                 Apply(st);
                 Select(next, false);
-                window.Root.Toasts.Show(ToastLevel.Info, Copy.NoteRemoved);
+                // A notice raised again keeps its first action, so the action reads the note it undoes at the click.
+                removedToast = window.Root.Toasts.Show(ToastLevel.Info, Copy.NoteRemoved, Copy.Undo, () =>
+                {
+                    if (state.UndoRestoresRemoved && state.UndoNoteId == removedId) UndoNote();
+                });
             }
             catch (SessionException ex)
             {
                 Apply(session.GetState());
                 Report(ex);
+            }
+        }
+
+        /// <summary>
+        /// Ctrl+Z and the Undo of the removal notice: the newest removal or change of a note is undone (an added note is
+        /// not) and the note is selected at its frame. Not while a note is written or saved.
+        /// </summary>
+        void UndoNote()
+        {
+            string? id = state.UndoNoteId;
+            if (id == null || saving || edit != null) return;
+            try
+            {
+                SessionState st = session.Undo();
+                Apply(st);
+                Select(Note(id) != null ? id : selectedId, true);
+            }
+            catch (SessionException ex)
+            {
+                Apply(session.GetState());
+                Report(ex);
+                if (Note(id) != null) Select(id, true);
             }
         }
 

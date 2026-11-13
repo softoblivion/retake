@@ -98,7 +98,7 @@ namespace Retake.Views
         public const string BannerTip = "Dismiss";
         public const string NotesCopied = "Notes file copied", ReadableCopied = "Notes copied as text", Copied = "Copied {0}";
         public const string Packed = "Packed into {0}", PackedShow = "Show";
-        public const string NoteRemoved = "Note removed";
+        public const string NoteRemoved = "Note removed", Undo = "Undo";
         public const string NeedRate = "Choose the frame rate to add notes";
         public const string CannotPlay = "{0}: {1}";
         public const string PlayerFailed = "The player could not start: {0}";

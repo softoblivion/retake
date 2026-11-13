@@ -52,6 +52,9 @@ namespace Retake.Core
         // New bytes of an image whose file kept its name: a failed write puts the old bytes back on disk and parks the new
         // ones here, and the next write puts them in place again before it writes the data file.
         private readonly Dictionary<Note, byte[]> _parkedBytes = new Dictionary<Note, byte[]>();
+        // The reviewer's undo history, newest last: each removed or changed note as it was, with its image bytes.
+        private readonly List<UndoStep> _history = new List<UndoStep>();
+        private const int HistoryDepth = 100;
 
         /// <summary>Creates a session over the settings; <paramref name="onChange"/> receives the state after every successful or failed change.</summary>
         public Session(Settings settings, Action<SessionState> onChange)
@@ -81,6 +84,7 @@ namespace Retake.Core
             _pendingDeletes.Clear();
             _undo.Clear();
             _parkedBytes.Clear();
+            _history.Clear();
         }
 
         private static bool IsFileError(Exception ex)
@@ -304,9 +308,15 @@ namespace Retake.Core
                 TimecodeBase? oldTb = Tb();
                 ResolveFps();
                 TimecodeBase? newTb = Tb();
-                if (oldTb != null && newTb != null && !oldTb.Equals(newTb)) RenameImages(newTb);
+                bool rebased = oldTb != null && newTb != null && !oldTb.Equals(newTb);
+                if (rebased) RenameImages(newTb!);
                 string? error = WriteNotes();
-                if (error == null) return Finish(null);
+                if (error == null)
+                {
+                    // The steps hold image names and timecodes of the old rate.
+                    if (rebased) _history.Clear();
+                    return Finish(null);
+                }
                 // The renames are undone already (WriteNotes); the rate follows them back.
                 _settings.SetFpsOverride(video, oldOverride);
                 SaveSettings();
@@ -389,6 +399,12 @@ namespace Retake.Core
                     LastFrame = _lastFrame,
                 };
                 state.Unsaved = _unsaved;
+                if (_history.Count > 0)
+                {
+                    UndoStep next = _history[_history.Count - 1];
+                    state.UndoNoteId = next.Before.Id;
+                    state.UndoRestoresRemoved = next.Removed;
+                }
                 if (tb != null) state.Timecode = new TimecodeInfo { Base = tb.Base, Drop = tb.Drop, Digits = tb.Digits, Separator = tb.Separator };
                 return state;
             }
@@ -510,6 +526,7 @@ namespace Retake.Core
                 bool imageGiven = newRegion != null && imagePng != null && imagePng.Length > 0;
                 if (!kindChanged && !textChanged && !regionChanged && !imageGiven) return GetState();
                 if (imageGiven && note.Image != null && !NotesLayout.IsPlainName(note.Image)) throw new SessionException("The image name is not valid");
+                Remember(note, false);
 
                 string? oldImage = note.Image;
                 string? error = null;
@@ -571,6 +588,7 @@ namespace Retake.Core
                 if (!frame.HasValue || note.IsGeneral)
                 {
                     if (frame == note.Frame) return GetState();
+                    Remember(note, false);
                     if (note.Image != null) _pendingDeletes.Add(note.Image);
                     note.Frame = frame;
                     note.Region = null;
@@ -580,6 +598,7 @@ namespace Retake.Core
                 bool hasImage = NotesLayout.IsPlainName(note.Image);
                 bool hasBytes = hasImage && imagePng != null && imagePng.Length > 0;
                 if (frame == note.Frame && !hasBytes) return GetState();
+                Remember(note, false);
                 note.Frame = frame;
                 string? imageError = hasImage ? RelocateImage(note, tb, hasBytes ? imagePng : null) : null;
                 string? writeError = WriteNotes();
@@ -595,9 +614,125 @@ namespace Retake.Core
                 RequireVideo();
                 Note note = Find(noteId);
                 if (Tb() == null) throw new SessionException(RateUnknownEditing);
+                Remember(note, true);
                 _notes.Remove(note);
                 if (note.Image != null) _pendingDeletes.Add(note.Image);
                 Finish(WriteNotes());
+            }
+        }
+
+        /// <summary>
+        /// Undoes the newest removal or change of a note (the history holds the last 100 and is cleared by Open, Close and
+        /// a rate change that renames the images): a removed note comes back with its id (a new one when another note
+        /// took it) and its order, a changed one gets its frame, kind, text, region and image back. The image file gets
+        /// the bytes it had then, under its old name, or under a new name when another note now names a file of other
+        /// bytes; an image that the undone change gave the note is deleted after the data file is written. An undo is not
+        /// itself undone. Throws <see cref="SessionException"/> for no open video, an unknown frame rate or nothing to
+        /// undo. A failed write keeps the restored note in memory, publishes the state, then throws.
+        /// </summary>
+        public SessionState Undo()
+        {
+            lock (_lock)
+            {
+                RequireVideo();
+                TimecodeBase? tb = Tb();
+                if (tb == null) throw new SessionException(RateUnknownEditing);
+                if (_history.Count == 0) throw new SessionException("There is nothing to undo");
+                UndoStep step = _history[_history.Count - 1];
+                _history.RemoveAt(_history.Count - 1);
+                Note before = step.Before;
+                Note? note = step.Removed ? null : _notes.FirstOrDefault(n => n.Id == before.Id);
+                string? current = note?.Image;
+                if (note == null)
+                {
+                    var ids = new HashSet<string>(_notes.Select(n => n.Id));
+                    note = new Note(ids.Contains(before.Id) ? Note.NewId(ids) : before.Id, before.Frame, before.Kind, before.Text);
+                    _notes.Insert(Math.Min(Math.Max(step.Index, 0), _notes.Count), note);
+                }
+                else
+                {
+                    // New bytes parked by a failed write belong to the change that is undone.
+                    _parkedBytes.Remove(note);
+                    note.Frame = before.Frame;
+                    note.Kind = before.Kind;
+                    note.Text = before.Text;
+                }
+                note.Region = before.Region;
+                note.Order = before.Order;
+                note.Image = null;
+                string? imageError = before.Image == null ? null : RestoreImage(note, before.Image, step.Image, current, tb);
+                if (current != null && !_notes.Any(n => string.Equals(n.Image, current, StringComparison.OrdinalIgnoreCase))) _pendingDeletes.Add(current);
+                return Finish(WriteNotes(), imageError);
+            }
+        }
+
+        /// <summary>Records a note as it is before a removal or a change, with the bytes its image has for the session.</summary>
+        private void Remember(Note note, bool removed)
+        {
+            byte[]? bytes;
+            if (!_parkedBytes.TryGetValue(note, out bytes))
+            {
+                bytes = null;
+                string? file = ImageFile(note.Image);
+                try
+                {
+                    if (file != null && File.Exists(file)) bytes = File.ReadAllBytes(file);
+                }
+                catch (Exception ex) when (IsFileError(ex))
+                {
+                    Log.Warning("cannot read " + file + " for the undo history: " + ex.Message);
+                }
+            }
+            var copy = new Note(note.Id, note.Frame, note.Kind, note.Text) { Region = note.Region, Image = note.Image, Order = note.Order };
+            _history.Add(new UndoStep(copy, _notes.IndexOf(note), bytes, removed));
+            if (_history.Count > HistoryDepth) _history.RemoveAt(0);
+        }
+
+        /// <summary>
+        /// Gives the restored note its image <paramref name="name"/> with <paramref name="bytes"/> (a file of the same bytes
+        /// is left as it is). Without bytes (a hand-edited name, a file that was missing or could not be read) the name
+        /// comes back alone. Returns an error sentence for a failed write (the note then has no image), else null.
+        /// </summary>
+        private string? RestoreImage(Note note, string name, byte[]? bytes, string? current, TimecodeBase tb)
+        {
+            if (bytes == null || !NotesLayout.IsPlainName(name))
+            {
+                _pendingDeletes.Remove(name);
+                note.Image = name;
+                return null;
+            }
+            bool isCurrent = string.Equals(name, current, StringComparison.OrdinalIgnoreCase);
+            if (!isCurrent && UsedByOther(name, note) && !SameBytes(name, bytes))
+            {
+                // Another note took the name since: the bytes get a name of their own.
+                name = NotesLayout.ImageName(note, tb, TakenImages(note).Concat(current != null ? new[] { current } : new string[0]));
+            }
+            note.Image = name;
+            if (!SameBytes(name, bytes))
+            {
+                string? error = isCurrent ? OverwriteImage(note, bytes) : TryWriteImage(name, bytes);
+                if (error != null)
+                {
+                    if (!isCurrent) note.Image = null;
+                    return error;
+                }
+            }
+            _pendingDeletes.Remove(note.Image!);
+            return null;
+        }
+
+        /// <summary>True when the image file <paramref name="name"/> exists and holds exactly <paramref name="bytes"/>.</summary>
+        private bool SameBytes(string name, byte[] bytes)
+        {
+            string? file = ImageFile(name);
+            try
+            {
+                return file != null && File.Exists(file) && File.ReadAllBytes(file).SequenceEqual(bytes);
+            }
+            catch (Exception ex) when (IsFileError(ex))
+            {
+                Log.Warning("cannot read " + file + ": " + ex.Message);
+                return false;
             }
         }
 
@@ -1059,6 +1194,16 @@ namespace Retake.Core
             {
                 Log.Warning("cannot remove " + folder + ": " + ex.Message);
             }
+        }
+
+        /// <summary>A note as it was before a removal or a change, where it stood in the list and the bytes of its image then (null without them).</summary>
+        private sealed class UndoStep
+        {
+            public UndoStep(Note before, int index, byte[]? image, bool removed) { Before = before; Index = index; Image = image; Removed = removed; }
+            public Note Before { get; }
+            public int Index { get; }
+            public byte[]? Image { get; }
+            public bool Removed { get; }
         }
 
         /// <summary>One image file to rename for a rate change, with every note that names it (more than one in a hand-edited file).</summary>

@@ -177,6 +177,7 @@ namespace Retake.Views
             new[] { "Backspace", "Remove the region (empty field, while editing)" },
             new[] { "F2", "Edit the selected note" },
             new[] { "Delete", "Remove the selected note" },
+            new[] { "Ctrl+Z", "Undo the last removal or change of a note" },
             new[] { "↑  ↓", "Previous or next note" },
         };
 
