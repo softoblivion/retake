@@ -840,6 +840,67 @@ namespace Retake.Tests
             Check.False(File.Exists(c.Path_("promo_notes", "frames", "shared.png")), "the last user takes the file with it");
         }
 
+        [Test("session.new_bytes_for_an_image_never_overwrite_the_file_the_data_file_names")]
+        public static void NewImageBytesNeverOverwriteTheSavedFile(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.OpenUnknown();
+            string id = c.Session.AddNote(307, "FIX", "a", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            string frames = c.Path_("dummy_notes", "frames");
+            string saved = Path.Combine(frames, "0-00-12-07_FIX.png");
+            string dataFile = c.Path_("dummy_notes", "dummy_notes.txt");
+            string before = NotesTxt(c);
+            Region moved = Region.CreateRect(0.1, 0.1, 0.2, 0.2);
+            byte[] pngC = SessionCase.Png.Concat(new byte[] { (byte)'c' }).ToArray();
+            using (new FileStream(dataFile, FileMode.Open, FileAccess.Read, FileShare.Read)) // the data file cannot be replaced
+            {
+                Check.True(Check.Throws<SessionException>(() => c.Session.UpdateNote(id, region: moved, imagePng: PngB)).NotSaved);
+                Check.Equal(SessionCase.Png, File.ReadAllBytes(saved), "a region edit keeps the saved picture");
+                Check.True(Check.Throws<SessionException>(() => c.Session.MoveNote(id, 307, pngC)).NotSaved);
+                Check.Equal(SessionCase.Png, File.ReadAllBytes(saved), "new bytes on the same frame keep the saved picture");
+                c.Session.Close(); // the reviewer discards
+            }
+            Check.Equal(before, NotesTxt(c));
+            Check.Equal(new[] { "0-00-12-07_FIX.png" }, Fx.Names(frames), "the pictures of the dropped edits go");
+            SessionState data = c.Session.Open(video);
+            Check.Equal(SessionCase.Rect().ToText(), data.Notes[0].Region!.ToText(), "reopened: the old region");
+            Check.Equal(SessionCase.Png, File.ReadAllBytes(data.Notes[0].ImagePath!));
+
+            // a retry saves the new picture and drops the old one
+            using (new FileStream(dataFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                string reopened = data.Notes[0].Id;
+                Check.True(Check.Throws<SessionException>(() => c.Session.UpdateNote(reopened, region: moved, imagePng: PngB)).NotSaved);
+                Check.Equal(SessionCase.Png, File.ReadAllBytes(saved));
+            }
+            data = c.Session.Save();
+            Check.Equal(moved.ToText(), data.Notes[0].Region!.ToText(), "saved: the new region");
+            Check.Equal(PngB, File.ReadAllBytes(data.Notes[0].ImagePath!));
+            Check.Equal(new[] { data.Notes[0].Image! }, Fx.Names(frames));
+            Check.Contains("\t" + data.Notes[0].Image + "\n", NotesTxt(c));
+        }
+
+        [Test("session.new_bytes_for_a_shared_image_leave_the_other_note_its_picture")]
+        public static void NewBytesForASharedImage(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo();
+            Fx.WriteText(c.Path_("promo_notes", "promo_notes.txt"),
+                "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n"
+                + "0:00:12:07\tFIX\tone\trect 0.1,0.1 0.2,0.2\t0-00-12-07_FIX.png\n"
+                + "0:00:12:07\tFIX\ttwo\trect 0.1,0.1 0.2,0.2\t0-00-12-07_FIX.png\n");
+            string shared = c.Path_("promo_notes", "frames", "0-00-12-07_FIX.png");
+            Fx.WriteBytes(shared, SessionCase.Png);
+            SessionState data = c.Session.Open(video);
+            string one = data.Notes[0].Id, two = data.Notes[1].Id;
+            data = c.Session.UpdateNote(one, region: SessionCase.Rect(), imagePng: PngB);
+            Check.Equal(SessionCase.Png, File.ReadAllBytes(shared), "the other note keeps its picture");
+            Check.Equal("0-00-12-07_FIX.png", data.Notes.First(n => n.Id == two).Image);
+            NoteState edited = data.Notes.First(n => n.Id == one);
+            Check.Equal("0-00-12-07_FIX_2.png", edited.Image);
+            Check.Equal(PngB, File.ReadAllBytes(edited.ImagePath!));
+        }
+
         [Test("session.remove_note_needs_a_known_rate")]
         public static void RemoveNoteNeedsAKnownRate(TestEnv t)
         {

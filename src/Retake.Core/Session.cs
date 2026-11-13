@@ -49,6 +49,9 @@ namespace Retake.Core
         private readonly HashSet<string> _unwrittenImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         // Renames made for the write in progress: undone, newest first, when the write fails.
         private readonly List<Action> _undo = new List<Action>();
+        // New bytes of an image whose file kept its name: a failed write puts the old bytes back on disk and parks the new
+        // ones here, and the next write puts them in place again before it writes the data file.
+        private readonly Dictionary<Note, byte[]> _parkedBytes = new Dictionary<Note, byte[]>();
 
         /// <summary>Creates a session over the settings; <paramref name="onChange"/> receives the state after every successful or failed change.</summary>
         public Session(Settings settings, Action<SessionState> onChange)
@@ -77,6 +80,7 @@ namespace Retake.Core
             _unsaved = false;
             _pendingDeletes.Clear();
             _undo.Clear();
+            _parkedBytes.Clear();
         }
 
         private static bool IsFileError(Exception ex)
@@ -474,7 +478,9 @@ namespace Retake.Core
         /// Changes the text, region and / or kind of a note. <paramref name="region"/> replaces the region (a new region
         /// normally comes with a new image); <paramref name="clearRegion"/> removes the region and its image; neither keeps
         /// the region. A null <paramref name="text"/> keeps the text; a text that is empty after normalising is refused. A
-        /// new <paramref name="kind"/> renames the image of the note to the name of that kind. A call that changes nothing
+        /// new <paramref name="kind"/> renames the image of the note to the name of that kind. New image bytes replace the
+        /// file under the same name (put back when the data file cannot be written), or get a new name when another note
+        /// shares the file. A call that changes nothing
         /// writes nothing and publishes nothing. Throws <see cref="SessionException"/> for no open video, an unknown note,
         /// an unknown frame rate, an unknown kind, an empty text, an invalid region or a region on a general note.
         /// </summary>
@@ -534,7 +540,8 @@ namespace Retake.Core
                 }
                 else if (imageGiven)
                 {
-                    error = TryWriteImage(oldImage, imagePng!);
+                    // A file another note shares keeps its bytes for that note: the new bytes get a name of their own.
+                    error = UsedByOther(oldImage, note) ? RelocateImage(note, tb, imagePng) : OverwriteImage(note, imagePng!);
                 }
                 note.Region = newRegion;
                 if (newText != null) note.Text = newText;
@@ -766,6 +773,13 @@ namespace Retake.Core
                 return null;
             }
             string path = NotesLayout.NotesPathFor(_video);
+            foreach (KeyValuePair<Note, byte[]> parked in _parkedBytes.ToList())
+            {
+                _parkedBytes.Remove(parked.Key);
+                if (!_notes.Contains(parked.Key) || ImageFile(parked.Key.Image) == null) continue;
+                string? imageError = OverwriteImage(parked.Key, parked.Value);
+                if (imageError != null) Log.Warning("the new image of a note was not written again: " + imageError);
+            }
             try
             {
                 Paths.AtomicWriteText(path, BuildNotesFile().Render());
@@ -791,6 +805,7 @@ namespace Retake.Core
         {
             _undo.Clear();
             _unwrittenImages.Clear();
+            _parkedBytes.Clear();
             if (_pendingDeletes.Count == 0) return;
             foreach (string name in _pendingDeletes.ToList())
             {
@@ -853,8 +868,53 @@ namespace Retake.Core
         }
 
         /// <summary>
+        /// Writes new bytes over the image file of the note, which keeps its name. The old bytes are kept and put back when
+        /// the data file cannot be written (the new bytes are then parked for the next write), so the file on disk always
+        /// shows what the data file on disk describes. An old file that cannot be read is not overwritten: the bytes then
+        /// go under a new name. Returns an error sentence for a failed write, else null.
+        /// </summary>
+        private string? OverwriteImage(Note note, byte[] bytes)
+        {
+            string name = note.Image!;
+            string? file = ImageFile(name);
+            if (file == null) return "The image name is not valid";
+            byte[]? old = null;
+            try
+            {
+                if (File.Exists(file)) old = File.ReadAllBytes(file);
+            }
+            catch (Exception ex) when (IsFileError(ex))
+            {
+                Log.Warning("cannot read " + file + ": " + ex.Message);
+                string newName = NotesLayout.ImageName(note, Tb()!, TakenImages(note).Concat(new[] { name }));
+                string? error = TryWriteImage(newName, bytes);
+                if (error != null) return error;
+                note.Image = newName;
+                if (!UsedByOther(name, note)) _pendingDeletes.Add(name);
+                return null;
+            }
+            string? writeError = TryWriteImage(name, bytes);
+            if (writeError != null) return writeError;
+            _parkedBytes.Remove(note);
+            if (old != null)
+            {
+                _undo.Add(() =>
+                {
+                    try
+                    {
+                        Paths.AtomicWriteBytes(file, old);
+                        _parkedBytes[note] = bytes;
+                    }
+                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot put the old bytes back into " + file + ": " + ex.Message); }
+                });
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Gives the image of the note the name its current kind and frame call for (names of other notes taken): the bytes
-        /// are written under the new name and the old file deleted after the data file is written, or, without bytes, the
+        /// are written under the new name and the old file deleted after the data file is written (the same name: see
+        /// <see cref="OverwriteImage"/>), or, without bytes, the
         /// file is renamed (undone when the data file cannot be written). A failed rename is logged and the old name stays.
         /// Returns an error sentence for a failed write, else null.
         /// </summary>
@@ -866,6 +926,8 @@ namespace Retake.Core
             bool shared = UsedByOther(old, note);
             if (bytes != null && bytes.Length > 0)
             {
+                // The name of a shared file is taken by the other note, so the same name is never shared.
+                if (sameFile) return OverwriteImage(note, bytes);
                 string? error = TryWriteImage(newName, bytes);
                 if (error != null) return error;
                 note.Image = newName;
