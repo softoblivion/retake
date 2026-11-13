@@ -90,6 +90,8 @@ namespace Retake.Views
         bool playing;
         double speed = 1;
         string? selectedId;
+        // A note picked in the list or on the timeline while a save ran (id, seek); applied when the save ends.
+        KeyValuePair<string?, bool>? pendingPick;
         Edit? edit;
         bool starting, saving, closing, closed, reverseHeld, freezing, packing, failing;
         // A Discard of notes that could not be saved covers only the move it was given for.

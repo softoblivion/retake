@@ -19,9 +19,18 @@ namespace Retake.Views
 
         NoteState? Note(string? id) => id == null ? null : state.Notes.FirstOrDefault(n => n.Id == id);
 
-        /// <summary>Selects a note (or nothing); a frame note with <paramref name="seek"/> moves the playhead to its frame.</summary>
+        /// <summary>
+        /// Selects a note (or nothing); a frame note with <paramref name="seek"/> moves the playhead to its frame. A pick
+        /// while a note is saved (its frame image is taken) waits for the save and is applied after it
+        /// (<see cref="ApplyPick"/>), unless the editor comes back.
+        /// </summary>
         void Select(string? id, bool seek)
         {
+            if (saving)
+            {
+                pendingPick = new KeyValuePair<string?, bool>(id, seek);
+                return;
+            }
             if (edit != null) return;
             selectedId = id;
             Notes.Select(id);
@@ -33,6 +42,15 @@ namespace Retake.Views
                 player.SeekFrame(n.Frame.Value);
             }
             UpdateRegionDisplay();
+        }
+
+        /// <summary>After a save: the note picked while it ran, when it is still there, else <paramref name="id"/>.</summary>
+        void ApplyPick(string? id, bool seek)
+        {
+            KeyValuePair<string?, bool>? pick = pendingPick;
+            pendingPick = null;
+            if (pick != null && (pick.Value.Key == null || Note(pick.Value.Key) != null)) Select(pick.Value.Key, pick.Value.Value);
+            else Select(id, seek);
         }
 
         /// <summary>↑ / ↓: the previous or next note of the list; without a selection the nearest frame note before / at or after the playhead.</summary>
@@ -346,10 +364,12 @@ namespace Retake.Views
                 saving = false;
                 if (reopen != null)
                 {
+                    // The editor is back with the typed text: a pick made during the save is dropped with it.
+                    pendingPick = null;
                     edit = reopen;
                     BeginEdit(text);
                 }
-                else Select(selectedId, false);
+                else ApplyPick(selectedId, false);
                 Trace();
             }
         }
@@ -473,7 +493,7 @@ namespace Retake.Views
             finally
             {
                 saving = false;
-                Select(selectedId, true);
+                ApplyPick(selectedId, true);
                 Trace();
             }
         }
