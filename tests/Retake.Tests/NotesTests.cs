@@ -617,5 +617,20 @@ namespace Retake.Tests
             Check.False(File.Exists(t.Combine("promo_notes.txt")));
             Check.False(NotesLayout.MigrateLayout(video), "second call moves nothing");
         }
+
+        [Test("notes.migrate_layout_moves_only_the_images_of_a_legacy_data_file")]
+        public static void MigrateLayoutLeavesForeignPngs(TestEnv t)
+        {
+            string video = MakeVideo(t);
+            string folder = t.Combine("promo_notes");
+            Fx.WriteBytes(Path.Combine(folder, "ref_logo.png"), new byte[] { 7 });
+            Check.False(NotesLayout.MigrateLayout(video), "pictures without a 1.0 data file are not notes images");
+            Check.Equal(new[] { "ref_logo.png" }, Fx.Names(folder));
+            Fx.WriteText(t.Combine("promo_notes.txt"), Data);
+            Fx.WriteBytes(Path.Combine(folder, "0-00-01-00_FIX.png"), new byte[] { 1 });
+            Check.True(NotesLayout.MigrateLayout(video));
+            Check.Equal(new[] { "frames", "promo_notes.txt", "ref_logo.png" }, Fx.Names(folder), "the picture no note names stays where it was");
+            Check.Equal(new[] { "0-00-01-00_FIX.png" }, Fx.Names(Path.Combine(folder, "frames")));
+        }
     }
 }

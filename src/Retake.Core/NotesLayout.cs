@@ -195,10 +195,12 @@ namespace Retake.Core
         }
 
         /// <summary>
-        /// Moves a 1.0 layout into the notes folder: images into <c>frames\</c> first, then the data file. True when
-        /// something moved. Every step is one rename on the same volume, so a crash midway leaves readable files and the
-        /// next call finishes the move. A legacy data file that does not parse or names another video is left alone (the
-        /// caller reports it). Throws <see cref="NotesLayoutException"/> when a move fails.
+        /// Moves a 1.0 layout into the notes folder: the images of its notes into <c>frames\</c> first, then the data
+        /// file. True when something moved. Every step is one rename on the same volume, so a crash midway leaves
+        /// readable files and the next call finishes the move. Without a 1.0 data file nothing moves; a PNG that no note
+        /// names and that has no image name of the app stays where it is. A legacy data file that does not parse or
+        /// names another video is left alone (the caller reports it). Throws <see cref="NotesLayoutException"/> when a
+        /// move fails.
         /// </summary>
         public static bool MigrateLayout(string video)
         {
@@ -206,22 +208,27 @@ namespace Retake.Core
             string legacy = LegacyNotesPathFor(video);
             string target = NotesPathFor(video);
             string videoName = Path.GetFileName(video);
-            List<string> loose = LooseImages(folder);
-            bool hasLegacy = File.Exists(legacy);
-            if (!hasLegacy && loose.Count == 0) return false;
+            // Without a 1.0 data file there is no 1.0 layout: pictures in the folder are the reviewer's own.
+            if (!File.Exists(legacy)) return false;
             if (Exists(target))
             {
                 Log.Warning("1.0 notes files of " + videoName + " are left in place: " + target + " already exists");
                 return false;
             }
-            if (hasLegacy)
+            NotesFile? legacyNf = ReadNotesFile(legacy);
+            if (legacyNf == null || !SameName(legacyNf.Source, videoName))
             {
-                NotesFile? legacyNf = ReadNotesFile(legacy);
-                if (legacyNf == null || !SameName(legacyNf.Source, videoName))
-                {
-                    Log.Info(legacy + " is not moved: it is not a notes file of " + videoName);
-                    return false;
-                }
+                Log.Info(legacy + " is not moved: it is not a notes file of " + videoName);
+                return false;
+            }
+            // Only the images of the notes move (named by the data file, or in the app's image-name form).
+            var named = new HashSet<string>(legacyNf.Notes.Where(n => IsPlainName(n.Image)).Select(n => n.Image!), StringComparer.OrdinalIgnoreCase);
+            var loose = new List<string>();
+            foreach (string image in LooseImages(folder))
+            {
+                string name = Path.GetFileName(image);
+                if (named.Contains(name) || AppImageName.IsMatch(name)) loose.Add(image);
+                else Log.Info(image + " is left in place: no note names it");
             }
             int moved = 0;
             try
@@ -242,19 +249,16 @@ namespace Retake.Core
                         moved++;
                     }
                 }
-                if (hasLegacy)
-                {
-                    Directory.CreateDirectory(folder);
-                    NativeFile.Replace(legacy, target);
-                }
+                Directory.CreateDirectory(folder);
+                NativeFile.Replace(legacy, target);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 Log.Error("moving the notes of " + video + " into " + folder + " failed: " + ex.Message);
                 throw new NotesLayoutException("The notes of " + videoName + " could not be moved into the " + Path.GetFileName(folder) + " folder.", ex);
             }
-            Log.Info("moved the notes of " + videoName + " into " + folder + " (data file: " + (hasLegacy ? "moved" : "none") + ", images: " + moved + ")");
-            return hasLegacy || moved > 0;
+            Log.Info("moved the notes of " + videoName + " into " + folder + " (data file: moved, images: " + moved + ")");
+            return true;
         }
 
         /// <summary>The note and frame image counts from the data file of the video (new layout, else 1.0); null when there is none, it cannot be read or it names another video.</summary>

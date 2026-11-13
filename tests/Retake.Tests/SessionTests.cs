@@ -516,8 +516,9 @@ namespace Retake.Tests
             Fx.WriteBytes(c.Path_("other_notes", "a.png"), SessionCase.Png);
             SessionState data = c.Session.Open(other);
             Check.Equal(0, data.Notes.Count);
-            Check.True(File.Exists(c.Path_("other_notes", "frames", "a.png")));
-            Check.False(File.Exists(c.Path_("other_notes", "a.png")));
+            // without a 1.0 data file a picture in the folder is the reviewer's own and stays where it is
+            Check.True(File.Exists(c.Path_("other_notes", "a.png")));
+            Check.False(Directory.Exists(c.Path_("other_notes", "frames")));
         }
 
         [Test("test_core_session.LayoutTest.test_interrupted_migration_is_finished_on_the_next_open")]
