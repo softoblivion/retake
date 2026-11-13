@@ -34,7 +34,7 @@ class Updater {
         internal const string Checking="Checking for updates…",Offline="No internet connection",Limit="GitHub limited the request, try again later",
             NoChecksum="The release has no checksum file",Damaged="The downloaded file is damaged (checksum mismatch)",BadVersion="Could not read the release version",
             NoRelease="No release has been published yet",SaveFailed="Could not save the update file",StartFailed="Could not start the update helper",
-            NotReady="The update is not ready to install",Missing="The downloaded update file is missing",Failed="The update check failed";
+            NotReady="The update is not ready to install",PackagedOnly="The update can be installed only by the packaged ",Missing="The downloaded update file is missing",Failed="The update check failed";
     }
     internal Action<UpdateStatus> OnStatus=null; internal Action<string> OnToast=null; internal Func<bool> AutoDownload=null; // read once per check that finds a newer release
     internal Func<string,string,bool> Spawn=DefaultSpawn; // (exe, arguments) -> started
@@ -95,8 +95,11 @@ class Updater {
     long Now() { return (long)(DateTime.UtcNow-new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)).TotalSeconds; }
     void Checked() { lock(gate)status.CheckedAt=Now(); }
 
+    // A check started while an update is Ready keeps that update when the check fails on the network: the verified
+    // file is still on disk, so "ready to install" stays instead of an error.
     void CheckCore() {
-        lock(gate) { release=null; expectedSha=null; }
+        Release keep=null; string keepSha=null;
+        lock(gate) { if(status.Stage==UpdateStage.Ready) { keep=release; keepSha=expectedSha; } release=null; expectedSha=null; }
         Set(UpdateStage.Checking,Messages.Checking,0);
         try {
             Release found=Resolve();
@@ -112,8 +115,14 @@ class Updater {
             Func<bool> auto=AutoDownload; if(auto!=null&&auto())DownloadCore();
         }
         catch(UpdateError e) { Set(UpdateStage.Error,e.Message,0); }
-        catch(NetException e) { Set(UpdateStage.Error,MessageFor(e),0); }
+        catch(NetException e) { if(!KeepReady(keep,keepSha))Set(UpdateStage.Error,MessageFor(e),0); }
         catch(Exception) { Set(UpdateStage.Error,Messages.Failed,0); }
+    }
+    bool KeepReady(Release keep,string sha) {
+        if(keep==null||sha==null)return false;
+        try { if(!File.Exists(FileFor(keep.Version)))return false; } catch(Exception) { return false; }
+        lock(gate) { release=keep; expectedSha=sha; }
+        Set(UpdateStage.Ready,ReadyMessage(keep.Version),1); return true;
     }
     Release Resolve() {
         string overrideUrl=string.IsNullOrEmpty(config.ReleaseUrlVariable)?null:Environment.GetEnvironmentVariable(config.ReleaseUrlVariable);
@@ -221,7 +230,7 @@ class Updater {
         Release r; string sha; UpdateStage stage;
         lock(gate) { r=release; sha=expectedSha; stage=status.Stage; }
         if(stage!=UpdateStage.Ready||r==null||sha==null) { Set(UpdateStage.Error,Messages.NotReady,0); return false; }
-        if(string.IsNullOrEmpty(config.ExePath)) { Set(UpdateStage.Error,Messages.NotReady,0); return false; }
+        if(string.IsNullOrEmpty(config.ExePath)) { Set(UpdateStage.Error,Messages.PackagedOnly+config.AssetName,0); return false; }
         string file=FileFor(r.Version);
         if(!File.Exists(file)) { Set(UpdateStage.Error,Messages.Missing,0); return false; }
         try { if(Checksums.Sha256File(file)!=sha) { TryDelete(file); Set(UpdateStage.Error,Messages.Damaged,0); return false; } }
@@ -264,8 +273,10 @@ class Updater {
                 if(Directory.Exists(config.UpdatesDir)) foreach(string path in Directory.GetFiles(config.UpdatesDir,config.Stem+"-*")) {
                     string name=Path.GetFileName(path); if(name.EndsWith(".part"))name=name.Substring(0,name.Length-5);
                     if(!name.EndsWith(config.Extension,StringComparison.OrdinalIgnoreCase))continue;
-                    string version=name.Substring(config.Stem.Length+1,name.Length-config.Stem.Length-1-config.Extension.Length);
-                    if(SemVer.IsNewer(version,config.Version))continue;
+                    int length=name.Length-config.Stem.Length-1-config.Extension.Length;
+                    if(length<1)continue; // "<Stem>-<Extension>": no version, not a download of this updater
+                    string version=name.Substring(config.Stem.Length+1,length);
+                    if(SemVer.Parse(version)==null||SemVer.IsNewer(version,config.Version))continue; // only "<Stem>-<version><Extension>" downloads
                     if(!TryDelete(path))pending=true;
                 }
             } catch { pending=true; }
