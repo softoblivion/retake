@@ -162,8 +162,9 @@ namespace Retake.Views
             new[] { "Home  End", "First or last frame" },
             new[] { "Ctrl+G", "Go to a timecode or a frame number" },
             new[] { "J", "Step back while held" },
-            new[] { "K", "Pause" },
-            new[] { "L", "Play; again for 2×, 4×, 8×" },
+            new[] { "K", "Pause; the speed goes back to 1×" },
+            new[] { "L", "Play at 1×; again for 2×, 4×, 8×" },
+            new[] { "[  ]", "Slower or faster: 0.25× 0.5× 1× 1.5× 2× 4× 8×; the next play uses it" },
         };
 
         public static readonly string[][] Notes =

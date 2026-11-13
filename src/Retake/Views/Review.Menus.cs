@@ -103,6 +103,20 @@ namespace Retake.Views
             return menu;
         }
 
+        /// <summary>The speed ladder under the speed control, the current step checked; a pick is the next play's speed.</summary>
+        PopMenu SpeedMenu()
+        {
+            var menu = new PopMenu(120);
+            int current = SpeedLadder.IndexOf(speed);
+            for (int i = 0; i < SpeedLadder.Steps.Length; i++)
+            {
+                double s = SpeedLadder.Steps[i];
+                MenuEntry e = menu.Add(SpeedLadder.Caption(s), i == current ? Icons.Check : "", null, null, () => ChooseSpeed(s));
+                AutomationProperties.SetAutomationId(e, "Speed-" + s.ToString(CultureInfo.InvariantCulture));
+            }
+            return menu;
+        }
+
         PopMenu RecentList()
         {
             var menu = new PopMenu(380);

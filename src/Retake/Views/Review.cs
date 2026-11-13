@@ -55,7 +55,6 @@ namespace Retake.Views
 
         public const double PanelWidth = 320, Gap = 10, Side = 12, CardRadius = 14;
         static readonly string[] VideoExtensions = { ".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mxf", ".mpg", ".mpeg", ".ts", ".m2ts", ".mts", ".wmv", ".flv", ".ogv", ".3gp" };
-        static readonly double[] Speeds = { 1, 2, 4, 8 };
 
         readonly ShellWindow window;
         readonly Settings settings;
@@ -276,7 +275,8 @@ namespace Retake.Views
             Transport.Back.Click += (s, e) => player?.Step(-1);
             Transport.Forward.Click += (s, e) => player?.Step(1);
             Transport.PlayPause.Click += (s, e) => TogglePlay();
-            Transport.SpeedButton.Click += (s, e) => CycleSpeed();
+            Transport.SpeedButton.Click += (s, e) => OpenMenu(SpeedMenu(), Transport.SpeedButton);
+            Transport.SpeedButton.MouseWheel += (s, e) => { e.Handled = true; StepSpeed(e.Delta > 0 ? 1 : -1); };
             Transport.Time.Copied += CopyText;
             Transport.Duration.Copied += CopyText;
             Transport.FrameNumber.Copied += CopyText;

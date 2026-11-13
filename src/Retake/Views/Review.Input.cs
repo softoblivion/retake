@@ -30,12 +30,15 @@ namespace Retake.Views
             else player.Play(speed);
         }
 
-        void CycleSpeed()
+        /// <summary>Chooses a speed: the next play uses it, and a running playback takes it at once.</summary>
+        void ChooseSpeed(double s)
         {
-            int i = Array.IndexOf(Speeds, speed);
-            SetSpeed(Speeds[(i + 1) % Speeds.Length]);
-            if (playing) player?.Play(speed);
+            SetSpeed(s);
+            if (playing && videoLoaded) player?.Play(speed);
+            Trace();
         }
+
+        void StepSpeed(int direction) => ChooseSpeed(SpeedLadder.Step(speed, direction));
 
         void SetSpeed(double s)
         {
@@ -166,10 +169,11 @@ namespace Retake.Views
                 case Key.L:
                     e.Handled = true;
                     if (e.IsRepeat) break;
-                    if (playing) { int i = Array.IndexOf(Speeds, speed); SetSpeed(Speeds[Math.Min(Speeds.Length - 1, i + 1)]); }
-                    else SetSpeed(1);
+                    SetSpeed(playing ? SpeedLadder.ShuttleUp(speed) : 1);
                     player.Play(speed);
                     break;
+                case Key.OemOpenBrackets: if (mods == ModifierKeys.None) { e.Handled = true; StepSpeed(-1); } break;
+                case Key.OemCloseBrackets: if (mods == ModifierKeys.None) { e.Handled = true; StepSpeed(1); } break;
             }
         }
 

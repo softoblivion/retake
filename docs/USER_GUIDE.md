@@ -76,8 +76,11 @@ whole video and its frame; a note that becomes general loses its mark.
 ### Frame-exact playback
 
 Every seek and step lands on an exact frame, whatever the codec: the arrow keys step one frame, `Shift` + arrows
-ten, `Home` / `End` go to the first and last frame. `J` steps back while held, `K` pauses, `L` plays and, pressed
-again, plays faster (2x, 4x, 8x). `Ctrl+G` opens a field under the timecode: type a timecode (`0:00:12:07`,
+ten, `Home` / `End` go to the first and last frame. `J` steps back while held, `K` pauses and sets the speed back to
+1x, `L` plays at 1x and, pressed again, plays faster (2x, 4x, 8x). `[` and `]` step the speed slower and faster
+through 0.25x, 0.5x, 1x, 1.5x, 2x, 4x and 8x, while playing or paused: the next play uses the speed shown on the speed
+control. A click on the speed control lists these steps with the current one checked; the mouse wheel over it steps
+too. A new video starts at 1x. `Ctrl+G` opens a field under the timecode: type a timecode (`0:00:12:07`,
 `12:07`; drop-frame timecodes as the app shows them, `0;01;00;02`) or a frame number (`307`, `frame 307`) and press
 `Enter` to go there; while the frame rate is unknown it takes the time as shown (`0:12.280`) or a frame number. A
 timecode that drop-frame skips, or one past the end, is refused with a line that says why. The row under the video holds the frame steps, play, the speed, the current
@@ -156,7 +159,8 @@ The keys work when no text field has focus; `?` shows them in the app.
 | `Shift+←` `Shift+→` | Ten frames |
 | `Home` `End` | First / last frame |
 | `Ctrl+G` | Go to a timecode or a frame number |
-| `J` `K` `L` | Step back while held / pause / play, again for 2x, 4x, 8x |
+| `J` `K` `L` | Step back while held / pause, speed back to 1x / play at 1x, again for 2x, 4x, 8x |
+| `[` `]` | Speed one step slower / faster (0.25x to 8x); the next play uses it |
 | `1` `2` `3` | Start a FIX / ADD / REMOVE note at the current frame (pauses first); then drag on the video to mark a region, or click to put a point |
 | `4` | Start a general note, about the whole video |
 | `5` `6` | Start a LIKE / DISLIKE note at the current frame |

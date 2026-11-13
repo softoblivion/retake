@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Retake.Design;
 using Retake.Design.Controls;
+using Retake.Player;
 
 namespace Retake.Views
 {
@@ -259,7 +260,7 @@ namespace Retake.Views
 
         public void SetSpeed(double speed)
         {
-            SpeedButton.Caption = speed.ToString("0.##", CultureInfo.InvariantCulture) + "×";
+            SpeedButton.Caption = SpeedLadder.Caption(speed);
         }
 
         /// <summary>The time display; empty strings hide it (no video).</summary>

@@ -46,7 +46,7 @@ namespace Retake.Views
         // Transport.
         public const string BackTip = "Previous frame (←)", ForwardTip = "Next frame (→)";
         public const string PlayTip = "Play (Space)", PauseTip = "Pause (Space)";
-        public const string SpeedTip = "Playback speed (L)";
+        public const string SpeedTip = "Playback speed for the next play · [ slower · ] faster · wheel steps";
         public const string TimecodeTip = "Copy the timecode", DurationTip = "Copy the duration", FrameTip = "Copy the frame number";
         public const string GoToName = "Go to", GoToPlaceholder = "Timecode or frame", GoToTip = "Go to a timecode or a frame number (Ctrl+G)";
         public const string GoToHint = "A timecode or a frame number as shown, then Enter";

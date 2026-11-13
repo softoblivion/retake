@@ -16,6 +16,44 @@ namespace Retake.Tests
     {
         static readonly double[] ExactRates = { 24000.0 / 1001, 24, 25, 30000.0 / 1001, 50, 60000.0 / 1001, 60 };
 
+        [Test("views.speed.ladder_steps_and_holds_at_both_ends")]
+        public static void SpeedLadderSteps(TestEnv t)
+        {
+            double[] ladder = { 0.25, 0.5, 1, 1.5, 2, 4, 8 };
+            Check.Equal(string.Join(" ", ladder), string.Join(" ", SpeedLadder.Steps));
+            for (int i = 0; i < ladder.Length; i++)
+            {
+                Check.Equal(i, SpeedLadder.IndexOf(ladder[i]));
+                Check.Equal(ladder[Math.Min(ladder.Length - 1, i + 1)], SpeedLadder.Step(ladder[i], 1), "faster from " + ladder[i]);
+                Check.Equal(ladder[Math.Max(0, i - 1)], SpeedLadder.Step(ladder[i], -1), "slower from " + ladder[i]);
+            }
+            // The ends hold however often the key is pressed.
+            double s = 1;
+            for (int n = 0; n < 20; n++) s = SpeedLadder.Step(s, 1);
+            Check.Equal(8.0, s);
+            for (int n = 0; n < 20; n++) s = SpeedLadder.Step(s, -1);
+            Check.Equal(0.25, s);
+            // A speed off the ladder steps from its nearest step.
+            Check.Equal(5, SpeedLadder.IndexOf(3.1), "3.1 counts as 4");
+            Check.Equal(2.0, SpeedLadder.Step(3.1, -1));
+            Check.Equal(0.25, SpeedLadder.Step(0.1, -1));
+            Check.Equal(8.0, SpeedLadder.Step(16, 1));
+            Check.Equal("0.25× 0.5× 1× 1.5× 2× 4× 8×", string.Join(" ", Array.ConvertAll(ladder, SpeedLadder.Caption)));
+        }
+
+        [Test("views.speed.l_goes_up_the_shuttle_steps_as_before")]
+        public static void SpeedShuttle(TestEnv t)
+        {
+            // L while playing: 1 → 2 → 4 → 8 and 8 holds; from a slow or an in-between ladder step to the next shuttle step.
+            Check.Equal(2.0, SpeedLadder.ShuttleUp(1));
+            Check.Equal(4.0, SpeedLadder.ShuttleUp(2));
+            Check.Equal(8.0, SpeedLadder.ShuttleUp(4));
+            Check.Equal(8.0, SpeedLadder.ShuttleUp(8));
+            Check.Equal(1.0, SpeedLadder.ShuttleUp(0.25));
+            Check.Equal(1.0, SpeedLadder.ShuttleUp(0.5));
+            Check.Equal(2.0, SpeedLadder.ShuttleUp(1.5));
+        }
+
         [Test("views.frames.seek_target_is_frame_start")]
         public static void SeekTargetIsFrameStart(TestEnv t)
         {
