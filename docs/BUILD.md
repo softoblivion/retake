@@ -145,7 +145,7 @@ the 1.x updates folder hand-over and its tests, and the hand-off test script. `b
 
 ## 7. Release
 
-1. `docs\releases\vX.Y.Z.md` in the layout of `docs\releases\README.md`, and the version in `src\Retake\Version.cs`.
+1. `docs\releases\vX.Y.Z.md` in the layout of the earlier release notes, and the version in `src\Retake\Version.cs`.
 2. `build\build.ps1` on a clean working tree; for a release that touches the update path, `build\e2e-update.ps1`
    (and `build\e2e-handoff.ps1` while 1.4.1 copies are expected to update).
 3. Commit `Release vX.Y.Z`, tag `vX.Y.Z` on `dev`.
