@@ -52,9 +52,16 @@ namespace Retake.Core
         // New bytes of an image whose file kept its name: a failed write puts the old bytes back on disk and parks the new
         // ones here, and the next write puts them in place again before it writes the data file.
         private readonly Dictionary<Note, byte[]> _parkedBytes = new Dictionary<Note, byte[]>();
-        // The reviewer's undo history, newest last: each removed or changed note as it was, with its image bytes.
+        // The reviewer's undo history, newest last: each removed or changed note as it was, with the bytes of its image
+        // when the change touched the image file (an equal earlier array is shared). At most HistoryDepth steps and
+        // HistoryBytesCap bytes of distinct image arrays; the oldest steps go first, the newest always stays.
         private readonly List<UndoStep> _history = new List<UndoStep>();
         private const int HistoryDepth = 100;
+        /// <summary>The most image bytes the undo history keeps (256 MB).</summary>
+        public const long HistoryBytesCap = 256L * 1024 * 1024;
+        // Inside OneStep: the step the group recorded, so the group's later calls add no step of their own.
+        private bool _groupOpen;
+        private UndoStep? _groupStep;
 
         /// <summary>Creates a session over the settings; <paramref name="onChange"/> receives the state after every successful or failed change.</summary>
         public Session(Settings settings, Action<SessionState> onChange)
@@ -529,7 +536,8 @@ namespace Retake.Core
                 bool imageGiven = newRegion != null && imagePng != null && imagePng.Length > 0;
                 if (!kindChanged && !textChanged && !regionChanged && !imageGiven) return GetState();
                 if (imageGiven && note.Image != null && !NotesLayout.IsPlainName(note.Image)) throw new SessionException("The image name is not valid");
-                Remember(note, false);
+                // A change of the text alone leaves the image file as it is: no bytes are read for it.
+                Remember(note, false, note.Image != null && (kindChanged || regionChanged || imageGiven));
 
                 string? oldImage = note.Image;
                 string? error = null;
@@ -591,7 +599,7 @@ namespace Retake.Core
                 if (!frame.HasValue || note.IsGeneral)
                 {
                     if (frame == note.Frame) return GetState();
-                    Remember(note, false);
+                    Remember(note, false, note.Image != null);
                     if (note.Image != null) _pendingDeletes.Add(note.Image);
                     note.Frame = frame;
                     note.Region = null;
@@ -601,7 +609,7 @@ namespace Retake.Core
                 bool hasImage = NotesLayout.IsPlainName(note.Image);
                 bool hasBytes = hasImage && imagePng != null && imagePng.Length > 0;
                 if (frame == note.Frame && !hasBytes) return GetState();
-                Remember(note, false);
+                Remember(note, false, hasImage);
                 note.Frame = frame;
                 string? imageError = hasImage ? RelocateImage(note, tb, hasBytes ? imagePng : null) : null;
                 string? writeError = WriteNotes();
@@ -617,7 +625,7 @@ namespace Retake.Core
                 RequireVideo();
                 Note note = Find(noteId);
                 if (Tb() == null) throw new SessionException(RateUnknownEditing);
-                Remember(note, true);
+                Remember(note, true, note.Image != null);
                 _notes.Remove(note);
                 if (note.Image != null) _pendingDeletes.Add(note.Image);
                 Finish(WriteNotes());
@@ -625,8 +633,9 @@ namespace Retake.Core
         }
 
         /// <summary>
-        /// Undoes the newest removal or change of a note (the history holds the last 100 and is cleared by Open, Close and
-        /// a rate change that renames the images): a removed note comes back with its id (a new one when another note
+        /// Undoes the newest removal or change of a note (the history holds the last 100, within
+        /// <see cref="HistoryBytesCap"/> of image bytes, and is cleared by Open, Close and a rate change that renames the
+        /// images; an edit saved through <see cref="OneStep"/> is one step): a removed note comes back with its id (a new one when another note
         /// took it) and its order, a changed one gets its frame, kind, text, region and image back. The image file gets
         /// the bytes it had then, under its old name, or under a new name when another note now names a file of other
         /// bytes; an image that the undone change gave the note is deleted after the data file is written. An undo is not
@@ -669,26 +678,116 @@ namespace Retake.Core
             }
         }
 
-        /// <summary>Records a note as it is before a removal or a change, with the bytes its image has for the session.</summary>
-        private void Remember(Note note, bool removed)
+        /// <summary>
+        /// Runs <paramref name="calls"/> (changes of one note) as one step of the undo history: the first change records
+        /// the note as it was, the later ones record nothing, so one Undo reverts them all.
+        /// </summary>
+        public T OneStep<T>(Func<T> calls)
         {
-            byte[]? bytes;
-            if (!_parkedBytes.TryGetValue(note, out bytes))
+            lock (_lock)
             {
-                bytes = null;
-                string? file = ImageFile(note.Image);
+                if (_groupOpen) return calls();
+                _groupOpen = true;
+                _groupStep = null;
                 try
                 {
-                    if (file != null && File.Exists(file)) bytes = File.ReadAllBytes(file);
+                    return calls();
                 }
-                catch (Exception ex) when (IsFileError(ex))
+                finally
                 {
-                    Log.Warning("cannot read " + file + " for the undo history: " + ex.Message);
+                    _groupOpen = false;
+                    _groupStep = null;
                 }
             }
+        }
+
+        /// <summary>The bytes of the distinct image arrays the undo history holds (at most <see cref="HistoryBytesCap"/>).</summary>
+        public long HistoryBytes
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return DistinctImageBytes();
+                }
+            }
+        }
+
+        /// <summary>The steps of the undo history.</summary>
+        public int HistoryCount
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _history.Count;
+                }
+            }
+        }
+
+        private long DistinctImageBytes()
+        {
+            var seen = new HashSet<byte[]>(new ReferenceComparer());
+            long total = 0;
+            foreach (UndoStep step in _history)
+            {
+                if (step.Image != null && seen.Add(step.Image)) total += step.Image.LongLength;
+            }
+            return total;
+        }
+
+        /// <summary>
+        /// Records a note as it is before a removal or a change. The bytes of its image are kept only when the change
+        /// touches the image file (<paramref name="touchesImage"/>): a step that leaves the file alone finds it as it was
+        /// when it is undone, since the history is undone newest first. Bytes parked by a failed write are always kept
+        /// (they are in memory already). Inside <see cref="OneStep"/> only the first change records a step; a later change
+        /// that touches the image gives that step the bytes, which are still those from before the group.
+        /// </summary>
+        private void Remember(Note note, bool removed, bool touchesImage)
+        {
+            if (_groupOpen && _groupStep != null && _groupStep.Before.Id == note.Id && !_groupStep.Removed)
+            {
+                if (_groupStep.Image == null && touchesImage) _groupStep.Image = ImageBytes(note);
+                return;
+            }
+            byte[]? bytes;
+            if (!_parkedBytes.TryGetValue(note, out bytes)) bytes = touchesImage ? ImageBytes(note) : null;
             var copy = new Note(note.Id, note.Frame, note.Kind, note.Text) { Region = note.Region, Image = note.Image, Order = note.Order };
-            _history.Add(new UndoStep(copy, _notes.IndexOf(note), bytes, removed));
+            var step = new UndoStep(copy, _notes.IndexOf(note), bytes, removed);
+            _history.Add(step);
+            if (_groupOpen) _groupStep = step;
             if (_history.Count > HistoryDepth) _history.RemoveAt(0);
+            while (_history.Count > 1 && DistinctImageBytes() > HistoryBytesCap) _history.RemoveAt(0);
+        }
+
+        /// <summary>The bytes of the note's image file, the array of an earlier step when the bytes are equal; null without a file.</summary>
+        private byte[]? ImageBytes(Note note)
+        {
+            string? file = ImageFile(note.Image);
+            byte[] bytes;
+            try
+            {
+                if (file == null || !File.Exists(file)) return null;
+                bytes = File.ReadAllBytes(file);
+            }
+            catch (Exception ex) when (IsFileError(ex))
+            {
+                Log.Warning("cannot read " + file + " for the undo history: " + ex.Message);
+                return null;
+            }
+            for (int i = _history.Count - 1; i >= 0; i--)
+            {
+                byte[]? earlier = _history[i].Image;
+                if (earlier != null && earlier.Length == bytes.Length && earlier.SequenceEqual(bytes)) return earlier;
+            }
+            return bytes;
+        }
+
+        private sealed class ReferenceComparer : IEqualityComparer<byte[]>
+        {
+            public bool Equals(byte[]? x, byte[]? y) => ReferenceEquals(x, y);
+
+            public int GetHashCode(byte[] obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
         }
 
         /// <summary>
@@ -1007,9 +1106,11 @@ namespace Retake.Core
 
         /// <summary>
         /// Writes new bytes over the image file of the note, which keeps its name. The old bytes are kept and put back when
-        /// the data file cannot be written (the new bytes are then parked for the next write), so the file on disk always
-        /// shows what the data file on disk describes. An old file that cannot be read is not overwritten: the bytes then
-        /// go under a new name. Returns an error sentence for a failed write, else null.
+        /// the data file cannot be written (the new bytes are then parked for the next write), so after a failed write the
+        /// file on disk shows what the data file on disk describes. The new bytes are on disk before the data file is
+        /// written: a process that ends between the two leaves the new picture and loses the old one. An old file that
+        /// cannot be read is not overwritten: the bytes then go under a new name. Returns an error sentence for a failed
+        /// write, else null.
         /// </summary>
         private string? OverwriteImage(Note note, byte[] bytes)
         {
@@ -1205,7 +1306,7 @@ namespace Retake.Core
             public UndoStep(Note before, int index, byte[]? image, bool removed) { Before = before; Index = index; Image = image; Removed = removed; }
             public Note Before { get; }
             public int Index { get; }
-            public byte[]? Image { get; }
+            public byte[]? Image { get; set; }
             public bool Removed { get; }
         }
 

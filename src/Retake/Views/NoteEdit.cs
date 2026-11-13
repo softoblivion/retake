@@ -6,7 +6,7 @@ namespace Retake.Views
     /// The save of an edit of an existing note as session calls, without the views: the place first (a note that comes
     /// to a frame can take a region only once it has the frame), then the text, the region and the type. A move whose
     /// data file could not be written is in memory all the same, so the rest of the edit still goes in, and the next
-    /// write saves both; an edit that changes nothing writes nothing.
+    /// write saves both; an edit that changes nothing writes nothing. One Undo reverts the whole edit.
     /// </summary>
     public static class NoteEdit
     {
@@ -22,6 +22,12 @@ namespace Retake.Views
         /// <returns>The state after the edit.</returns>
         /// <exception cref="SessionException">A refused change, or (with <see cref="SessionException.NotSaved"/>) a change kept in memory that could not be written.</exception>
         public static SessionState Save(Session session, string id, bool moveTo, int? frame, string? text, Region? region, bool clearRegion, byte[]? png, string? kind)
+        {
+            // One edit is one step of the undo history, however many calls it takes.
+            return session.OneStep(() => SaveCalls(session, id, moveTo, frame, text, region, clearRegion, png, kind));
+        }
+
+        private static SessionState SaveCalls(Session session, string id, bool moveTo, int? frame, string? text, Region? region, bool clearRegion, byte[]? png, string? kind)
         {
             SessionState state = session.GetState();
             SessionException? notSaved = null;

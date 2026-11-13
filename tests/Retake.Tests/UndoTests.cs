@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Retake.Core;
@@ -173,6 +175,121 @@ namespace Retake.Tests
             c.Session.Close();
             c.Session.Open(video);
             Check.Null(c.Session.GetState().UndoNoteId);
+        }
+
+        [Test("undo.any_other_rate_clears_the_history_even_on_the_same_timecode_digits")]
+        public static void AnyOtherRateClearsTheHistory(TestEnv t)
+        {
+            // 23.976 and 24 write the same image names, but the rate is part of the timecode base: the steps go.
+            var c = new SessionCase(t);
+            c.OpenUnknown(23.976);
+            string id = c.Session.AddNote(307, "FIX", "logo", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            c.Session.UpdateNote(id, text: "logo 2");
+            c.Session.SetFps(23.976);
+            Check.Equal(id, c.Session.GetState().UndoNoteId, "the rate in use, set again, keeps the history");
+            c.Session.SetFps(24);
+            Check.Null(c.Session.GetState().UndoNoteId);
+            Check.Equal(0, c.Session.HistoryCount);
+        }
+
+        [Test("undo.the_history_keeps_the_last_hundred_steps")]
+        public static void TheHistoryKeepsAHundredSteps(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            string id = c.Session.AddNote(307, "FIX", "logo", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            for (int i = 0; i < 105; i++) c.Session.UpdateNote(id, text: "edit " + i);
+            Check.Equal(100, c.Session.HistoryCount);
+            SessionState state = c.Session.GetState();
+            for (int i = 0; i < 100; i++) state = c.Session.Undo();
+            Check.Equal("edit 4", Only(state, id).Text, "the five oldest steps are gone");
+            Check.Equal("There is nothing to undo", Check.Throws<SessionException>(() => c.Session.Undo()).Message);
+        }
+
+        /// <summary>A file of the size of a UHD frame PNG (24 MB), different for each <paramref name="mark"/>.</summary>
+        private static byte[] BigPng(byte mark, int megabytes = 24)
+        {
+            var bytes = new byte[megabytes * 1024 * 1024];
+            SessionCase.Png.CopyTo(bytes, 0);
+            bytes[bytes.Length - 1] = mark;
+            return bytes;
+        }
+
+        [Test("undo.a_hundred_text_edits_of_a_note_with_a_4k_image_hold_no_copy_of_the_image")]
+        public static void TextEditsHoldNoImage(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            byte[] big = BigPng(1);
+            string id = c.Session.AddNote(307, "FIX", "logo", SessionCase.Rect(), big).Notes[0].Id;
+            long before = GC.GetTotalMemory(true);
+            var clock = Stopwatch.StartNew();
+            for (int i = 0; i < 100; i++) c.Session.UpdateNote(id, text: "logo " + i);
+            clock.Stop();
+            long growth = GC.GetTotalMemory(true) - before;
+            Check.Equal(100, c.Session.HistoryCount);
+            Check.Equal(0L, c.Session.HistoryBytes, "a text-only step keeps no image bytes");
+            Check.True(growth < big.Length, "the heap grew by " + growth + " bytes, less than one image");
+            if (Environment.GetEnvironmentVariable("RETAKE_TEST_MEASURE") == "1")
+            {
+                Console.WriteLine("measure: image " + big.Length + " B; 100 text edits in " + clock.ElapsedMilliseconds
+                    + " ms; steps " + c.Session.HistoryCount + "; history image bytes " + c.Session.HistoryBytes
+                    + "; managed heap growth " + growth + " B; cap " + Session.HistoryBytesCap + " B");
+            }
+            SessionState state = c.Session.GetState();
+            for (int i = 0; i < 100; i++) state = c.Session.Undo();
+            Check.Equal("logo", Only(state, id).Text);
+            Check.Equal(big, File.ReadAllBytes(Image(c, FixImage)), "the image is untouched");
+        }
+
+        [Test("undo.image_changes_share_equal_bytes_and_the_cap_drops_the_oldest_steps")]
+        public static void ImageStepsShareAndAreCapped(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            Region point = Region.CreatePoint(0.25, 0.5);
+            byte[] a = BigPng(1, 1), b = BigPng(2, 1);
+            string id = c.Session.AddNote(307, "FIX", "logo", SessionCase.Rect(), a).Notes[0].Id;
+            for (int i = 0; i < 6; i++) c.Session.UpdateNote(id, region: i % 2 == 0 ? point : SessionCase.Rect(), imagePng: i % 2 == 0 ? b : a);
+            Check.Equal(6, c.Session.HistoryCount);
+            Check.Equal((long)(a.Length + b.Length), c.Session.HistoryBytes, "six steps hold two arrays");
+            for (int i = 0; i < 6; i++) c.Session.Undo();
+            Check.Equal(a, File.ReadAllBytes(Image(c, FixImage)));
+
+            // Ten changes to 30 MB images: the steps would hold 1 + 9 x 30 MB, so the two oldest go (8 x 30 = 240 MB stay).
+            for (int i = 0; i < 10; i++)
+            {
+                c.Session.UpdateNote(id, region: i % 2 == 0 ? point : SessionCase.Rect(), imagePng: BigPng((byte)(10 + i), 30));
+            }
+            Check.Equal(8, c.Session.HistoryCount);
+            Check.Equal(8L * 30 * 1024 * 1024, c.Session.HistoryBytes);
+            Check.True(c.Session.HistoryBytes <= Session.HistoryBytesCap);
+            for (int i = 0; i < 8; i++) c.Session.Undo();
+            Check.Equal(BigPng(11, 30), File.ReadAllBytes(Image(c, FixImage)), "the oldest kept step restores the bytes it recorded");
+            Check.Equal("There is nothing to undo", Check.Throws<SessionException>(() => c.Session.Undo()).Message);
+        }
+
+        [Test("undo.one_edit_that_moves_the_note_and_changes_its_text_and_image_is_one_step")]
+        public static void OneEditIsOneStep(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            string id = c.Session.AddNote(307, "FIX", "logo", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            byte[] dataBefore = File.ReadAllBytes(DataFile(c));
+            Views.NoteEdit.Save(c.Session, id, true, 500, "logo moved", SessionCase.Rect(), false, PngB, null);
+            NoteState moved = Only(c.Session.GetState(), id);
+            Check.Equal(500, moved.Frame);
+            Check.Equal("logo moved", moved.Text);
+            Check.Equal(1, c.Session.HistoryCount);
+
+            NoteState n = Only(c.Session.Undo(), id);
+            Check.Equal(307, n.Frame);
+            Check.Equal("logo", n.Text);
+            Check.Equal(FixImage, n.Image);
+            Check.Equal(SessionCase.Png, File.ReadAllBytes(Image(c, FixImage)));
+            Check.Equal(new[] { FixImage }, Fx.Names(c.Path_("dummy_notes", "frames")));
+            Check.Equal(dataBefore, File.ReadAllBytes(DataFile(c)));
+            Check.Null(c.Session.GetState().UndoNoteId, "one Undo reverts the whole edit");
         }
     }
 }
