@@ -1061,29 +1061,52 @@ namespace Retake.Core
             }
         }
 
-        /// <summary>Renames the image files to the timecodes of the new frame rate (two steps, all or nothing; undone when the data file cannot be written).</summary>
+        /// <summary>One image file to rename for a rate change, with every note that names it (more than one in a hand-edited file).</summary>
+        private sealed class ImageRename
+        {
+            public ImageRename(string old, string newName, string temp) { Old = old; New = newName; Temp = temp; }
+            public string Old { get; }
+            public string New { get; }
+            public string Temp { get; }
+            public List<Note> Notes { get; } = new List<Note>();
+        }
+
+        /// <summary>
+        /// Renames the image files to the timecodes of the new frame rate (two steps, all or nothing; undone when the data
+        /// file cannot be written). A file several notes name is renamed once, to the name of the first of them, and they
+        /// all keep naming it.
+        /// </summary>
         private void RenameImages(TimecodeBase tb)
         {
-            var plan = new List<KeyValuePair<Note, string>>();
+            var plan = new List<ImageRename>();
+            var byName = new Dictionary<string, ImageRename>(StringComparer.OrdinalIgnoreCase);
             var taken = new List<string>(_pendingDeletes);
             foreach (Note note in SortedNotes(_notes))
             {
-                if (string.IsNullOrEmpty(note.Image) || ImageFile(note.Image) == null) continue;
+                string? file = ImageFile(note.Image);
+                if (file == null) continue;
+                if (byName.TryGetValue(note.Image!, out ImageRename? same))
+                {
+                    same.Notes.Add(note);
+                    continue;
+                }
                 string newName = NotesLayout.ImageName(note, tb, taken);
                 taken.Add(newName);
-                if (newName != note.Image) plan.Add(new KeyValuePair<Note, string>(note, newName));
+                var item = new ImageRename(note.Image!, newName, Path.Combine(Path.GetDirectoryName(file)!, note.Id + ".rename"));
+                item.Notes.Add(note);
+                byName[note.Image!] = item;
+                if (newName != note.Image) plan.Add(item);
             }
             if (plan.Count == 0) return;
             var moved = new List<KeyValuePair<string, string>>();
             try
             {
-                foreach (KeyValuePair<Note, string> item in plan)
+                foreach (ImageRename item in plan)
                 {
-                    string source = ImageFile(item.Key.Image)!;
+                    string source = ImageFile(item.Old)!;
                     if (!File.Exists(source) && !Directory.Exists(source)) continue;
-                    string temp = Path.Combine(Path.GetDirectoryName(source)!, item.Key.Id + ".rename");
-                    NativeFile.Replace(source, temp);
-                    moved.Add(new KeyValuePair<string, string>(temp, source));
+                    NativeFile.Replace(source, item.Temp);
+                    moved.Add(new KeyValuePair<string, string>(item.Temp, source));
                 }
             }
             catch (Exception ex) when (IsFileError(ex))
@@ -1096,48 +1119,43 @@ namespace Retake.Core
                 }
                 return;
             }
-            var done = new List<KeyValuePair<Note, string>>();
-            foreach (KeyValuePair<Note, string> item in plan)
+            var done = new List<ImageRename>();
+            foreach (ImageRename item in plan)
             {
-                string old = item.Key.Image!;
-                string target = ImageFile(item.Value)!;
-                string temp = Path.Combine(Path.GetDirectoryName(ImageFile(old)!)!, item.Key.Id + ".rename");
                 try
                 {
-                    if (File.Exists(temp) || Directory.Exists(temp)) NativeFile.Replace(temp, target);
-                    item.Key.Image = item.Value;
-                    done.Add(new KeyValuePair<Note, string>(item.Key, old));
+                    if (File.Exists(item.Temp) || Directory.Exists(item.Temp)) NativeFile.Replace(item.Temp, ImageFile(item.New)!);
+                    foreach (Note note in item.Notes) note.Image = item.New;
+                    done.Add(item);
                 }
                 catch (Exception ex) when (IsFileError(ex))
                 {
-                    Log.Warning("cannot rename image " + old + " to " + item.Value + ": " + ex.Message);
+                    Log.Warning("cannot rename image " + item.Old + " to " + item.New + ": " + ex.Message);
                 }
             }
             if (done.Count == 0) return;
             _undo.Add(() =>
             {
                 // Back to the names the data file on disk still has: aside first, then to the old names.
-                var aside = new List<KeyValuePair<Note, string>>();
-                foreach (KeyValuePair<Note, string> item in done)
+                var aside = new List<ImageRename>();
+                foreach (ImageRename item in done)
                 {
-                    string current = ImageFile(item.Key.Image)!;
-                    string temp = Path.Combine(Path.GetDirectoryName(current)!, item.Key.Id + ".rename");
+                    string current = ImageFile(item.New)!;
                     try
                     {
-                        if (File.Exists(current)) NativeFile.Replace(current, temp);
+                        if (File.Exists(current)) NativeFile.Replace(current, item.Temp);
                         aside.Add(item);
                     }
-                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image " + item.Key.Image + " back: " + ex.Message); }
+                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image " + item.New + " back: " + ex.Message); }
                 }
-                foreach (KeyValuePair<Note, string> item in aside)
+                foreach (ImageRename item in aside)
                 {
-                    string temp = Path.Combine(Path.GetDirectoryName(ImageFile(item.Key.Image)!)!, item.Key.Id + ".rename");
                     try
                     {
-                        if (File.Exists(temp)) NativeFile.Replace(temp, ImageFile(item.Value)!);
-                        item.Key.Image = item.Value;
+                        if (File.Exists(item.Temp)) NativeFile.Replace(item.Temp, ImageFile(item.Old)!);
+                        foreach (Note note in item.Notes) note.Image = item.Old;
                     }
-                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image back to " + item.Value + ": " + ex.Message); }
+                    catch (Exception ex) when (IsFileError(ex)) { Log.Warning("cannot rename image back to " + item.Old + ": " + ex.Message); }
                 }
             });
         }

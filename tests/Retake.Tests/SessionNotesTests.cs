@@ -901,6 +901,36 @@ namespace Retake.Tests
             Check.Equal(PngB, File.ReadAllBytes(edited.ImagePath!));
         }
 
+        [Test("session.a_rate_change_renames_an_image_two_notes_share_once")]
+        public static void RateChangeRenamesASharedImageOnce(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.MakeVideo("dummy.mp4", real: false);
+            Fx.WriteText(c.Path_("dummy_notes", "dummy_notes.txt"), Header
+                + "0:00:12:07\tFIX\tone\trect 0.1,0.1 0.2,0.2\t0-00-12-07_FIX.png\n"
+                + "0:00:12:07\tFIX\ttwo\trect 0.1,0.1 0.2,0.2\t0-00-12-07_FIX.png\n"
+                + "0:00:20:00\tADD\tthree\trect 0.1,0.1 0.2,0.2\t0-00-20-00_ADD.png\n");
+            string frames = c.Path_("dummy_notes", "frames");
+            Fx.WriteBytes(Path.Combine(frames, "0-00-12-07_FIX.png"), SessionCase.Png);
+            Fx.WriteBytes(Path.Combine(frames, "0-00-20-00_ADD.png"), PngB);
+            c.Session.Open(video);
+            SessionState data = c.Session.SetFps(50);
+            Check.Equal(new[] { "0-00-06-07_FIX.png", "0-00-06-07_FIX.png", "0-00-10-00_ADD.png" }, data.Notes.Select(n => n.Image).ToList(), "the notes keep sharing the file");
+            Check.Equal(new[] { "0-00-06-07_FIX.png", "0-00-10-00_ADD.png" }, Fx.Names(frames));
+            foreach (NoteState n in data.Notes) Check.True(File.Exists(n.ImagePath!), n.Image!);
+            Check.Equal(SessionCase.Png, File.ReadAllBytes(Path.Combine(frames, "0-00-06-07_FIX.png")));
+            Check.Equal(PngB, File.ReadAllBytes(Path.Combine(frames, "0-00-10-00_ADD.png")));
+
+            // a failed write puts both names back
+            using (new FileStream(c.Path_("dummy_notes", "dummy_notes.txt"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                Check.Throws<SessionException>(() => c.Session.SetFps(25));
+            }
+            data = c.Session.GetState();
+            Check.Equal(new[] { "0-00-06-07_FIX.png", "0-00-06-07_FIX.png", "0-00-10-00_ADD.png" }, data.Notes.Select(n => n.Image).ToList());
+            Check.Equal(new[] { "0-00-06-07_FIX.png", "0-00-10-00_ADD.png" }, Fx.Names(frames));
+        }
+
         [Test("session.remove_note_needs_a_known_rate")]
         public static void RemoveNoteNeedsAKnownRate(TestEnv t)
         {
