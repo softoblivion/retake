@@ -83,6 +83,8 @@ namespace Retake.Tests
             Check.Equal("\\+ plus", Body("+ plus"));
             Check.Equal("\\---", Body("---"));
             Check.Equal("\\> quote", Body("> quote"));
+            // a caret is a block id in Obsidian (" ^v2" at the end) and superscript in Typora ("x^2^")
+            Check.Equal("see \\^v2 and x\\^2\\^", Body("see ^v2 and x^2^"));
             Check.Equal("see <https://example.com/a_b?q=1&r=*2*> and \\*this\\*", Body("see https://example.com/a_b?q=1&r=*2* and *this*"));
             string nonLatin = "Το λογότυπο αναβοσβήνει " + char.ConvertFromUtf32(0x1F642);
             Check.Equal(nonLatin, Body(nonLatin));

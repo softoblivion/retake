@@ -98,6 +98,7 @@ namespace Retake.Core
                     case '~':
                     case '$':
                     case '#':
+                    case '^':
                         sb.Append('\\').Append(c);
                         break;
                     case '&':
