@@ -129,7 +129,7 @@ namespace Retake.Views
                 ToggleKeyMap();
                 return;
             }
-            bool nav = key == Key.Space || key == Key.Left || key == Key.Right || key == Key.Up || key == Key.Down || key == Key.Home || key == Key.End || key == Key.PageUp || key == Key.PageDown;
+            bool nav = key == Key.Space || key == Key.Left || key == Key.Right || key == Key.Up || key == Key.Down || key == Key.Home || key == Key.End;
             if (nav) e.Handled = true;
             if (!videoLoaded || player == null) return;
             bool shift = (mods & ModifierKeys.Shift) != 0;
