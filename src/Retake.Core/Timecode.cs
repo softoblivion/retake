@@ -25,7 +25,7 @@ namespace Retake.Core
         /// <summary>True only for 29.97 and 59.94.</summary>
         public bool Drop { get; private set; }
 
-        /// <summary>Frame digits: 2, or 3 when <see cref="Base"/> is 100 or more.</summary>
+        /// <summary>Frame digits: the digits of the highest frame part <c>Base - 1</c>, at least 2 (3 from a base of 101).</summary>
         public int Digits { get; private set; }
 
         /// <summary><c>:</c> for non-drop, <c>;</c> for drop-frame.</summary>
@@ -178,21 +178,6 @@ namespace Retake.Core
             }
             if (frame > int.MaxValue) throw new FormatException("The timecode is too large: '" + text + "'");
             return (int)frame;
-        }
-
-        /// <summary>Frame shown at <paramref name="seconds"/>: <c>floor(seconds * fps + 1e-4)</c>, never negative.</summary>
-        public static int SecondsToFrame(double seconds, double fps)
-        {
-            double value = Math.Floor(seconds * fps + 1e-4);
-            if (value < 0) return 0;
-            if (value > int.MaxValue) return int.MaxValue;
-            return (int)value;
-        }
-
-        /// <summary>Centre of a frame in seconds, used for seeking: <c>(frame + 0.5) / fps</c>.</summary>
-        public static double FrameToSeconds(int frame, double fps)
-        {
-            return (frame + 0.5) / fps;
         }
 
         /// <summary>Frame count of a duration: <c>round(seconds * fps)</c> with ties to even.</summary>

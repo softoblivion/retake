@@ -63,7 +63,6 @@ namespace Retake.Tests
                         rep++;
                         break;
                     case "sec":
-                        Check.Equal(int.Parse(f[3], CultureInfo.InvariantCulture), Timecode.SecondsToFrame(D(f[1]), D(f[2])), line);
                         Check.Equal(int.Parse(f[4], CultureInfo.InvariantCulture), Timecode.DurationFrames(D(f[1]), D(f[2])), line);
                         sec++;
                         break;

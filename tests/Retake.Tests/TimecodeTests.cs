@@ -90,6 +90,9 @@ namespace Retake.Tests
             tb = Timecode.BaseFor(120);
             Check.Equal(120, tb.Base);
             Check.Equal(3, tb.Digits);
+            // the frame part runs to Base - 1: 99 at 100 fps needs two digits, 100 at 101 fps three
+            Check.Equal(2, Timecode.BaseFor(100).Digits);
+            Check.Equal(3, Timecode.BaseFor(101).Digits);
         }
 
         [Test("test_core_timecode.BaseTest.test_23_976_variants_share_one_base")]
@@ -167,15 +170,7 @@ namespace Retake.Tests
         [Test("test_core_timecode.ConversionTest.test_seconds_and_frames")]
         public static void SecondsAndFrames(TestEnv t)
         {
-            Check.Equal(307, Timecode.SecondsToFrame(12.28, 25));
-            Check.Equal(0, Timecode.SecondsToFrame(-1.0, 25));
-            Check.Equal(1, Timecode.SecondsToFrame(0.04, 25));
-            Check.Near(12.30, Timecode.FrameToSeconds(307, 25), 7);
-            double fps = 30000.0 / 1001.0;
-            foreach (int frame in new[] { 0, 1, 1799, 100000 })
-            {
-                Check.Equal(frame, Timecode.SecondsToFrame(Timecode.FrameToSeconds(frame, fps), fps));
-            }
+            // Seconds to the frame shown are the player's (Player\FrameMath, views tests); the core counts a duration.
             Check.Equal(2310, Timecode.DurationFrames(92.4, 25));
             // Python round() is banker's rounding: 0.5 -> 0, 1.5 -> 2, 2.5 -> 2.
             Check.Equal(0, Timecode.DurationFrames(0.5, 1));
