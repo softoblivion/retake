@@ -36,6 +36,52 @@ namespace Retake.Views
             window.Root.Overlay.OpenMenuAt(menu, relativeTo, at);
         }
 
+        /// <summary>
+        /// Ctrl+G: a field under the timecode readout, filled with the current position and selected, takes a timecode,
+        /// a frame number or, while the rate is unknown, the clock, as the readouts show them; Enter goes there. A line
+        /// under the field says what to type, and what is wrong after a refused Enter.
+        /// </summary>
+        void OpenGoTo()
+        {
+            if (!videoLoaded || player == null || edit != null) return;
+            var menu = new PopMenu(220);
+            var field = new TextField(Copy.GoToPlaceholder, 200) { Margin = new Thickness(4, 2, 4, 2), Text = Format(frame) };
+            Tip.Set(field, Copy.GoToTip);
+            AutomationProperties.SetAutomationId(field, "GoTo");
+            AutomationProperties.SetName(field, Copy.GoToName);
+            TextBlock line = Typography.Text(Copy.GoToHint, Typography.Caption, "ink-3");
+            line.TextWrapping = TextWrapping.Wrap;
+            line.MaxWidth = 200;
+            line.Margin = new Thickness(9, 4, 9, 5);
+            AutomationProperties.SetAutomationId(line, "GoToMessage");
+            AutomationProperties.SetName(line, Copy.GoToHint);
+            field.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Enter) return;
+                e.Handled = true;
+                try
+                {
+                    int target = Timecode.ParseGoTo(field.Text, tb, rate, lastFrame);
+                    Keyboard.ClearFocus();
+                    menu.Close();
+                    if (player != null && videoLoaded) player.SeekFrame(target);
+                }
+                catch (FormatException ex)
+                {
+                    line.Text = Typography.Caption.Text(ex.Message);
+                    line.SetResourceReference(TextBlock.ForegroundProperty, "T.error-ink");
+                    AutomationProperties.SetName(line, ex.Message);
+                    field.SelectAll();
+                }
+            };
+            field.Loaded += (s, e) => { field.Focus(); Keyboard.Focus(field); field.SelectAll(); };
+            // Esc or a click outside closes the menu with the field focused: the window keys work again at once.
+            field.Unloaded += (s, e) => { if (Keyboard.FocusedElement == field) Keyboard.ClearFocus(); };
+            menu.AddElement(field);
+            menu.AddElement(line);
+            OpenMenu(menu, Transport.Time);
+        }
+
         PopMenu RevealMenu()
         {
             var menu = new PopMenu(200);

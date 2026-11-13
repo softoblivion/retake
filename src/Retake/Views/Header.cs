@@ -160,6 +160,7 @@ namespace Retake.Views
             new[] { "←  →", "One frame back or forward" },
             new[] { "Shift+←  Shift+→", "Ten frames" },
             new[] { "Home  End", "First or last frame" },
+            new[] { "Ctrl+G", "Go to a timecode or a frame number" },
             new[] { "J", "Step back while held" },
             new[] { "K", "Pause" },
             new[] { "L", "Play; again for 2×, 4×, 8×" },

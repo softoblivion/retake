@@ -209,5 +209,86 @@ namespace Retake.Core
                 throw new FormatException("Not a frame rate: '" + text + "'");
             return value;
         }
+
+        private static readonly Regex FrameInputPattern = new Regex(@"\A(?:frame\s*)?([0-9]+)\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        private static readonly Regex ClockPattern = new Regex(@"\A(?:([0-9]+):)?([0-9]+)(?:\.([0-9]{1,3}))?\z", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// Reads what the reviewer types to go to a frame, in the forms the app shows: a frame number (<c>307</c> or
+        /// <c>frame 307</c>, zero-based); with a known rate (<paramref name="tb"/>) a timecode <c>h:mm:ss:ff</c>,
+        /// <c>mm:ss:ff</c> or <c>ss:ff</c> with either separator, counted by the rules of <paramref name="tb"/> (drop-frame
+        /// numbers included); without one a clock <c>m:ss.mmm</c> (or <c>s.mmm</c>) at <paramref name="rate"/> frames a
+        /// second. Returns the frame. Throws <see cref="FormatException"/> with an English sentence for the reviewer for any
+        /// other text, a frame part not below the base, minutes or seconds not below 60, a number drop-frame skips (the
+        /// message names the first frame of that minute) and a frame after <paramref name="lastFrame"/>.
+        /// </summary>
+        public static int ParseGoTo(string text, TimecodeBase? tb, double rate, int lastFrame)
+        {
+            string s = Py.Strip(text ?? "");
+            if (s.Length == 0) throw new FormatException("Type a timecode or a frame number");
+            long frame;
+            Match m = FrameInputPattern.Match(s);
+            Match clock;
+            if (m.Success)
+            {
+                if (!long.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out frame)) frame = long.MaxValue;
+            }
+            else if (tb != null && TimecodePattern.IsMatch(s))
+            {
+                frame = GoToTimecode(s, tb);
+            }
+            else if (tb == null && rate > 0 && (clock = ClockPattern.Match(s)).Success)
+            {
+                long minutes = 0, seconds;
+                if (clock.Groups[1].Success && !long.TryParse(clock.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out minutes)) minutes = long.MaxValue / 120;
+                if (!long.TryParse(clock.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out seconds)) seconds = long.MaxValue / 2;
+                if (clock.Groups[1].Success && seconds >= 60) throw new FormatException("Minutes and seconds must be below 60");
+                int ms = clock.Groups[3].Success ? int.Parse(clock.Groups[3].Value.PadRight(3, '0'), CultureInfo.InvariantCulture) : 0;
+                double total = Math.Min(minutes, long.MaxValue / 120) * 60.0 + seconds + ms / 1000.0;
+                double value = Math.Round(total * rate, MidpointRounding.ToEven);
+                frame = value >= long.MaxValue ? long.MaxValue : (long)value;
+            }
+            else throw new FormatException("Not a timecode or a frame number: " + s);
+            if (frame > lastFrame)
+            {
+                string end = lastFrame.ToString(CultureInfo.InvariantCulture);
+                throw new FormatException(tb != null
+                    ? "The video ends at " + FrameToTimecode(Math.Max(0, lastFrame), tb) + ", frame " + end
+                    : "The video ends at frame " + end);
+            }
+            return (int)frame;
+        }
+
+        /// <summary>A typed timecode as a frame, with the reasons of <see cref="ParseGoTo"/>; a number too large for a frame is <see cref="long.MaxValue"/>.</summary>
+        private static long GoToTimecode(string s, TimecodeBase tb)
+        {
+            string[] pieces = s.Split(':', ';');
+            var numbers = new long[pieces.Length];
+            for (int i = 0; i < pieces.Length; i++)
+                if (!long.TryParse(pieces[i], NumberStyles.None, CultureInfo.InvariantCulture, out numbers[i])) numbers[i] = long.MaxValue;
+            long ff = numbers[numbers.Length - 1];
+            long ss = numbers[numbers.Length - 2];
+            long mm = numbers.Length >= 3 ? numbers[numbers.Length - 3] : 0;
+            long hh = numbers.Length == 4 ? numbers[0] : 0;
+            if (ff >= tb.Base) throw new FormatException("The frame part must be below " + tb.Base.ToString(CultureInfo.InvariantCulture));
+            if (ss >= 60 || mm >= 60) throw new FormatException("Minutes and seconds must be below 60");
+            long d = tb.DropPerMinute;
+            if (d > 0 && ss == 0 && mm % 10 != 0 && ff < d)
+            {
+                string sep = tb.Separator;
+                string first = hh.ToString(CultureInfo.InvariantCulture) + sep + mm.ToString("D2", CultureInfo.InvariantCulture) + sep + "00" + sep
+                    + d.ToString("D" + tb.Digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+                throw new FormatException(s + " is skipped by drop-frame timecode: that minute starts at " + first);
+            }
+            try
+            {
+                return TimecodeToFrame(s, tb);
+            }
+            catch (FormatException)
+            {
+                // Every other reason was checked above: only a number too large for a frame is left.
+                return long.MaxValue;
+            }
+        }
     }
 }

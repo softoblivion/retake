@@ -255,5 +255,96 @@ namespace Retake.Tests
             Check.Equal(25.0, Timecode.NominalRate(24.99));
             Check.Equal(12.5, Timecode.NominalRate(12.5), "far from the table");
         }
+
+        // --- go to ---------------------------------------------------------------------------------------------------
+
+        private static string GoToError(string text, TimecodeBase? tb, int lastFrame, double rate = 25)
+        {
+            return Check.Throws<FormatException>(() => Timecode.ParseGoTo(text, tb, rate, lastFrame), text).Message;
+        }
+
+        [Test("timecode.go_to_reads_a_non_drop_timecode_in_every_form_the_app_shows")]
+        public static void GoToNonDrop(TestEnv t)
+        {
+            TimecodeBase tb = Timecode.BaseFor(25);
+            Check.Equal(307, Timecode.ParseGoTo("0:00:12:07", tb, 25, 2309));
+            Check.Equal(307, Timecode.ParseGoTo("  00:12:07 ", tb, 25, 2309), "mm:ss:ff");
+            Check.Equal(307, Timecode.ParseGoTo("12:07", tb, 25, 2309), "ss:ff");
+            Check.Equal(307, Timecode.ParseGoTo("0;00;12;07", tb, 25, 2309), "either separator");
+            Check.Equal(2309, Timecode.ParseGoTo("0:01:32:09", tb, 25, 2309), "the last frame");
+            TimecodeBase high = Timecode.BaseFor(120);
+            Check.Equal(125, Timecode.ParseGoTo("0:00:01:005", high, 120, 1000), "three frame digits");
+            foreach (object[] row in Table)
+            {
+                TimecodeBase rowTb = Timecode.BaseFor((double)row[0]);
+                Check.Equal((int)row[1], Timecode.ParseGoTo((string)row[2], rowTb, rowTb.Fps, 200000), "fps " + row[0] + " text " + row[2]);
+            }
+        }
+
+        [Test("timecode.go_to_reads_drop_frame_and_names_the_first_frame_of_a_skipped_minute")]
+        public static void GoToDropFrame(TestEnv t)
+        {
+            TimecodeBase tb = Timecode.BaseFor(29.97);
+            Check.Equal(1800, Timecode.ParseGoTo("0;01;00;02", tb, tb.Fps, 200000));
+            Check.Equal(1800, Timecode.ParseGoTo("0:01:00:02", tb, tb.Fps, 200000), "the colon form counts by the same rules");
+            Check.Equal(17982, Timecode.ParseGoTo("0;10;00;00", tb, tb.Fps, 200000), "a tenth minute keeps its first numbers");
+            Check.Equal("0;01;00;00 is skipped by drop-frame timecode: that minute starts at 0;01;00;02", GoToError("0;01;00;00", tb, 200000));
+            Check.Equal("1;03;00;01 is skipped by drop-frame timecode: that minute starts at 1;03;00;02", GoToError("1;03;00;01", tb, 200000));
+            TimecodeBase sixty = Timecode.BaseFor(59.94);
+            Check.Equal(3600, Timecode.ParseGoTo("0;01;00;04", sixty, sixty.Fps, 200000));
+            Check.Equal("0;01;00;03 is skipped by drop-frame timecode: that minute starts at 0;01;00;04", GoToError("0;01;00;03", sixty, 200000));
+            // Every frame of the first eleven minutes reads back from the text the app shows for it.
+            for (int f = 0; f < 19800; f++) Check.Equal(f, Timecode.ParseGoTo(Timecode.FrameToTimecode(f, tb), tb, tb.Fps, 19800));
+        }
+
+        [Test("timecode.go_to_reads_frame_numbers_as_shown")]
+        public static void GoToFrameNumbers(TestEnv t)
+        {
+            TimecodeBase tb = Timecode.BaseFor(25);
+            Check.Equal(307, Timecode.ParseGoTo("307", tb, 25, 2309));
+            Check.Equal(307, Timecode.ParseGoTo("frame 307", tb, 25, 2309), "the label of the frame readout");
+            Check.Equal(307, Timecode.ParseGoTo("Frame307", tb, 25, 2309));
+            Check.Equal(0, Timecode.ParseGoTo("0", tb, 25, 2309));
+            Check.Equal(42, Timecode.ParseGoTo("42", null, 25, 2309), "a frame number needs no known rate");
+        }
+
+        [Test("timecode.go_to_reads_the_clock_shown_while_the_rate_is_unknown")]
+        public static void GoToClock(TestEnv t)
+        {
+            Check.Equal(307, Timecode.ParseGoTo("0:12.280", null, 25, 2309));
+            Check.Equal(1800, Timecode.ParseGoTo("1:00.000", null, 30, 5000));
+            Check.Equal(30, Timecode.ParseGoTo("1.0", null, 30, 5000), "seconds alone");
+            Check.Equal(15, Timecode.ParseGoTo("0:00.5", null, 30, 5000), "a short fraction is tenths");
+            // Every frame reads back from the clock the app shows for it (Review.Clock: f / rate to the millisecond).
+            double rate = 24000.0 / 1001;
+            for (int f = 0; f < 5000; f++)
+            {
+                int ms = (int)Math.Round(f / rate * 1000);
+                string shown = (ms / 60000) + ":" + (ms / 1000 % 60).ToString("00") + "." + (ms % 1000).ToString("000");
+                Check.Equal(f, Timecode.ParseGoTo(shown, null, rate, 5000), shown);
+            }
+            Check.Equal("Minutes and seconds must be below 60", GoToError("1:60.000", null, 5000));
+            Check.Equal("Not a timecode or a frame number: 0:00:01:00", GoToError("0:00:01:00", null, 5000), "a timecode needs a known rate");
+        }
+
+        [Test("timecode.go_to_refuses_other_text_and_frames_outside_the_video")]
+        public static void GoToRefuses(TestEnv t)
+        {
+            TimecodeBase tb = Timecode.BaseFor(25);
+            Check.Equal("Type a timecode or a frame number", GoToError("   ", tb, 2309));
+            Check.Equal("Not a timecode or a frame number: -5", GoToError("-5", tb, 2309));
+            Check.Equal("Not a timecode or a frame number: 12.5", GoToError("12.5", tb, 2309), "a clock only while the rate is unknown");
+            Check.Equal("Not a timecode or a frame number: abc", GoToError("abc", tb, 2309));
+            Check.Equal("Not a timecode or a frame number: 1:2:3:4:5", GoToError("1:2:3:4:5", tb, 2309));
+            Check.Equal("The frame part must be below 25", GoToError("0:00:12:25", tb, 2309));
+            Check.Equal("Minutes and seconds must be below 60", GoToError("0:00:60:00", tb, 2309));
+            Check.Equal("Minutes and seconds must be below 60", GoToError("0:60:00:00", tb, 2309));
+            Check.Equal("The video ends at 0:01:32:09, frame 2309", GoToError("2310", tb, 2309));
+            Check.Equal("The video ends at 0:01:32:09, frame 2309", GoToError("0:01:32:10", tb, 2309));
+            Check.Equal("The video ends at 0:01:32:09, frame 2309", GoToError("99999999999999999999", tb, 2309), "a number too large for a frame");
+            Check.Equal("The video ends at 0:01:32:09, frame 2309", GoToError("99999999:00:00:00", tb, 2309), "an hour too large for a frame");
+            Check.Equal("The video ends at frame 100", GoToError("101", null, 100));
+            Check.Equal("The video ends at frame 100", GoToError("0:05.000", null, 100));
+        }
     }
 }
