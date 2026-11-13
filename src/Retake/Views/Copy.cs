@@ -103,6 +103,7 @@ namespace Retake.Views
         public const string CannotPlay = "{0}: {1}";
         public const string PlayerFailed = "The player could not start: {0}";
         public const string ImageFailed = "The frame image could not be made, so the note was saved without it ({0})";
+        public const string TwoMessages = "{0}. {1}";
         public const string ClipboardBusy = "The clipboard is in use by another program; try again";
         public const string RevealMissing = "Nothing to show yet";
         public const string OpenElsewhere = "{0} is open in another window";

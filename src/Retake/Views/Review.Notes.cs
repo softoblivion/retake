@@ -329,7 +329,7 @@ namespace Retake.Views
                             regionChanged ? e.Region : null, regionChanged && e.Region == null, png, kindChanged ? e.Kind : null));
                     }
                 }
-                if (imageError != null) Banner.Show(string.Format(CultureInfo.InvariantCulture, Copy.ImageFailed, imageError));
+                ShowBanner(SaveNotice.Banner(null, imageError));
             }
             catch (SessionException ex)
             {
@@ -337,7 +337,7 @@ namespace Retake.Views
                 Apply(session.GetState());
                 // A change the session refused took nothing: the editor comes back with the text, so nothing typed is lost.
                 // A change kept in memory without its write is in the list; the notice offers to write it again.
-                Report(ex);
+                Report(ex, imageError);
                 if (!ex.Changed && videoLoaded && !closing && (e.Create || Note(e.Id) != null)) reopen = e;
             }
             finally
@@ -354,12 +354,20 @@ namespace Retake.Views
             }
         }
 
-        /// <summary>Reports a failed session call: a change kept in memory without its write gets the notice with Retry, anything else the banner.</summary>
-        void Report(SessionException ex)
+        /// <summary>
+        /// Reports a failed session call: a change kept in memory without its write gets the notice with Retry, anything
+        /// else the banner; a frame image that could not be made for the change is named in the banner as well.
+        /// </summary>
+        void Report(SessionException ex, string? imageError = null)
         {
             unsaved.Failed(ex);
             if (ex.NotSaved) ShowUnsaved(ex.Message);
-            else Banner.Show(ex.Message);
+            ShowBanner(SaveNotice.Banner(ex, imageError));
+        }
+
+        void ShowBanner(string? text)
+        {
+            if (text != null) Banner.Show(text);
         }
 
         /// <summary>The notice that the notes are not saved, with Retry; it stays until it is clicked, and its tooltip has the reason.</summary>
@@ -455,12 +463,12 @@ namespace Retake.Views
                 SessionState st = session.MoveNote(id, target, png);
                 selectedId = id;
                 Apply(st);
-                if (imageError != null) Banner.Show(string.Format(CultureInfo.InvariantCulture, Copy.ImageFailed, imageError));
+                ShowBanner(SaveNotice.Banner(null, imageError));
             }
             catch (SessionException ex)
             {
                 Apply(session.GetState());
-                Report(ex);
+                Report(ex, imageError);
             }
             finally
             {

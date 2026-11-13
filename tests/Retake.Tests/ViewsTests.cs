@@ -385,6 +385,28 @@ namespace Retake.Tests
             Directory.Delete(target);
         }
 
+        [Test("views.save_notice.a_failed_frame_image_is_named_when_the_session_throws_too")]
+        public static void SaveNoticeKeepsTheImageError(TestEnv t)
+        {
+            const string grab = "the player stopped";
+            string image = string.Format(System.Globalization.CultureInfo.InvariantCulture, Copy.ImageFailed, grab);
+            Check.Null(SaveNotice.Banner(null, null), "nothing to say");
+            Check.Equal(image, SaveNotice.Banner(null, grab));
+            // a change kept in memory without its write: the notice has the write, the banner the missing image
+            var notSaved = new SessionException("The notes could not be saved", true, true);
+            Check.Equal(image, SaveNotice.Banner(notSaved, grab));
+            Check.Null(SaveNotice.Banner(notSaved, null));
+            // a change made in memory and then refused in a later step: both reasons
+            var partly = new SessionException("The text is too long", true, false);
+            string both = SaveNotice.Banner(partly, grab)!;
+            Check.Contains("The text is too long", both);
+            Check.Contains(grab, both);
+            // a refused change took nothing, so no note was saved without its image
+            var refused = new SessionException("The note is gone");
+            Check.Equal("The note is gone", SaveNotice.Banner(refused, grab));
+            Check.Equal("The note is gone", SaveNotice.Banner(refused, null));
+        }
+
         [Test("views.video_windows.a_window_that_has_a_video_open_is_found_by_its_path")]
         public static void VideoWindowsFindTheOwner(TestEnv t)
         {
