@@ -453,8 +453,8 @@ namespace Retake.Core
         /// <summary>
         /// Adds a note at <paramref name="frame"/>; a null frame makes a general note about the whole video (no region, no
         /// image). A region may come with the PNG of the frame (without a region the image is ignored). Throws
-        /// <see cref="SessionException"/> for no open video, an unknown frame rate, an unknown kind, a negative frame, an
-        /// empty text, an invalid region or a region on a general note. A failed write keeps the note in memory, publishes
+        /// <see cref="SessionException"/> for no open video, an unknown frame rate, an unknown kind, a negative frame, a
+        /// general note with an empty text, an invalid region or a region on a general note. A frame note may have no text. A failed write keeps the note in memory, publishes
         /// the state, then throws.
         /// </summary>
         public SessionState AddNote(int? frame, string kind, string? text, Region? region, byte[]? imagePng)
@@ -468,7 +468,8 @@ namespace Retake.Core
                 if (frame.HasValue && frame.Value < 0) throw new SessionException(FrameNotValid);
                 if (!frame.HasValue && region != null) throw new SessionException(GeneralHasNoFrameToMark);
                 string clean = Note.NormalizeText(text ?? "");
-                if (clean.Length == 0) throw new SessionException(NoText);
+                // A frame note's kind, timecode and region carry it without words; a general note has only its text.
+                if (clean.Length == 0 && !frame.HasValue) throw new SessionException(NoText);
                 var note = new Note(Note.NewId(new HashSet<string>(_notes.Select(n => n.Id))), frame, kind, clean);
                 note.Order = _nextOrder;
                 string? imageError = null;
@@ -493,12 +494,14 @@ namespace Retake.Core
         /// <summary>
         /// Changes the text, region and / or kind of a note. <paramref name="region"/> replaces the region (a new region
         /// normally comes with a new image); <paramref name="clearRegion"/> removes the region and its image; neither keeps
-        /// the region. A null <paramref name="text"/> keeps the text; a text that is empty after normalising is refused. A
+        /// the region. A null <paramref name="text"/> keeps the text; a text that is empty after normalising is refused for a
+        /// general note and clears the text of a frame note. A
         /// new <paramref name="kind"/> renames the image of the note to the name of that kind. New image bytes replace the
         /// file under the same name (put back when the data file cannot be written), or get a new name when another note
         /// shares the file. A call that changes nothing
         /// writes nothing and publishes nothing. Throws <see cref="SessionException"/> for no open video, an unknown note,
-        /// an unknown frame rate, an unknown kind, an empty text, an invalid region or a region on a general note.
+        /// an unknown frame rate, an unknown kind, an empty text on a general note, an invalid region or a region on a
+        /// general note.
         /// </summary>
         public SessionState UpdateNote(string noteId, string? text = null, Region? region = null, bool clearRegion = false,
                                        byte[]? imagePng = null, string? kind = null)
@@ -516,7 +519,7 @@ namespace Retake.Core
                 if (text != null)
                 {
                     newText = Note.NormalizeText(text);
-                    if (newText.Length == 0) throw new SessionException(NoText);
+                    if (newText.Length == 0 && general) throw new SessionException(NoText);
                 }
                 string? newKind = kind != null ? CheckKind(kind) : null;
                 Region? newRegion = general || clearRegion ? null : (region != null ? CheckRegion(region) : note.Region);

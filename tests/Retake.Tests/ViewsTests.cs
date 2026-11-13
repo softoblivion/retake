@@ -396,7 +396,7 @@ namespace Retake.Tests
             Check.Equal(3, c.Session.GetState().Notes.Count);
             // a refused call (not a failed write) leaves a Discard in force
             gate.Discard();
-            gate.Failed(Check.Throws<SessionException>(() => c.Session.AddNote(8, "FIX", "  ", null, null)));
+            gate.Failed(Check.Throws<SessionException>(() => c.Session.AddNote(null, "FIX", "  ", null, null)));
             Check.False(gate.MustAsk);
             gate.Close();
             Check.False(gate.MustAsk, "closed: nothing in memory");

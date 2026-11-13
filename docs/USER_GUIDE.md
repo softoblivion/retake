@@ -21,8 +21,8 @@ Requirements: Windows 10 or 11, 64-bit. Nothing else is installed: the video eng
    under the video. The video pauses first and the note takes the current frame. `4` writes a general note about
    the whole video instead ("the music is too loud overall").
 4. Optionally drag a rectangle around the element on the video, or click to put a point.
-5. Type the note and press `Enter`. A note needs text: with an empty field `Enter` keeps the editor open and asks for
-   it. `Esc` cancels: a new note is removed, an edit is reverted. A long note wraps inside the editor, which grows to
+5. Type the note and press `Enter`. A note started this way needs text: with an empty field `Enter` keeps the editor
+   open and asks for it. `Esc` cancels: a new note is removed, an edit is reverted. A long note wraps inside the editor, which grows to
    six lines and then scrolls; pasted text with several lines arrives whole, joined into one line.
 6. When the review is finished, press **Done**: the notes and their frame images are packed into one zip, ready to
    send.
@@ -41,6 +41,16 @@ While a note is being written, drag a rectangle on the video or click to put a p
 `Backspace` in the empty text field removes it. The frame is saved as a PNG at the video's full size with the mark
 drawn on it into `<name>_notes\frames\` next to the video, and the mark reappears over the video whenever the note
 is selected.
+
+### Notes from a region
+
+A note can also start from the picture: with no note being written, drag a rectangle on the video. Playback pauses,
+the rectangle stays on its frame, and a bar beside it offers the five types and **Text**. A click on a type, or its
+key (`1` `2` `3` `5` `6`), saves the note at once with the rectangle and its frame image and no text; the type, the
+timecode and the picture say what it is about. **Text** (or `Enter`) opens the editor on the rectangle to write a
+text as usual. `Esc`, a click anywhere else or any other key drops the rectangle. A note without text shows "No text"
+in the list, its type on the timeline, and its timecode and type in the copied text and the Done zip; it can be given
+a text later with `F2`.
 
 ### Note types
 
@@ -150,9 +160,10 @@ The keys work when no text field has focus; `?` shows them in the app.
 | `1` `2` `3` | Start a FIX / ADD / REMOVE note at the current frame (pauses first); then drag on the video to mark a region, or click to put a point |
 | `4` | Start a general note, about the whole video |
 | `5` `6` | Start a LIKE / DISLIKE note at the current frame |
+| Drag on the video | Mark a region for a new note; then a type (a click, or `1` `2` `3` `5` `6`) saves it without text |
 | `Ctrl+1` … `Ctrl+6` | Change the type of the note being written; `Ctrl+4` moves it between its frame and the whole video |
-| `Enter` | Save the note (it needs text) |
-| `Esc` | Cancel the note; close a menu or a sheet; cancel a marker drag |
+| `Enter` | Save the note; on a marked region, write a text for it |
+| `Esc` | Cancel the note; drop a marked region; close a menu or a sheet; cancel a marker drag |
 | `Backspace` (empty note field) | Remove the region of the note being written |
 | `F2` | Edit the selected note |
 | `Delete` | Remove the selected note |

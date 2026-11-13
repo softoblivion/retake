@@ -41,7 +41,16 @@ namespace Retake.Views
             public bool OrigGeneral;
             public Region? Region, OrigRegion;
             public bool RegionDirty;
+            /// <summary>A note from the type bar: its region and type carry it, so it may be saved without text.</summary>
+            public bool Quick;
             public bool General => Frame == null;
+        }
+
+        /// <summary>A region marked outside a note, waiting for its type on the type bar.</summary>
+        sealed class QuickMark
+        {
+            public Region Region = null!;
+            public int Frame;
         }
 
         public const double PanelWidth = 320, Gap = 10, Side = 12, CardRadius = 14;
@@ -96,6 +105,7 @@ namespace Retake.Views
         Toast? removedToast;
         string? removedId;
         Edit? edit;
+        QuickMark? quick;
         bool starting, saving, closing, closed, reverseHeld, freezing, packing, failing;
         // A Discard of notes that could not be saved covers only the move it was given for.
         readonly UnsavedGate unsaved;
@@ -226,7 +236,11 @@ namespace Retake.Views
             window.PreviewKeyDown += (s, e) => OnKey(e);
             window.PreviewKeyUp += (s, e) => OnKeyUp(e);
             window.PreviewTextInput += (s, e) => OnText(e);
-            window.PreviewMouseDown += (s, e) => { if (edit != null && !saving) _ = Commit(true); };
+            window.PreviewMouseDown += (s, e) =>
+            {
+                if (quick != null) DropQuick();
+                if (edit != null && !saving) _ = Commit(true);
+            };
             window.AllowDrop = true;
             window.DragOver += OnDragOver;
             window.Drop += OnDrop;
@@ -237,13 +251,20 @@ namespace Retake.Views
             Video.Overlay.PreviewKeyUp += (s, e) => OnKeyUp(e);
             Video.Overlay.PreviewTextInput += (s, e) => OnText(e);
             Video.Overlay.Region.Drawn += OnRegionDrawn;
+            Video.Overlay.Region.DragStarted += () => { if (edit == null && playing) player?.Pause(); };
+            Video.Overlay.Region.Marked += r => _ = OnRegionMarked(r);
+            Video.Overlay.Region.SetFree(true);
+            Video.Overlay.PressedOutsideBar += () => { if (quick != null) DropQuick(); };
+            Video.Overlay.KindBar.Picked += k => SaveQuick(k);
+            Video.Overlay.KindBar.TextChosen += QuickToText;
+            Video.Overlay.KindBar.SizeChanged += (s, e) => { if (quick != null) PlaceQuick(); };
             Video.Overlay.ContextRequested += p => { if (videoLoaded) OpenMenuAt(VideoMenu(), Video.Area, p); };
             Video.Overlay.Composer.Commit += () => _ = Commit();
             Video.Overlay.Composer.Cancel += CancelEdit;
             Video.Overlay.Composer.ClearRegion += () => { if (edit != null && edit.Region != null) SetEditRegion(null); };
             Video.Overlay.Composer.KindChanged += SetEditKind;
             Video.Overlay.Composer.PlaceChanged += SetEditPlace;
-            Video.FrameChanged += () => { if (edit != null) PlaceComposer(); };
+            Video.FrameChanged += () => { if (edit != null) PlaceComposer(); else if (quick != null) PlaceQuick(); };
             // The card grows and shrinks with the text: it is placed again, so it stays inside the area.
             Video.Overlay.Composer.SizeChanged += (s, e) => { if (edit != null && e.HeightChanged) PlaceComposer(); };
             Themes.Changed += () => { Video.Overlay.Region.Retint(); Timeline.InvalidateVisual(); };
@@ -485,6 +506,7 @@ namespace Retake.Views
         /// <summary>The video is gone but the notes stay: the review shows them without a picture.</summary>
         void StopVideo()
         {
+            if (quick != null) DropQuick();
             player?.Unload();
             videoLoaded = false;
             media = null;
@@ -496,6 +518,7 @@ namespace Retake.Views
         {
             if (edit != null) EndEditUi();
             edit = null;
+            if (quick != null) DropQuick();
             unsaved.Close();
             VideoWindows.Claim(WindowHandle, null);
             player?.Unload();
@@ -604,7 +627,7 @@ namespace Retake.Views
         void Trace()
         {
             AutomationProperties.SetItemStatus(window, "frame " + frame + (playing ? " playing" : " paused") + " speed " + speed.ToString(CultureInfo.InvariantCulture)
-                + (edit != null ? " editing" : "") + (starting ? " starting" : "") + (saving ? " saving" : "") + (reverseHeld ? " reverse" : "")
+                + (edit != null ? " editing" : "") + (quick != null ? " quick" : "") + (starting ? " starting" : "") + (saving ? " saving" : "") + (reverseHeld ? " reverse" : "")
                 + " selected " + (selectedId ?? "-"));
         }
 

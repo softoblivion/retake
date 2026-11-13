@@ -70,6 +70,13 @@ namespace Retake.Views
         public const string KindChipTip = "Change the type (Ctrl+{0})";
         public const string PlaceFrameTip = "Keep the note on this frame (Ctrl+4)", PlaceGeneralTip = "Make it a note about the whole video (Ctrl+4)";
 
+        // Type bar beside a region marked outside a note.
+        public const string KindBarName = "Note type";
+        public const string HintQuick = "Pick a type to save the region as a note";
+        public const string KeysQuick = "1 2 3 5 6 save · Enter adds text · Esc drops";
+        public const string QuickKindTip = "Save as a {0} note ({1})";
+        public const string QuickText = "Text", QuickTextTip = "Write a text for this note (Enter)";
+
         // Notes list.
         public const string NotesTitle = "Notes";
         public const string NotesEmpty = "No notes yet";

@@ -8,7 +8,7 @@ using Retake.Core;
 
 namespace Retake.Tests
 {
-    /// <summary>General notes, empty-text refusal, kind change, move, the Markdown notes file, failed writes and the package.</summary>
+    /// <summary>General notes, notes without text, kind change, move, the Markdown notes file, failed writes and the package.</summary>
     public static class SessionNotesTests
     {
         private static readonly string Em = " " + (char)0x2014 + " ";
@@ -124,30 +124,90 @@ namespace Retake.Tests
 
         // --- empty text ------------------------------------------------------------------------------------------------
 
-        [Test("session.empty_text_is_refused_on_add_and_update")]
-        public static void EmptyTextIsRefused(TestEnv t)
+        [Test("session.empty_text_is_refused_for_a_general_note_and_taken_for_a_note_on_a_frame")]
+        public static void EmptyTextIsRefusedForAGeneralNoteOnly(TestEnv t)
         {
             var c = new SessionCase(t);
             c.OpenUnknown();
             foreach (string? bad in new string?[] { null, "", "   ", "\t\r\n" })
             {
-                Check.Equal("The note has no text", Check.Throws<SessionException>(() => c.Session.AddNote(5, "FIX", bad, null, null)).Message);
                 Check.Equal("The note has no text", Check.Throws<SessionException>(() => c.Session.AddNote(null, "FIX", bad, null, null)).Message);
             }
             Check.False(Directory.Exists(c.Path_("dummy_notes")));
             Check.Equal(0, c.Events.Count);
-            string id = c.Session.AddNote(5, "FIX", "kept", SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            // a note on a frame needs no words: its kind, timecode and region carry it
+            SessionState data = c.Session.AddNote(5, "FIX", " \t ", null, null);
+            Check.Equal("", data.Notes[0].Text);
+            string general = c.Session.AddNote(null, "ADD", "overall", null, null).Notes[0].Id;
+            string id = c.Session.AddNote(6, "FIX", "kept", SessionCase.Rect(), SessionCase.Png).Notes.Single(n => n.Frame == 6).Id;
             c.Events.Clear();
             foreach (string bad in new[] { "", " \t ", "\n" })
             {
-                Check.Equal("The note has no text", Check.Throws<SessionException>(() => c.Session.UpdateNote(id, text: bad)).Message);
+                Check.Equal("The note has no text", Check.Throws<SessionException>(() => c.Session.UpdateNote(general, text: bad)).Message);
             }
             Check.Equal(0, c.Events.Count);
-            Check.Equal("kept", c.Session.GetState().Notes[0].Text);
+            Check.Equal("overall", c.Session.GetState().Notes.Single(n => n.Id == general).Text);
             // a null text keeps the text while another field changes
-            SessionState data = c.Session.UpdateNote(id, text: null, kind: "ADD");
-            Check.Equal("kept", data.Notes[0].Text);
-            Check.Equal("ADD", data.Notes[0].Kind);
+            data = c.Session.UpdateNote(id, text: null, kind: "ADD");
+            Check.Equal("kept", data.Notes.Single(n => n.Id == id).Text);
+            Check.Equal("ADD", data.Notes.Single(n => n.Id == id).Kind);
+            // an empty text clears the words of a note on a frame and keeps its region and image
+            data = c.Session.UpdateNote(id, text: "  ");
+            NoteState cleared = data.Notes.Single(n => n.Id == id);
+            Check.Equal("", cleared.Text);
+            Check.NotNull(cleared.Region);
+            Check.Equal("0-00-00-06_ADD.png", cleared.Image);
+            Check.Contains("0:00:00:06\tADD\t\trect 0.540,0.360 0.880,0.800\t0-00-00-06_ADD.png\n", NotesTxt(c));
+        }
+
+        [Test("session.a_note_without_text_round_trips_in_format_1_markdown_readable_package_and_undo")]
+        public static void ANoteWithoutTextRoundTrips(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.OpenUnknown();
+            string id = c.Session.AddNote(307, "FIX", null, SessionCase.Rect(), SessionCase.Png).Notes[0].Id;
+            c.Session.AddNote(25, "LIKE", "", Region.CreatePoint(0.5, 1.0), PngB);
+            // the data file: version 1, an empty text column between the kind and the region
+            string expected = Header
+                + "0:00:01:00\tLIKE\t\tpoint 0.500,1.000\t0-00-01-00_LIKE.png\n"
+                + "0:00:12:07\tFIX\t\trect 0.540,0.360 0.880,0.800\t0-00-12-07_FIX.png\n";
+            Check.Equal(expected, NotesTxt(c));
+            Check.Equal(expected, NotesFile.Parse(expected).Render(), "parse and render give the same bytes");
+            // the line a 1.x build wrote for a text-less note reads and renders unchanged
+            string oneX = "# Frame Notes 1\n# source: promo.mp4\n# fps: 25\n0:01:20:01\tFIX\t\tpoint 0.500,1.000\n";
+            NotesFile parsed = NotesFile.Parse(oneX);
+            Check.Equal(1, parsed.Notes.Count);
+            Check.Equal("", parsed.Notes[0].Text);
+            Check.Equal(oneX, parsed.Render());
+            // the Markdown file: the heading and the image, no empty paragraph
+            Check.Contains("## `0:00:01:00` LIKE\n\n![0:00:01:00 LIKE](frames/0-00-01-00_LIKE.png)\n\n"
+                + "## `0:00:12:07` FIX\n\n![0:00:12:07 FIX](frames/0-00-12-07_FIX.png)\n", Md(c));
+            // the readable text: the timecode and the kind carry the note
+            Check.Equal("dummy.mp4\n\n0:00:01:00 LIKE\n0:00:12:07 FIX\n", c.Session.ReadableText());
+            // read back after a reopen
+            c.Session.Close();
+            SessionState again = new Session(c.Settings, d => { }).Open(video);
+            Check.Equal(new[] { "", "" }, Texts(again));
+            Check.Equal("0-00-12-07_FIX.png", again.Notes[1].Image);
+            Check.Equal(expected, NotesTxt(c), "open does not write the data file");
+            // undo brings back a removed text-less note with its image
+            id = c.Session.Open(video).Notes.Single(n => n.Frame == 307).Id;
+            c.Session.RemoveNote(id);
+            Check.False(c.Session.GetState().Notes.Any(n => n.Frame == 307));
+            SessionState undone = c.Session.Undo();
+            Check.Equal(expected, NotesTxt(c));
+            Check.Equal(SessionCase.Png, File.ReadAllBytes(c.Path_("dummy_notes", "frames", "0-00-12-07_FIX.png")));
+            Check.Equal("", undone.Notes.Single(n => n.Frame == 307).Text);
+            // the package carries it like any other note
+            PackResult result = c.Session.Pack();
+            Check.Equal(2, result.Notes);
+            Check.Equal(2, result.Frames);
+            using (var archive = new ZipArchive(File.OpenRead(result.Path), ZipArchiveMode.Read))
+            {
+                List<ZipArchiveEntry> entries = Entries(archive);
+                Check.Equal("dummy.mp4\r\n\r\n0:00:01:00 LIKE\r\n0:00:12:07 FIX\r\n", new UTF8Encoding(false).GetString(ReadEntry(entries[0])));
+                Check.Contains("## `0:00:12:07` FIX\n\n![0:00:12:07 FIX](frames/0-00-12-07_FIX.png)\n", new UTF8Encoding(false).GetString(ReadEntry(entries[1])));
+            }
         }
 
         [Test("session.a_note_with_empty_text_from_a_file_loads_and_stays")]
@@ -553,7 +613,7 @@ namespace Retake.Tests
         {
             var c = new SessionCase(t);
             c.OpenUnknown();
-            SessionException ex = Check.Throws<SessionException>(() => c.Session.AddNote(5, "FIX", "  ", null, null));
+            SessionException ex = Check.Throws<SessionException>(() => c.Session.AddNote(null, "FIX", "  ", null, null));
             Check.False(ex.Changed || ex.NotSaved);
             Check.False(c.Session.GetState().Unsaved);
         }

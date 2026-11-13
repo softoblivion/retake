@@ -66,6 +66,9 @@ namespace Retake.Views
 
         static bool IsTyping() => Keyboard.FocusedElement is TextBox;
 
+        static bool IsModifier(Key key) => key == Key.LeftShift || key == Key.RightShift || key == Key.LeftCtrl || key == Key.RightCtrl
+            || key == Key.LeftAlt || key == Key.RightAlt || key == Key.LWin || key == Key.RWin;
+
         void OnKey(KeyEventArgs e)
         {
             if (e.Handled || closed) return;
@@ -78,6 +81,15 @@ namespace Retake.Views
             {
                 if (key == Key.Escape) { e.Handled = true; Timeline.CancelMove(); }
                 return;
+            }
+            if (quick != null && !IsModifier(key))
+            {
+                // The type bar: a type key saves, Enter goes on to the text, Esc drops; any other key drops the region
+                // and then does its own work.
+                if (mods == ModifierKeys.None && NoteKinds.OfKey(key) is string quickKind) { e.Handled = true; SaveQuick(quickKind); return; }
+                if (mods == ModifierKeys.None && key == Key.Enter) { e.Handled = true; QuickToText(); return; }
+                if (mods == ModifierKeys.None && key == Key.Escape) { e.Handled = true; DropQuick(); return; }
+                DropQuick();
             }
             if (edit != null)
             {

@@ -32,7 +32,7 @@ namespace Retake.Views
 
     /// <summary>
     /// The transparent window over the video rectangle (approach A of the engine spike): a native child window
-    /// covers everything of the main window's visual tree, so the region tool, the note editor and the hint are
+    /// covers everything of the main window's visual tree, so the region tool, the note editor, the type bar and the hint are
     /// drawn here. Owned by the main window (no taskbar entry, above it, hidden with it), placed on the video
     /// area in device pixels and scaled by the Scale step, so its logical layout is the area's. It never takes
     /// activation, except while the note field is typed into. Its background takes the pointer over the whole
@@ -49,6 +49,7 @@ namespace Retake.Views
         public readonly RegionTool Region = new RegionTool();
         public readonly Composer Composer = new Composer();
         public readonly HintPill Hint = new HintPill();
+        public readonly KindBar KindBar = new KindBar();
         IntPtr hwnd;
         bool wanted, hidden, typing, gone;
 
@@ -58,6 +59,8 @@ namespace Retake.Views
         public event Action<Point>? ContextRequested;
         /// <summary>A double click on the video outside drawing mode.</summary>
         public event Action? DoubleClicked;
+        /// <summary>A mouse press anywhere on the overlay outside the type bar.</summary>
+        public event Action? PressedOutsideBar;
 
         static readonly Brush Catcher = MakeCatcher();
 
@@ -94,6 +97,7 @@ namespace Retake.Views
             content.Children.Add(floating);
             floating.Children.Add(Hint);
             floating.Children.Add(Composer);
+            floating.Children.Add(KindBar);
             Content = content;
             SourceInitialized += (s, e) =>
             {
@@ -101,7 +105,11 @@ namespace Retake.Views
                 Win32.SetExStyle(hwnd, Win32.WS_EX_NOACTIVATE | Win32.WS_EX_TOOLWINDOW, true);
             };
             PreviewKeyDown += (s, e) => { if (!Composer.Field.IsKeyboardFocused) KeyForward?.Invoke(e); };
-            PreviewMouseDown += (s, e) => { if (!typing && !owner.IsActive) owner.Activate(); };
+            PreviewMouseDown += (s, e) =>
+            {
+                if (!typing && !owner.IsActive) owner.Activate();
+                if (!(e.OriginalSource is DependencyObject d && IsInside(d, KindBar))) PressedOutsideBar?.Invoke();
+            };
             content.MouseRightButtonUp += (s, e) =>
             {
                 if (e.Handled || Region.Drawing) return;
@@ -185,6 +193,13 @@ namespace Retake.Views
                 Composer.FocusField();
             }
             else if (IsActive || owner.IsVisible) owner.Activate();
+        }
+
+        static bool IsInside(DependencyObject d, DependencyObject ancestor)
+        {
+            for (DependencyObject? p = d; p != null; p = p is Visual || p is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(p) : LogicalTreeHelper.GetParent(p))
+                if (p == ancestor) return true;
+            return false;
         }
 
         /// <summary>Positions an element of the overlay's floating layer (logical pixels of the video area).</summary>

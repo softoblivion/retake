@@ -10,9 +10,9 @@ the 1.x Python core, so it needs the source tree of tag `v1.4.1`.
 The 1.x core also wrote a Markdown export (`<stem>_notes.md`) next to the data file. Retake writes its own Markdown
 notes file under that name, which is not part of the 1.x comparison: the `in/` folders of the `r_resave*` scenarios
 keep the 1.x export as input, no `expected/` folder contains one, and the tests leave `<stem>_notes.md` out of the
-comparison and require it beside every data file. The `a_session` scenario differs from the recorded 1.x run in one operation: the note without text
-got a text, because Retake refuses an empty text on add; the `r_resave` scenarios still carry a recorded note with an
-empty text.
+comparison and require it beside every data file. The `a_session` scenario differs from the recorded 1.x run in one operation: its note without text
+was given a text. The `r_resave` scenarios carry a recorded note with an empty text, and `SessionNotesTests.cs`
+covers adding one.
 
 Scenarios:
 

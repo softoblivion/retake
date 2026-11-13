@@ -72,8 +72,15 @@ namespace Retake.Views
         void UpdateRegionDisplay()
         {
             if (edit != null) return;
-            NoteState? n = Note(selectedId);
             RegionTool tool = Video.Overlay.Region;
+            if (quick != null)
+            {
+                // A marked region belongs to its frame: playback, another frame or another video drops it.
+                if (videoLoaded && !playing && frame == quick.Frame) { tool.Show(quick.Region, "FIX"); return; }
+                DropQuick();
+                return;
+            }
+            NoteState? n = Note(selectedId);
             if (n != null && n.Region != null && n.Frame.HasValue && !playing && frame == n.Frame.Value && (player == null || player.Frame == n.Frame.Value)) tool.Show(n.Region, n.Kind);
             else tool.Show(null, tool.Shown == null ? "FIX" : n?.Kind ?? "FIX");
         }
@@ -122,6 +129,86 @@ namespace Retake.Views
             BeginEdit();
         }
 
+        // --- type bar -------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A region dragged on the video outside a note: playback has paused at the drag's start; the region stays on
+        /// its frame with the type bar beside it. A type saves the note at once without text; the text chip opens the editor.
+        /// </summary>
+        async Task OnRegionMarked(Region r)
+        {
+            if (quick != null) DropQuick();
+            if (Busy || RateMissing()) { UpdateRegionDisplay(); return; }
+            starting = true;
+            int f;
+            try { f = await player!.PauseAndSettle(); }
+            finally { starting = false; }
+            if (edit != null || saving || !videoLoaded) { UpdateRegionDisplay(); return; }
+            Select(null, false);
+            quick = new QuickMark { Region = r, Frame = f };
+            OverlayWindow o = Video.Overlay;
+            o.Region.Show(r, "FIX");
+            o.Hint.Show(Copy.HintQuick, Copy.KeysQuick);
+            o.KindBar.Open();
+            PlaceQuick();
+            Trace();
+        }
+
+        void PlaceQuick()
+        {
+            if (quick == null) return;
+            OverlayWindow o = Video.Overlay;
+            Box frameBox = Video.FrameBox;
+            double areaW = Video.Area.ActualWidth, areaH = Video.Area.ActualHeight;
+            double hintMax = RegionMath.HintMaxWidth(areaW);
+            if (o.Hint.MaxWidth != hintMax) o.Hint.MaxWidth = hintMax;
+            o.Hint.Measure(new Size(hintMax, double.PositiveInfinity));
+            // As wide as its chips, in one row; in a narrow area the chips wrap inside its 8 px margins.
+            double barMax = RegionMath.HintMaxWidth(areaW);
+            if (o.KindBar.MaxWidth != barMax) o.KindBar.MaxWidth = barMax;
+            o.KindBar.Measure(new Size(barMax, double.PositiveInfinity));
+            Size hint = o.Hint.DesiredSize, bar = o.KindBar.DesiredSize;
+            OverlayWindow.Put(o.Hint, RegionMath.PlaceHint(frameBox, areaW, hint.Width), Math.Max(8, frameBox.Y + 10));
+            RegionMath.PlaceEditor(quick.Region, frameBox, areaW, areaH, bar.Width, bar.Height, 0, out double left, out double topY);
+            OverlayWindow.Put(o.KindBar, left, topY);
+        }
+
+        /// <summary>A type from the bar (a click or its number key): the note is saved with the region and no text.</summary>
+        void SaveQuick(string kind)
+        {
+            QuickMark? q = quick;
+            if (q == null || edit != null || saving || player == null) return;
+            CloseQuick();
+            edit = new Edit { Create = true, Quick = true, Kind = kind, OrigKind = kind, Frame = q.Frame, AtFrame = q.Frame, Region = q.Region, RegionDirty = true };
+            _ = Commit();
+        }
+
+        /// <summary>The text chip or Enter: the editor opens on the region, as a new note of the first type.</summary>
+        void QuickToText()
+        {
+            QuickMark? q = quick;
+            if (q == null || edit != null || saving) return;
+            CloseQuick();
+            edit = new Edit { Create = true, Kind = "FIX", OrigKind = "FIX", Frame = q.Frame, AtFrame = q.Frame, Region = q.Region, RegionDirty = true };
+            BeginEdit();
+        }
+
+        /// <summary>Esc, a press elsewhere, another key or another frame: the marked region is dropped.</summary>
+        void DropQuick()
+        {
+            if (quick == null) return;
+            CloseQuick();
+            UpdateRegionDisplay();
+            Trace();
+        }
+
+        void CloseQuick()
+        {
+            quick = null;
+            Video.Overlay.KindBar.Close();
+            Video.Overlay.Hint.Hide();
+        }
+
         async Task EditNote(string id)
         {
             if (!videoLoaded || player == null || starting || saving) return;
@@ -155,6 +242,7 @@ namespace Retake.Views
             Edit e = edit!;
             Trace();
             OverlayWindow o = Video.Overlay;
+            o.Region.SetFree(false);
             o.Composer.Open(e.Kind, Format(e.AtFrame), e.General, text ?? e.OrigText);
             ShowPlace();
             o.SetTyping(true);
@@ -256,6 +344,7 @@ namespace Retake.Views
         {
             OverlayWindow o = Video.Overlay;
             o.Region.SetDrawing(false);
+            o.Region.SetFree(true);
             o.Hint.Hide();
             o.Composer.Close();
             o.SetTyping(false);
@@ -272,7 +361,8 @@ namespace Retake.Views
 
         /// <summary>
         /// Saves the note being written: the frame image first (a new region, or a region drawn in a new type's
-        /// colour), then the core. A note needs text: Enter on an empty field keeps the editor open and asks for it;
+        /// colour), then the core. A note needs text, except a frame note from the type bar or one that had none: Enter
+        /// on an empty field keeps the editor open and asks for it;
         /// <paramref name="dropEmpty"/> (a press elsewhere, another video, closing) drops an empty new note and reverts
         /// an emptied edit. A save already running is returned, so every action that saves first waits for it.
         /// </summary>
@@ -288,8 +378,11 @@ namespace Retake.Views
         {
             Edit e = edit!;
             IPlayer player = this.player!;
+            // A note from the type bar is saved without the editor (its field is closed and empty).
             string text = Video.Overlay.Composer.Text;
-            if (Retake.Core.Note.NormalizeText(text).Length == 0)
+            // A frame note may stay without text when it came from the type bar or had none; any other note needs text.
+            bool mayBeEmpty = !e.General && (e.Quick || (!e.Create && e.OrigText.Length == 0));
+            if (!mayBeEmpty && Retake.Core.Note.NormalizeText(text).Length == 0)
             {
                 if (dropEmpty) CancelEdit();
                 else Video.Overlay.Composer.AskForText();
