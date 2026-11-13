@@ -154,7 +154,7 @@ namespace Retake.Views
 
         public bool DeleteNotes(RecentItem item)
         {
-            bool isOpen = openPath != null && string.Equals(Path.GetFullPath(openPath), Path.GetFullPath(item.Path), StringComparison.OrdinalIgnoreCase);
+            bool isOpen = PathText.Same(openPath, item.Path);
             if (isOpen && edit != null) CancelEdit();
             try
             {
@@ -170,8 +170,10 @@ namespace Retake.Views
                 if (openPath == null) Empty.SetRecent(RecentItem.Read(settings, null));
                 return true;
             }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is SessionException)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is SessionException
+                || ex is ArgumentException || ex is NotSupportedException)
             {
+                // A path that is not valid (a hand-edited settings file) reaches the banner, never the UI thread's handler.
                 Banner.Show(ex.Message);
                 return false;
             }

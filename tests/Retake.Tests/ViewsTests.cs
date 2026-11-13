@@ -253,6 +253,25 @@ namespace Retake.Tests
             Check.Equal(@"…\Review\review-3", PathText.ShortFolder(@"C:\Users\me\Review\review-3"));
             Check.Equal(@"…\b\c", PathText.ShortFolder(@"\\server\share\a\b\c\"));
         }
+
+        [Test("views.recent.delete_notes_of_a_path_that_is_not_valid_never_throws_past_the_banner")]
+        public static void DeleteNotesOfAnInvalidPath(TestEnv t)
+        {
+            string video = t.Combine("clips", "Promo.mp4");
+            Check.True(PathText.Same(video, video.ToUpperInvariant().Replace('\\', '/')), "one file, two spellings");
+            Check.False(PathText.Same(video, t.Combine("clips", "other.mp4")));
+            Check.False(PathText.Same(null, video), "no video open");
+            // paths a hand-edited settings file can hold: a colon inside, characters a path cannot have
+            foreach (string bad in new[] { @"C:\clips\a:b.mp4", "C:\\clips\\a|b.mp4", "C:\\clips\\a\"b.mp4" })
+            {
+                Check.False(PathText.Same(video, bad));
+                Check.True(PathText.Same(bad, bad), "compared as written");
+                // what the core throws for it is one of the types Delete notes reports in the banner
+                Exception ex = Check.Throws<Exception>(() => NotesLayout.DeleteNotes(bad));
+                Check.True(ex is IOException || ex is UnauthorizedAccessException || ex is SessionException || ex is ArgumentException || ex is NotSupportedException,
+                    bad + " threw " + ex.GetType().Name);
+            }
+        }
     
 
         [Test("views.frames.rational_rates_do_not_drift")]
