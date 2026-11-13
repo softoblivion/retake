@@ -324,6 +324,15 @@ namespace Retake.Views
 
             window.Activated += (s, e) => Video.ReclaimFocus();
             window.Deactivated += (s, e) => reverseHeld = false;
+            // Every move of the keyboard is written to the status once it has settled, so a check reads where keys go.
+            Action keysMoved = () => window.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(Trace));
+            foreach (Window w in new Window[] { window, Video.Overlay })
+            {
+                Keyboard.AddGotKeyboardFocusHandler(w, (s, e) => keysMoved());
+                Keyboard.AddLostKeyboardFocusHandler(w, (s, e) => keysMoved());
+                w.Activated += (s, e) => keysMoved();
+                w.Deactivated += (s, e) => keysMoved();
+            }
             window.SourceInitialized += (s, e) => RestorePosition();
             window.Loaded += (s, e) =>
             {
@@ -628,7 +637,56 @@ namespace Retake.Views
         {
             AutomationProperties.SetItemStatus(window, "frame " + frame + (playing ? " playing" : " paused") + " speed " + speed.ToString(CultureInfo.InvariantCulture)
                 + (edit != null ? " editing" : "") + (quick != null ? " quick" : "") + (starting ? " starting" : "") + (saving ? " saving" : "") + (reverseHeld ? " reverse" : "")
-                + " selected " + (selectedId ?? "-"));
+                + " keys " + KeysPlace() + " selected " + (selectedId ?? "-"));
+        }
+
+        /// <summary>
+        /// Where a key press goes, for the status: the window with the Win32 focus (main, overlay, video for the
+        /// player's own window, other, none), then the element with the keyboard focus (its automation id or type,
+        /// "text" for a field, "-" for none).
+        /// </summary>
+        string KeysPlace()
+        {
+            IInputElement? e = Keyboard.FocusedElement;
+            string what = e == null ? "-" : e is TextBox ? "text"
+                : e is DependencyObject d && AutomationProperties.GetAutomationId(d) is string id && id.Length > 0 ? id : e.GetType().Name;
+            return KeysWindow().ToString().ToLowerInvariant() + "/" + what;
+        }
+
+        /// <summary>The window of the app's thread that holds the Win32 focus (none while another program is in front).</summary>
+        KeysAt KeysWindow()
+        {
+            IntPtr f = Win32.GetFocus(), video = Video.Handle;
+            return f == IntPtr.Zero ? KeysAt.None
+                : f == WindowHandle ? KeysAt.Main
+                : f == new System.Windows.Interop.WindowInteropHelper(Video.Overlay).Handle ? KeysAt.Overlay
+                : video != IntPtr.Zero && (f == video || Win32.IsChild(video, f)) ? KeysAt.Video : KeysAt.Other;
+        }
+
+        /// <summary>
+        /// After a note ends (saved, cancelled, removed, restored) and when the type bar of a marked region opens or
+        /// closes: the keyboard goes back to the main window when it was left in the overlay, the player's window or a
+        /// closed field (<see cref="KeyRoute.MustReturn"/>), so Space and the other review keys work without a click.
+        /// Deferred until the focus changes of the step have run; nothing moves while a sheet or a menu is open.
+        /// </summary>
+        void ReturnKeys()
+        {
+            window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                OverlayHost overlay = window.Root.Overlay;
+                if (closed || overlay.SheetOpen || overlay.MenuOpen) return;
+                IInputElement? focused = Keyboard.FocusedElement;
+                KeysOn on = focused == null ? KeysOn.None : focused is TextBox ? KeysOn.Text : KeysOn.Control;
+                bool writing = edit != null && Video.Overlay.Composer.IsOpen;
+                if (!KeyRoute.MustReturn(writing, KeysWindow(), on, focused is UIElement u && u.IsVisible)) return;
+                if (!window.IsActive) window.Activate();
+                Win32.SetFocus(WindowHandle);
+                // The control that had the keyboard in the main window keeps it, unless it is gone or a field.
+                IInputElement? keep = FocusManager.GetFocusedElement(window);
+                if (keep is UIElement k && k.IsVisible && k.Focusable && !(keep is TextBox)) Keyboard.Focus(k);
+                else Keyboard.Focus(window);
+                Trace();
+            }));
         }
 
         void OnFrame(int f)

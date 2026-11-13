@@ -67,7 +67,8 @@ namespace Retake.Views
 
         // --- keyboard -------------------------------------------------------------------------------------------
 
-        static bool IsTyping() => Keyboard.FocusedElement is TextBox;
+        /// <summary>A shown field has the keyboard: keys are text. The closed note field types nothing (<see cref="KeyRoute.ReviewGets"/>).</summary>
+        static bool IsTyping() => Keyboard.FocusedElement is TextBox t && t.IsVisible;
 
         static bool IsModifier(Key key) => key == Key.LeftShift || key == Key.RightShift || key == Key.LeftCtrl || key == Key.RightCtrl
             || key == Key.LeftAlt || key == Key.RightAlt || key == Key.LWin || key == Key.RWin;
@@ -96,6 +97,12 @@ namespace Retake.Views
             }
             if (edit != null)
             {
+                if (!KeyRoute.OpensField(true, Video.Overlay.Composer.IsOpen))
+                {
+                    // The note is being saved and its field is closed: no key reopens the field or acts on the note.
+                    e.Handled = true;
+                    return;
+                }
                 if (key == Key.Enter) { e.Handled = true; _ = Commit(); }
                 else if (key == Key.Escape) { e.Handled = true; CancelEdit(); }
                 else if (mods == ModifierKeys.Control && NoteKinds.OfKey(key) is string kind)
@@ -184,7 +191,7 @@ namespace Retake.Views
 
         void OnText(TextCompositionEventArgs e)
         {
-            if (edit != null && !IsTyping() && e.Text.Length > 0 && !char.IsControl(e.Text[0]))
+            if (KeyRoute.OpensField(edit != null, Video.Overlay.Composer.IsOpen) && !IsTyping() && e.Text.Length > 0 && !char.IsControl(e.Text[0]))
             {
                 // The overlay could not take the activation (another program held the foreground): the typing
                 // reaches the main window, so it goes into the note field here instead of being lost.

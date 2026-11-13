@@ -152,6 +152,8 @@ namespace Retake.Views
             o.KindBar.Open();
             PlaceQuick();
             Trace();
+            // The type keys and Esc of the bar are review keys: they work only while the main window has the keyboard.
+            ReturnKeys();
         }
 
         void PlaceQuick()
@@ -207,6 +209,7 @@ namespace Retake.Views
             quick = null;
             Video.Overlay.KindBar.Close();
             Video.Overlay.Hint.Hide();
+            ReturnKeys();
         }
 
         async Task EditNote(string id)
@@ -348,6 +351,7 @@ namespace Retake.Views
             o.Hint.Hide();
             o.Composer.Close();
             o.SetTyping(false);
+            ReturnKeys();
         }
 
         void CancelEdit()
@@ -465,7 +469,11 @@ namespace Retake.Views
                     edit = reopen;
                     BeginEdit(text);
                 }
-                else ApplyPick(selectedId, false);
+                else
+                {
+                    ApplyPick(selectedId, false);
+                    ReturnKeys();
+                }
                 Trace();
             }
         }
@@ -614,6 +622,7 @@ namespace Retake.Views
                 {
                     if (state.UndoRestoresRemoved && state.UndoNoteId == removedId) UndoNote();
                 });
+                ReturnKeys();
             }
             catch (SessionException ex)
             {
@@ -642,6 +651,8 @@ namespace Retake.Views
                 Report(ex);
                 if (Note(id) != null) Select(id, true);
             }
+            // The Undo of the notice took the keyboard with its click, and the notice is gone.
+            ReturnKeys();
         }
 
         /// <summary>

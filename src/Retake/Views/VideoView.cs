@@ -104,7 +104,8 @@ namespace Retake.Views
                 hwnd = new WindowInteropHelper(this).Handle;
                 Win32.SetExStyle(hwnd, Win32.WS_EX_NOACTIVATE | Win32.WS_EX_TOOLWINDOW, true);
             };
-            PreviewKeyDown += (s, e) => { if (!Composer.Field.IsKeyboardFocused) KeyForward?.Invoke(e); };
+            // Keys reach the review unless the open note field has them; the closed field types nothing (KeyRoute.ReviewGets).
+            PreviewKeyDown += (s, e) => { if (!(Composer.Field.IsKeyboardFocused && Composer.IsOpen)) KeyForward?.Invoke(e); };
             PreviewMouseDown += (s, e) =>
             {
                 if (!typing && !owner.IsActive) owner.Activate();

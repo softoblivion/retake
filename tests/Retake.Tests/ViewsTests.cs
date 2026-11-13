@@ -54,6 +54,40 @@ namespace Retake.Tests
             Check.Equal(2.0, SpeedLadder.ShuttleUp(1.5));
         }
 
+        [Test("views.keys.return_to_the_review_keys_after_a_note")]
+        public static void KeysAfterANote(TestEnv t)
+        {
+            // Each place the keyboard was measured in after a note ended (the window's status "keys <window>/<element>"),
+            // with no note written: Space must play from there, at once or after the keyboard is moved back.
+            void Served(KeysAt at, KeysOn on, bool shown, string seen)
+            {
+                bool gets = KeyRoute.ReviewGets(at, on, shown), back = KeyRoute.MustReturn(false, at, on, shown);
+                Check.True(gets || back, seen + ": the review keys get neither the key nor the keyboard back");
+            }
+            Served(KeysAt.Overlay, KeysOn.Text, false, "overlay/text, the note field closed (a save that ended with the field still focused)");
+            Served(KeysAt.Overlay, KeysOn.None, false, "overlay/- (a marked region, the type bar open)");
+            Served(KeysAt.Overlay, KeysOn.Control, false, "overlay/Overlay (a marked region dropped)");
+            Served(KeysAt.Main, KeysOn.Text, false, "main/text, a field that is no longer shown");
+            Served(KeysAt.Main, KeysOn.None, false, "main/-");
+            Served(KeysAt.Video, KeysOn.None, false, "video/- (the player's own window)");
+            Served(KeysAt.Main, KeysOn.Control, false, "main/Forward");
+
+            // The keyboard stays where it is on a main-window control, while a note is written, in a field the user
+            // sees (a sheet's field), and while another program is in front.
+            Check.False(KeyRoute.MustReturn(false, KeysAt.Main, KeysOn.Control, false), "main/Forward stays");
+            Check.False(KeyRoute.MustReturn(true, KeysAt.Overlay, KeysOn.Text, true), "the note being written keeps the keyboard");
+            Check.False(KeyRoute.ReviewGets(KeysAt.Overlay, KeysOn.Text, true), "typing in the note field is no review key");
+            Check.False(KeyRoute.MustReturn(false, KeysAt.Main, KeysOn.Text, true), "a shown field keeps the keyboard");
+            Check.False(KeyRoute.ReviewGets(KeysAt.Main, KeysOn.Text, true), "typing in a shown field is no review key");
+            Check.False(KeyRoute.MustReturn(false, KeysAt.None, KeysOn.None, false), "another program in front");
+            Check.False(KeyRoute.MustReturn(false, KeysAt.Other, KeysOn.Control, false), "a popup of the app (a menu) keeps the keyboard");
+
+            // During the save the note field is closed: a key there reaches the review, it never reopens the field.
+            Check.True(KeyRoute.OpensField(true, true), "a letter while the note is written goes into its field");
+            Check.False(KeyRoute.OpensField(true, false), "a key during the save does not reopen the closed field");
+            Check.False(KeyRoute.OpensField(false, false), "no note, no field");
+        }
+
         [Test("views.frames.seek_target_is_frame_start")]
         public static void SeekTargetIsFrameStart(TestEnv t)
         {
