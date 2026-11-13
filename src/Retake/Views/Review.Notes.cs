@@ -200,13 +200,16 @@ namespace Retake.Views
             OverlayWindow o = Video.Overlay;
             Box frameBox = Video.FrameBox;
             double areaW = Video.Area.ActualWidth, areaH = Video.Area.ActualHeight;
-            o.Hint.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            // The hint wraps inside the area: a narrow window never cuts the keys off at its edge.
+            double hintMax = RegionMath.HintMaxWidth(areaW);
+            if (o.Hint.MaxWidth != hintMax) o.Hint.MaxWidth = hintMax;
+            o.Hint.Measure(new Size(hintMax, double.PositiveInfinity));
             // A fixed width: the field wraps a long text and the card grows downward, never past the area's edges.
             double width = Composer.CardWidth(areaW);
             if (o.Composer.Width != width) o.Composer.Width = width;
             o.Composer.Measure(new Size(width, double.PositiveInfinity));
             Size hint = o.Hint.DesiredSize, box = o.Composer.DesiredSize;
-            OverlayWindow.Put(o.Hint, Math.Max(8, frameBox.X + (frameBox.W - hint.Width) / 2), Math.Max(8, frameBox.Y + 10));
+            OverlayWindow.Put(o.Hint, RegionMath.PlaceHint(frameBox, areaW, hint.Width), Math.Max(8, frameBox.Y + 10));
             double left, topY;
             if (edit.General)
             {

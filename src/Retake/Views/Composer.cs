@@ -243,7 +243,8 @@ namespace Retake.Views
             AutomationProperties.SetAutomationId(this, "Hint");
             Children.Add(new ShadowLayer("shadow-s"));
             Children.Add(new SurfaceVisual(-1, "stroke-2", null, "menu-tint"));
-            text = new TextBlock { Margin = new Thickness(12, 5, 12, 5), VerticalAlignment = VerticalAlignment.Center };
+            // Wraps when the view gives it a MaxWidth narrower than the line (a small window).
+            text = new TextBlock { Margin = new Thickness(12, 5, 12, 5), VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
             Typography.Caption.Apply(text);
             Children.Add(text);
         }

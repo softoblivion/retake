@@ -106,6 +106,17 @@ namespace Retake.Views
             top = Math.Max(m, Math.Min(Math.Max(m, areaH - editorH - hintH - m), top));
         }
 
+        /// <summary>The widest the hint line over the frame may be: the area less an 8 px margin on each side; it wraps beyond.</summary>
+        public static double HintMaxWidth(double areaW) => Math.Max(0, areaW - 16);
+
+        /// <summary>The left edge of the hint line: centred on the frame, kept inside the area with an 8 px margin.</summary>
+        public static double PlaceHint(Box frame, double areaW, double hintW)
+        {
+            const double m = 8;
+            double left = frame.X + (frame.W - hintW) / 2;
+            return Math.Max(m, Math.Min(areaW - m - hintW, left));
+        }
+
         /// <summary>Native pixels per logical pixel of the frame on screen (the factor of the saved image's strokes).</summary>
         public static double CaptureScale(int nativeWidth, Box frame) => frame.W > 0 ? nativeWidth / frame.W : 1;
 

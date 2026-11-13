@@ -254,6 +254,27 @@ namespace Retake.Tests
             Check.Equal(@"…\b\c", PathText.ShortFolder(@"\\server\share\a\b\c\"));
         }
 
+        [Test("views.region.the_hint_line_stays_inside_a_narrow_video_area")]
+        public static void HintStaysInsideTheArea(TestEnv t)
+        {
+            // a short hint is centred on the frame
+            var frameBox = new Box(100, 40, 600, 338);
+            Check.Equal(100 + (600 - 200) / 2.0, RegionMath.PlaceHint(frameBox, 800, 200));
+            foreach (double areaW in new[] { 120.0, 300, 480, 800 })
+            {
+                // the frame of a tall video in a narrow area: centred on the frame, the widest hint would cross the edge
+                Box tall = RegionMath.Fit(areaW, 400, 1080, 1920);
+                double widest = RegionMath.HintMaxWidth(areaW);
+                Check.Equal(areaW - 16, widest);
+                foreach (double w in new[] { 40.0, widest / 2, widest })
+                {
+                    double left = RegionMath.PlaceHint(tall, areaW, w);
+                    Check.True(left >= 8 && left + w <= areaW - 8, areaW + " " + w + ": " + left);
+                }
+            }
+            Check.Equal(0.0, RegionMath.HintMaxWidth(10), "never negative");
+        }
+
         [Test("views.recent.delete_notes_of_a_path_that_is_not_valid_never_throws_past_the_banner")]
         public static void DeleteNotesOfAnInvalidPath(TestEnv t)
         {
