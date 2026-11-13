@@ -458,15 +458,42 @@ namespace Retake.Tests
         {
             string video = MakeVideo(t);
             string folder = MakeReview(t);
-            Fx.WriteBytes(Path.Combine(folder, "frames", "x.png.part"), new byte[0]);
+            Fx.WriteBytes(Path.Combine(folder, "frames", "0-00-01-00_FIX.png.part"), new byte[0]);
             Fx.WriteBytes(Path.Combine(folder, "Thumbs.db"), new byte[0]);
-            DeleteResult result = NotesLayout.DeleteNotes(video);
+            DeleteResult result = NotesLayout.DeleteNotes(video, false);
             Check.Equal(2, result.Notes);
             Check.Equal(1, result.Frames);
             Check.Equal(folder, result.Path);
             Check.Equal(new[] { "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Check.Equal("There are no notes for promo.mp4.", ex.Message);
+        }
+
+        [Test("notes.delete_refuses_a_png_the_app_did_not_write")]
+        public static void DeleteRefusesForeignPng(TestEnv t)
+        {
+            string video = MakeVideo(t);
+            string folder = MakeReview(t);
+            var foreign = new byte[] { 1, 2, 3, 4 };
+            foreach (string place in new[] { Path.Combine(folder, "frames", "ref_logo.png"), Path.Combine(folder, "ref_logo.png"), Path.Combine(folder, "frames", "shot.png.part"), Path.Combine(folder, "frames", "old.rename") })
+            {
+                Fx.WriteBytes(place, foreign);
+                Dictionary<string, byte[]> before = Fx.Tree(t.Tmp).Where(kv => !kv.Key.StartsWith("home/", StringComparison.Ordinal)).ToDictionary(kv => kv.Key, kv => kv.Value);
+                NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false), place);
+                Check.Equal("The notes folder promo_notes holds other files. Delete it by hand.", ex.Message);
+                Dictionary<string, byte[]> after = Fx.Tree(t.Tmp).Where(kv => !kv.Key.StartsWith("home/", StringComparison.Ordinal)).ToDictionary(kv => kv.Key, kv => kv.Value);
+                Check.Equal(before.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList(), after.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList(), "nothing was removed");
+                Check.Equal(foreign, File.ReadAllBytes(place), "the foreign file is untouched");
+                File.Delete(place);
+            }
+            // what the app itself leaves behind goes with the folder: an image a removed note had (named as the app
+            // names images), the part file of an image write and the temporary name of an image rename
+            Fx.WriteBytes(Path.Combine(folder, "frames", "0-00-03-00_LIKE_2.png"), new byte[] { 5 });
+            Fx.WriteBytes(Path.Combine(folder, "frames", "0-00-01-00_FIX.png.part"), new byte[0]);
+            Fx.WriteBytes(Path.Combine(folder, "frames", "0123abcd.rename"), new byte[] { 6 });
+            DeleteResult result = NotesLayout.DeleteNotes(video, false);
+            Check.Equal(2, result.Frames);
+            Check.False(Directory.Exists(folder));
         }
 
         [Test("notes.summary_counts_general_notes_as_notes")]
@@ -486,7 +513,7 @@ namespace Retake.Tests
             string folder = MakeReview(t);
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { (byte)'P', (byte)'K' });
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip.part"), new byte[0]);
-            DeleteResult result = NotesLayout.DeleteNotes(video);
+            DeleteResult result = NotesLayout.DeleteNotes(video, false);
             Check.Equal(2, result.Notes);
             Check.Equal(1, result.Frames);
             Check.False(Directory.Exists(folder));
@@ -495,7 +522,7 @@ namespace Retake.Tests
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { 1 });
             Fx.WriteText(Path.Combine(folder, "promo_notes.txt"), Data);
             Fx.WriteBytes(Path.Combine(folder, "other.zip"), new byte[] { 1 });
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Check.Equal("The notes folder promo_notes holds other files. Delete it by hand.", ex.Message);
             Check.True(File.Exists(Path.Combine(folder, "promo_notes.zip")));
         }
@@ -513,7 +540,7 @@ namespace Retake.Tests
             Fx.WriteText(t.Combine("promo_notes.txt"), Data);
             Fx.WriteBytes(t.Combine("promo_notes", "0-00-01-00_FIX.png"), new byte[] { (byte)'p', (byte)'n', (byte)'g' });
             Fx.WriteText(t.Combine("other_notes.txt"), "keep");
-            Check.Equal(1, NotesLayout.DeleteNotes(video).Frames);
+            Check.Equal(1, NotesLayout.DeleteNotes(video, false).Frames);
             Check.Equal(new[] { "other_notes.txt", "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
         }
 
@@ -523,14 +550,14 @@ namespace Retake.Tests
             string video = MakeVideo(t);
             string folder = MakeReview(t);
             Fx.WriteText(Path.Combine(folder, "my edit.prproj"), "keep");
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Check.Equal("The notes folder promo_notes holds other files. Delete it by hand.", ex.Message);
             File.Delete(Path.Combine(folder, "my edit.prproj"));
             Directory.CreateDirectory(Path.Combine(folder, "frames", "sub"));
-            Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Directory.Delete(Path.Combine(folder, "frames", "sub"));
             Fx.WriteText(Path.Combine(folder, "promo_notes.txt"), Data.Replace("promo.mp4", "promo.mov"));
-            ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Check.Equal("The notes folder promo_notes belongs to promo.mov.", ex.Message);
             // nothing was removed by any refusal
             Check.Equal(new[] { "frames", "promo_notes.md", "promo_notes.txt" }, Fx.Names(folder));
@@ -542,7 +569,7 @@ namespace Retake.Tests
         {
             string video = MakeVideo(t);
             Fx.WriteText(t.Combine("promo_notes"), "not a folder");
-            Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Check.True(File.Exists(t.Combine("promo_notes")));
         }
 
@@ -565,7 +592,7 @@ namespace Retake.Tests
                 process.WaitForExit();
                 Check.Equal(0, process.ExitCode, "mklink /J");
             }
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
             Check.Equal("The notes folder promo_notes holds other files. Delete it by hand.", ex.Message);
             Check.False(NotesLayout.MigrateLayout(video), "images behind a junction are not moved");
             Check.Equal(new[] { "a.png", "promo_notes.txt" }, Fx.Names(real));

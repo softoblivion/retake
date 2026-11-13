@@ -39,7 +39,7 @@ namespace Retake.Views
         public const string RecentMissingTip = "The video is no longer there · right-click for more";
         public const string RecentMissing = "Video not found";
         public const string MenuOpen = "Open", MenuReveal = "Show in Explorer", MenuDelete = "Delete notes", MenuForget = "Remove from recent";
-        public const string MenuDeleteTip = "Deletes the notes folder; asks first", MenuForgetTip = "Takes it off the list; files stay";
+        public const string MenuDeleteTip = "Moves the notes folder to the Recycle Bin; asks first", MenuForgetTip = "Takes it off the list; files stay";
         public const string DeleteAsk = "Delete {0} and {1}?", DeleteAskEmpty = "Delete the empty notes folder?";
         public const string Deleted = "Deleted {0} and {1}", DeletedEmpty = "Deleted the empty notes folder";
 

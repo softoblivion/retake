@@ -123,7 +123,9 @@ ready to drag into a chat or an e-mail. Pressing Done again replaces the zip wit
 
 The start screen and the **Recent** menu list recent videos with their last position and note counts (a long list
 scrolls); a click opens a video at the frame it was left on. Right click an entry to open it, show its notes folder in Explorer,
-delete its notes (asks once more first) or take it off the list.
+delete its notes (asks once more first) or take it off the list. Delete notes moves the notes folder to the Recycle
+Bin, and only when the folder holds nothing but the files Retake writes there; with any other file in it, such as a
+picture of your own, nothing is deleted and the message says to delete the folder by hand.
 
 ## Keyboard
 

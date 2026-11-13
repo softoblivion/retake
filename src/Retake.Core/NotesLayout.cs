@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Retake.Core
 {
@@ -55,8 +56,6 @@ namespace Retake.Core
     /// </summary>
     public static class NotesLayout
     {
-        private static readonly string[] LeftoverSuffixes = { ".part", ".rename" };
-
         private static string Beside(string video, string name)
         {
             string dir = Path.GetDirectoryName(video) ?? "";
@@ -272,14 +271,30 @@ namespace Retake.Core
             return null;
         }
 
-        private static bool AllowedLeftover(string name, string? baseName = null)
+        /// <summary>An image name as <see cref="ImageName"/> makes it: <c>&lt;timecode with '-'&gt;_&lt;KIND&gt;[_n].png</c>.</summary>
+        private static readonly Regex AppImageName = new Regex(
+            "^[0-9]+-[0-9]{2}-[0-9]{2}-[0-9]{2,}_(" + string.Join("|", Note.Kinds) + ")(_[0-9]+)?\\.png$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        /// <summary>The temporary name of an image while <see cref="Session"/> renames images: <c>&lt;note id&gt;.rename</c>.</summary>
+        private static readonly Regex RenameLeftover = new Regex("^[0-9a-f]{8}\\.rename$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        private static string WithoutPart(string name)
+        {
+            return name.EndsWith(".part", StringComparison.OrdinalIgnoreCase) ? name.Substring(0, name.Length - ".part".Length) : name;
+        }
+
+        /// <summary>
+        /// A frame image the app wrote (a name in <paramref name="named"/>, the image names of the data file, or a name
+        /// in the app's own form), its part file, an image rename's temporary file, or a file Windows puts in folders.
+        /// </summary>
+        private static bool AppImageOrLeftover(string name, ISet<string> named)
         {
             string lower = name.ToLowerInvariant();
             if (lower == "thumbs.db" || lower == "desktop.ini") return true;
-            if (lower.EndsWith(".rename", StringComparison.Ordinal)) return true;
-            if (lower.EndsWith(".part", StringComparison.Ordinal)) lower = lower.Substring(0, lower.Length - ".part".Length);
-            if (baseName != null && lower == baseName.ToLowerInvariant()) return true;
-            return lower.EndsWith(".png", StringComparison.Ordinal);
+            if (RenameLeftover.IsMatch(name)) return true;
+            string bare = WithoutPart(name);
+            return named.Contains(bare) || AppImageName.IsMatch(bare);
         }
 
         private static bool IsPng(string name)
@@ -289,10 +304,14 @@ namespace Retake.Core
 
         /// <summary>
         /// Removes the notes folder of the video (and a 1.0 data file beside it) after checking that it holds only files
-        /// the app wrote. Throws <see cref="NotesLayoutException"/> when there is nothing to delete, when the folder
+        /// the app wrote: the data file, the Markdown file and the package, the images the data file names or that carry
+        /// a name in the app's own form, the part and rename files of those writes, <c>Thumbs.db</c> and
+        /// <c>desktop.ini</c>. Throws <see cref="NotesLayoutException"/> when there is nothing to delete, when the folder
         /// belongs to another video or holds other files, or when a removal fails; nothing is removed by a refusal.
+        /// With <paramref name="toRecycleBin"/> the folder and the 1.0 data file go to the Recycle Bin (on a drive
+        /// without one, such as a network share, the shell deletes them); without it they are deleted.
         /// </summary>
-        public static DeleteResult DeleteNotes(string video)
+        public static DeleteResult DeleteNotes(string video, bool toRecycleBin = true)
         {
             string folder = NotesDirFor(video);
             string dataFile = NotesPathFor(video);
@@ -323,6 +342,15 @@ namespace Retake.Core
                     throw new NotesLayoutException("The notes folder " + folderName + " belongs to " + nf.Source + ".");
                 if (nf != null) notesCount = nf.Notes.Count;
                 else if (legacyOurs && legacyNf != null) notesCount = legacyNf.Notes.Count;
+                var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (NotesFile? source in new[] { nf, legacyOurs ? legacyNf : null })
+                {
+                    if (source == null) continue;
+                    foreach (Note note in source.Notes)
+                    {
+                        if (IsPlainName(note.Image)) named.Add(note.Image!);
+                    }
+                }
                 string foreign = "The notes folder " + folderName + " holds other files. Delete it by hand.";
                 try
                 {
@@ -335,16 +363,17 @@ namespace Retake.Core
                             foreach (string item in Directory.GetFileSystemEntries(entry))
                             {
                                 string itemName = Path.GetFileName(item);
-                                if (!IsPlainFile(item) || !AllowedLeftover(itemName)) throw new NotesLayoutException(foreign);
+                                if (!IsPlainFile(item) || !AppImageOrLeftover(itemName, named)) throw new NotesLayoutException(foreign);
                                 files.Add(item);
                                 if (IsPng(itemName)) pngs++;
                             }
                             continue;
                         }
                         if (!IsPlainFile(entry)) throw new NotesLayoutException(foreign);
-                        string lower = name.ToLowerInvariant();
-                        if (lower == dataName.ToLowerInvariant() || lower == exportName.ToLowerInvariant() || lower == packageName.ToLowerInvariant()
-                            || AllowedLeftover(name, dataName) || AllowedLeftover(name, exportName) || AllowedLeftover(name, packageName))
+                        // The data file, the Markdown file, the package (each also as a part file), and the images of the 1.0 layout.
+                        string bare = WithoutPart(name);
+                        if (string.Equals(bare, dataName, StringComparison.OrdinalIgnoreCase) || string.Equals(bare, exportName, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(bare, packageName, StringComparison.OrdinalIgnoreCase) || AppImageOrLeftover(name, named))
                         {
                             files.Add(entry);
                             if (IsPng(name)) pngs++;
@@ -367,6 +396,24 @@ namespace Retake.Core
                 notesCount = legacyNf.Notes.Count;
             }
 
+            if (toRecycleBin)
+            {
+                // The checked folder goes as one item, so a restore from the Recycle Bin brings the whole review back.
+                var targets = new List<string>();
+                if (folderExists) targets.Add(folder);
+                if (legacyOurs) targets.Add(legacy);
+                try
+                {
+                    NativeFile.Recycle(targets);
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    Log.Error("deleting the notes of " + video + " failed: " + ex.Message);
+                    throw new NotesLayoutException("The notes folder " + folderName + " could not be deleted completely.", ex);
+                }
+                Log.Info("moved the notes of " + videoName + " to the Recycle Bin: " + folder + " (" + notesCount + " notes, " + pngs + " frame images)");
+                return new DeleteResult(notesCount, pngs, folder);
+            }
             // Images first, then the package and the Markdown file, the data file last: an interrupted delete keeps the notes readable.
             string dataLower = dataName.ToLowerInvariant();
             string exportLower = exportName.ToLowerInvariant();
