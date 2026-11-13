@@ -365,6 +365,15 @@ namespace Retake.Tests
                     bad + " threw " + ex.GetType().Name);
             }
         }
+
+        [Test("views.recent.delete_notice_counts_the_files_it_kept")]
+        public static void DeleteNoticeCountsKeptFiles(TestEnv t)
+        {
+            Check.Equal("Deleted 2 notes and 1 frame", Copy.DeletedNotice(2, 1, 0));
+            Check.Equal("Deleted the empty notes folder", Copy.DeletedNotice(0, 0, 0));
+            Check.Equal("Deleted 2 notes and 1 frame; kept 1 other file in the notes folder", Copy.DeletedNotice(2, 1, 1));
+            Check.Equal("Deleted 0 notes and 0 frames; kept 3 other files in the notes folder", Copy.DeletedNotice(0, 0, 3));
+        }
     
 
         [Test("views.frames.rational_rates_do_not_drift")]

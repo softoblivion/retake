@@ -39,9 +39,10 @@ namespace Retake.Views
         public const string RecentMissingTip = "The video is no longer there · right-click for more";
         public const string RecentMissing = "Video not found";
         public const string MenuOpen = "Open", MenuReveal = "Show in Explorer", MenuDelete = "Delete notes", MenuForget = "Remove from recent";
-        public const string MenuDeleteTip = "Moves the notes folder to the Recycle Bin; asks first", MenuForgetTip = "Takes it off the list; files stay";
+        public const string MenuDeleteTip = "Moves the notes to the Recycle Bin; other files stay; asks first", MenuForgetTip = "Takes it off the list; files stay";
         public const string DeleteAsk = "Delete {0} and {1}?", DeleteAskEmpty = "Delete the empty notes folder?";
         public const string Deleted = "Deleted {0} and {1}", DeletedEmpty = "Deleted the empty notes folder";
+        public const string DeletedKept = "Deleted {0} and {1}; kept {2} in the notes folder";
 
         // Transport.
         public const string BackTip = "Previous frame (←)", ForwardTip = "Next frame (→)";
@@ -127,5 +128,15 @@ namespace Retake.Views
         public static string Count(int n, string one, string many) => n + " " + (n == 1 ? one : many);
         public static string Notes(int n) => Count(n, "note", "notes");
         public static string Frames(int n) => Count(n, "frame", "frames");
+        public static string OtherFiles(int n) => Count(n, "other file", "other files");
+
+        /// <summary>The notice after Delete notes; files of other programs the delete kept are counted in it.</summary>
+        public static string DeletedNotice(int notes, int frames, int kept)
+        {
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            if (kept > 0) return string.Format(culture, DeletedKept, Notes(notes), Frames(frames), OtherFiles(kept));
+            if (notes == 0 && frames == 0) return DeletedEmpty;
+            return string.Format(culture, Deleted, Notes(notes), Frames(frames));
+        }
     }
 }

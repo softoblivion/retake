@@ -33,12 +33,16 @@ namespace Retake.Core
     /// <summary>What <see cref="NotesLayout.DeleteNotes"/> removed.</summary>
     public sealed class DeleteResult
     {
-        public DeleteResult(int notes, int frames, string path)
+        public DeleteResult(int notes, int frames, string path, int kept = 0)
         {
             Notes = notes;
             Frames = frames;
             Path = path;
+            Kept = kept;
         }
+
+        /// <summary>Number of other files (a sub-folder counts as one) left where they were, with the folders that hold them.</summary>
+        public int Kept { get; private set; }
 
         /// <summary>Number of notes in the deleted data file.</summary>
         public int Notes { get; private set; }
@@ -307,13 +311,15 @@ namespace Retake.Core
         }
 
         /// <summary>
-        /// Removes the notes folder of the video (and a 1.0 data file beside it) after checking that it holds only files
-        /// the app wrote: the data file, the Markdown file and the package, the images the data file names or that carry
-        /// a name in the app's own form, the part and rename files of those writes, <c>Thumbs.db</c> and
-        /// <c>desktop.ini</c>. Throws <see cref="NotesLayoutException"/> when there is nothing to delete, when the folder
-        /// belongs to another video or holds other files, or when a removal fails; nothing is removed by a refusal.
-        /// With <paramref name="toRecycleBin"/> the folder and the 1.0 data file go to the Recycle Bin (on a drive
-        /// without one, such as a network share, the shell deletes them); without it they are deleted.
+        /// Removes the files the app wrote in the notes folder of the video (and a 1.0 data file beside it): the data
+        /// file, the Markdown file and the package, the images the data file names or that carry a name in the app's own
+        /// form, the part and rename files of those writes, <c>Thumbs.db</c> and <c>desktop.ini</c>. Every other file,
+        /// sub-folder or link stays where it is, with the folders that hold it, and is counted in
+        /// <see cref="DeleteResult.Kept"/>; with none, the folder goes as one item. Throws
+        /// <see cref="NotesLayoutException"/> when there is nothing to delete, when the folder is a link or belongs to
+        /// another video, or when a removal fails; nothing is removed by a refusal.
+        /// With <paramref name="toRecycleBin"/> the files go to the Recycle Bin (on a drive without one, such as a network
+        /// share, the shell deletes them); without it they are deleted.
         /// </summary>
         public static DeleteResult DeleteNotes(string video, bool toRecycleBin = true)
         {
@@ -322,7 +328,6 @@ namespace Retake.Core
             string export = MarkdownPathFor(video);
             string package = PackagePathFor(video);
             string legacy = LegacyNotesPathFor(video);
-            string frames = ImagesDirFor(video);
             string videoName = Path.GetFileName(video);
             string folderName = Path.GetFileName(folder);
             string dataName = Path.GetFileName(dataFile);
@@ -331,7 +336,7 @@ namespace Retake.Core
 
             bool folderExists = Exists(folder);
             if (folderExists && !IsPlainDir(folder))
-                throw new NotesLayoutException("The notes folder " + folderName + " holds other files. Delete it by hand.");
+                throw new NotesLayoutException("The notes folder " + folderName + " is a link or a file, not a folder. Delete it by hand.");
             NotesFile? legacyNf = File.Exists(legacy) ? ReadNotesFile(legacy) : null;
             bool legacyOurs = legacyNf != null && SameName(legacyNf.Source, videoName);
             if (!folderExists && !legacyOurs) throw new NotesLayoutException("There are no notes for " + videoName + ".");
@@ -339,6 +344,9 @@ namespace Retake.Core
             var files = new List<string>();
             int pngs = 0;
             int notesCount = 0;
+            var frameFiles = new List<string>();
+            int kept = 0;
+            string? framesWhole = null;
             if (folderExists)
             {
                 NotesFile? nf = File.Exists(dataFile) ? ReadNotesFile(dataFile) : null;
@@ -355,40 +363,40 @@ namespace Retake.Core
                         if (IsPlainName(note.Image)) named.Add(note.Image!);
                     }
                 }
-                string foreign = "The notes folder " + folderName + " holds other files. Delete it by hand.";
                 try
                 {
                     foreach (string entry in Directory.GetFileSystemEntries(folder))
                     {
                         string name = Path.GetFileName(entry);
-                        if (name.ToLowerInvariant() == NotesFile.FramesDirName)
+                        if (name.ToLowerInvariant() == NotesFile.FramesDirName && Directory.Exists(entry))
                         {
-                            if (!IsPlainDir(entry)) throw new NotesLayoutException(foreign);
+                            // A linked frames folder is not entered: it and what it points to stay.
+                            if (!IsPlainDir(entry)) { kept++; continue; }
+                            int framesKept = 0;
                             foreach (string item in Directory.GetFileSystemEntries(entry))
                             {
                                 string itemName = Path.GetFileName(item);
-                                if (!IsPlainFile(item) || !AppImageOrLeftover(itemName, named)) throw new NotesLayoutException(foreign);
-                                files.Add(item);
+                                if (!IsPlainFile(item) || !AppImageOrLeftover(itemName, named)) { framesKept++; continue; }
+                                frameFiles.Add(item);
                                 if (IsPng(itemName)) pngs++;
                             }
+                            kept += framesKept;
+                            // With nothing else in it the frames folder goes as one item; else only its own files go.
+                            if (framesKept == 0) framesWhole = entry;
                             continue;
                         }
-                        if (!IsPlainFile(entry)) throw new NotesLayoutException(foreign);
                         // The data file, the Markdown file, the package (each also as a part file), and the images of the 1.0 layout.
                         string bare = WithoutPart(name);
-                        if (string.Equals(bare, dataName, StringComparison.OrdinalIgnoreCase) || string.Equals(bare, exportName, StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(bare, packageName, StringComparison.OrdinalIgnoreCase) || AppImageOrLeftover(name, named))
+                        if (IsPlainFile(entry) && (string.Equals(bare, dataName, StringComparison.OrdinalIgnoreCase) || string.Equals(bare, exportName, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(bare, packageName, StringComparison.OrdinalIgnoreCase) || AppImageOrLeftover(name, named)))
                         {
                             files.Add(entry);
                             if (IsPng(name)) pngs++;
                             continue;
                         }
-                        throw new NotesLayoutException(foreign);
+                        // Anything else (a file of the reviewer's, a sub-folder, a link) stays where it is.
+                        kept++;
                     }
-                }
-                catch (NotesLayoutException)
-                {
-                    throw;
                 }
                 catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
                 {
@@ -400,11 +408,33 @@ namespace Retake.Core
                 notesCount = legacyNf.Notes.Count;
             }
 
+            // A folder of only other files, with nothing of the app's in it or beside it, has no notes to delete.
+            if (kept > 0 && files.Count == 0 && frameFiles.Count == 0 && framesWhole == null && !legacyOurs)
+                throw new NotesLayoutException("There are no notes for " + videoName + ".");
+
+            // Images first, then the package and the Markdown file, the data file last: an interrupted delete keeps the notes readable.
+            string dataLower = dataName.ToLowerInvariant();
+            string exportLower = exportName.ToLowerInvariant();
+            string packageLower = packageName.ToLowerInvariant();
+            files = files.OrderBy(p =>
+            {
+                string n = Path.GetFileName(p).ToLowerInvariant();
+                return n == dataLower ? 3 : n == exportLower ? 2 : n == packageLower ? 1 : 0;
+            }).ToList();
+            string keptNote = kept > 0 ? ", " + kept + " other entries kept" : "";
+
             if (toRecycleBin)
             {
-                // The checked folder goes as one item, so a restore from the Recycle Bin brings the whole review back.
+                // With nothing else in it the checked folder goes as one item, so a restore from the Recycle Bin brings the
+                // whole review back; with other entries kept only the app's own items go, and the folder stays.
                 var targets = new List<string>();
-                if (folderExists) targets.Add(folder);
+                if (folderExists && kept == 0) targets.Add(folder);
+                else if (folderExists)
+                {
+                    if (framesWhole != null) targets.Add(framesWhole);
+                    else targets.AddRange(frameFiles);
+                    targets.AddRange(files);
+                }
                 if (legacyOurs) targets.Add(legacy);
                 try
                 {
@@ -415,25 +445,17 @@ namespace Retake.Core
                     Log.Error("deleting the notes of " + video + " failed: " + ex.Message);
                     throw new NotesLayoutException("The notes folder " + folderName + " could not be deleted completely.", ex);
                 }
-                Log.Info("moved the notes of " + videoName + " to the Recycle Bin: " + folder + " (" + notesCount + " notes, " + pngs + " frame images)");
-                return new DeleteResult(notesCount, pngs, folder);
+                Log.Info("moved the notes of " + videoName + " to the Recycle Bin: " + folder + " (" + notesCount + " notes, " + pngs + " frame images" + keptNote + ")");
+                return new DeleteResult(notesCount, pngs, folder, kept);
             }
-            // Images first, then the package and the Markdown file, the data file last: an interrupted delete keeps the notes readable.
-            string dataLower = dataName.ToLowerInvariant();
-            string exportLower = exportName.ToLowerInvariant();
-            string packageLower = packageName.ToLowerInvariant();
-            files = files.OrderBy(p =>
-            {
-                string n = Path.GetFileName(p).ToLowerInvariant();
-                return n == dataLower ? 3 : n == exportLower ? 2 : n == packageLower ? 1 : 0;
-            }).ToList();
             try
             {
+                foreach (string path in frameFiles) File.Delete(path);
                 foreach (string path in files) File.Delete(path);
                 if (folderExists)
                 {
-                    if (IsPlainDir(frames)) Directory.Delete(frames, false);
-                    Directory.Delete(folder, false);
+                    if (framesWhole != null) Directory.Delete(framesWhole, false);
+                    if (kept == 0) Directory.Delete(folder, false);
                 }
                 if (legacyOurs) File.Delete(legacy);
             }
@@ -442,8 +464,8 @@ namespace Retake.Core
                 Log.Error("deleting the notes of " + video + " failed: " + ex.Message);
                 throw new NotesLayoutException("The notes folder " + folderName + " could not be deleted completely.", ex);
             }
-            Log.Info("deleted the notes of " + videoName + ": " + folder + " (" + notesCount + " notes, " + pngs + " frame images)");
-            return new DeleteResult(notesCount, pngs, folder);
+            Log.Info("deleted the notes of " + videoName + ": " + folder + " (" + notesCount + " notes, " + pngs + " frame images" + keptNote + ")");
+            return new DeleteResult(notesCount, pngs, folder, kept);
         }
     }
 }

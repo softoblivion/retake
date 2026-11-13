@@ -219,9 +219,7 @@ namespace Retake.Views
             try
             {
                 DeleteResult r = NotesLayout.DeleteNotes(item.Path);
-                string message = r.Notes == 0 && r.Frames == 0 ? Copy.DeletedEmpty
-                    : string.Format(CultureInfo.InvariantCulture, Copy.Deleted, Copy.Notes(r.Notes), Copy.Frames(r.Frames));
-                window.Root.Toasts.Show(ToastLevel.Success, message);
+                window.Root.Toasts.Show(ToastLevel.Success, Copy.DeletedNotice(r.Notes, r.Frames, r.Kept));
                 if (isOpen)
                 {
                     selectedId = null;
