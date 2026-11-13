@@ -48,9 +48,11 @@ namespace Retake.Views
             finally { discarded = false; }
         }
 
-        /// <summary>Closes the video of the session (notes that are not saved are dropped); the Discard ends.</summary>
+        /// <summary>Closes the video of the session (notes that are not saved and covered by a Discard are dropped); the Discard ends.</summary>
+        /// <exception cref="System.InvalidOperationException">Notes are not saved and no Discard covers them (<see cref="MustAsk"/>): nothing is closed.</exception>
         public void Close()
         {
+            if (MustAsk) throw new System.InvalidOperationException("The notes are not saved: ask before closing the video");
             session.Close();
             discarded = false;
         }

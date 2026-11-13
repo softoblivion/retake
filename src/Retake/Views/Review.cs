@@ -91,7 +91,7 @@ namespace Retake.Views
         double speed = 1;
         string? selectedId;
         Edit? edit;
-        bool starting, saving, closing, closed, reverseHeld, freezing, packing;
+        bool starting, saving, closing, closed, reverseHeld, freezing, packing, failing;
         // A Discard of notes that could not be saved covers only the move it was given for.
         readonly UnsavedGate unsaved;
         Task? commitTask;
@@ -456,11 +456,35 @@ namespace Retake.Views
             UpdateCover();
         }
 
-        void OnFailed(string message)
+        /// <summary>
+        /// The video cannot be played. The notes come first: the note being written is saved, and notes that are not saved
+        /// leave memory only after the question (saved or discarded); Cancel, or a note still being written, keeps the
+        /// review open without the video.
+        /// </summary>
+        async void OnFailed(string message)
         {
             string name = state.Video?.Name ?? (openPath != null ? Path.GetFileName(openPath) : "");
             Banner.Show(name.Length > 0 ? string.Format(CultureInfo.InvariantCulture, Copy.CannotPlay, name, message) : message);
-            CloseVideo();
+            if (failing) return;
+            failing = true;
+            try
+            {
+                if (edit != null) await Commit(true);
+                if (edit == null && await ResolveUnsaved()) CloseVideo();
+                else StopVideo();
+            }
+            catch (Exception ex) { Log.Error("closing a video that cannot be played failed", ex); }
+            finally { failing = false; }
+        }
+
+        /// <summary>The video is gone but the notes stay: the review shows them without a picture.</summary>
+        void StopVideo()
+        {
+            player?.Unload();
+            videoLoaded = false;
+            media = null;
+            Video.SetActive(false);
+            Transport.SetEnabled(false);
         }
 
         void CloseVideo()

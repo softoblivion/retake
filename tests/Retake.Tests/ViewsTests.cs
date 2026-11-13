@@ -363,6 +363,28 @@ namespace Retake.Tests
             Directory.Delete(target);
         }
 
+        [Test("views.unsaved.close_refuses_to_drop_notes_that_nobody_discarded")]
+        public static void CloseRefusesUnsavedNotes(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            var gate = new UnsavedGate(c.Session);
+            c.Session.AddNote(5, "FIX", "first", null, null);
+            string target = c.Path_("dummy_notes", "dummy_notes.txt");
+            File.Delete(target);
+            Directory.CreateDirectory(target);
+            gate.Failed(Check.Throws<SessionException>(() => c.Session.AddNote(6, "ADD", "second", null, null)));
+            // a playback failure closes the video: never with notes the reviewer was not asked about
+            Check.Throws<InvalidOperationException>(() => gate.Close());
+            Check.Equal(2, c.Session.GetState().Notes.Count, "the notes stay in memory");
+            Check.True(c.Session.GetState().Unsaved);
+            Check.Equal("dummy.mp4", c.Session.GetState().Video!.Name);
+            gate.Discard();
+            gate.Close();
+            Check.Null(c.Session.GetState().Video, "closed after the Discard");
+            Directory.Delete(target);
+        }
+
         [Test("views.video_windows.a_window_that_has_a_video_open_is_found_by_its_path")]
         public static void VideoWindowsFindTheOwner(TestEnv t)
         {
