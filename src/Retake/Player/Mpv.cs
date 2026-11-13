@@ -73,11 +73,14 @@ namespace Retake.Player
     /// <summary>
     /// A thin libmpv client: options, commands, properties and an event thread that reports events through
     /// <see cref="Event"/> (raised on that thread). Property changes are observed by name with a format.
-    /// Shutdown stops the event thread first (<c>mpv_wakeup</c>, join) and destroys the handle afterwards.
+    /// Shutdown stops the event thread first (<c>mpv_wakeup</c>, join) and destroys the handle afterwards. Every call on
+    /// the handle after the constructor runs inside <see cref="gate"/>, so the handle is destroyed only once no call
+    /// (a frame grab on a pool thread, the event wait) is running on it; a call after the shutdown touches nothing.
     /// </summary>
     public sealed class MpvClient : IDisposable
     {
         readonly Thread events;
+        readonly CallGate gate = new CallGate();
         volatile bool stopping;
         readonly Dictionary<ulong, string> observed = new Dictionary<ulong, string>();
         ulong nextObserve = 1;
@@ -108,47 +111,70 @@ namespace Retake.Player
             if (r < 0) throw new MpvException(what + ": " + MpvNative.Error(r));
         }
 
+        /// <summary>Enters the gate and reads the handle; false (and nothing entered) once the player is shut down.</summary>
+        bool Enter(out IntPtr h)
+        {
+            h = IntPtr.Zero;
+            if (!gate.TryEnter()) return false;
+            h = Handle;
+            if (h != IntPtr.Zero) return true;
+            gate.Exit();
+            return false;
+        }
+
         public void Observe(string name, int format)
         {
             ulong id;
             lock (observed) { id = nextObserve++; observed[id] = name; }
-            Check(MpvNative.mpv_observe_property(Handle, id, MpvNative.U8(name), format), "observe " + name);
+            if (!Enter(out IntPtr h)) throw new MpvException("No player");
+            try { Check(MpvNative.mpv_observe_property(h, id, MpvNative.U8(name), format), "observe " + name); }
+            finally { gate.Exit(); }
         }
 
         void Loop()
         {
             while (!stopping)
             {
-                IntPtr h = Handle;
-                if (h == IntPtr.Zero) break;
-                IntPtr ev = MpvNative.mpv_wait_event(h, 1.0);
-                if (stopping) break;
-                int id = Marshal.ReadInt32(ev);
-                if (id == MpvNative.EventNone) continue;
-                if (id == MpvNative.EventShutdown) break;
-                var e = new MpvEvent { Id = id, Error = Marshal.ReadInt32(ev, 4) };
-                IntPtr data = Marshal.ReadIntPtr(ev, 16);
-                if (id == MpvNative.EventPropertyChange && data != IntPtr.Zero)
-                {
-                    e.Name = MpvNative.FromU8(Marshal.ReadIntPtr(data));
-                    int format = Marshal.ReadInt32(data, IntPtr.Size);
-                    IntPtr p = Marshal.ReadIntPtr(data, IntPtr.Size * 2);
-                    if (p != IntPtr.Zero)
-                    {
-                        if (format == MpvNative.FormatDouble) e.Number = BitConverter.Int64BitsToDouble(Marshal.ReadInt64(p));
-                        else if (format == MpvNative.FormatFlag) e.Number = Marshal.ReadInt32(p);
-                        else if (format == MpvNative.FormatInt64) e.Number = Marshal.ReadInt64(p);
-                        else if (format == MpvNative.FormatString) e.Text = MpvNative.FromU8(Marshal.ReadIntPtr(p));
-                    }
-                }
-                else if (id == MpvNative.EventEndFile && data != IntPtr.Zero)
-                {
-                    e.Reason = Marshal.ReadInt32(data);
-                    e.Error = Marshal.ReadInt32(data, 4);
-                }
+                if (!Enter(out IntPtr h)) break;
+                MpvEvent? e;
+                bool stop;
+                // The event belongs to the handle: it is read inside the gate, the handlers run outside it.
+                try { e = Next(h, out stop); }
+                finally { gate.Exit(); }
+                if (stop) break;
+                if (e == null) continue;
                 try { Event?.Invoke(e); }
                 catch (Exception ex) { Retake.Core.Log.Error("player event handler failed", ex); }
             }
+        }
+
+        MpvEvent? Next(IntPtr h, out bool stop)
+        {
+            IntPtr ev = MpvNative.mpv_wait_event(h, 1.0);
+            int id = Marshal.ReadInt32(ev);
+            stop = stopping || id == MpvNative.EventShutdown;
+            if (stop || id == MpvNative.EventNone) return null;
+            var e = new MpvEvent { Id = id, Error = Marshal.ReadInt32(ev, 4) };
+            IntPtr data = Marshal.ReadIntPtr(ev, 16);
+            if (id == MpvNative.EventPropertyChange && data != IntPtr.Zero)
+            {
+                e.Name = MpvNative.FromU8(Marshal.ReadIntPtr(data));
+                int format = Marshal.ReadInt32(data, IntPtr.Size);
+                IntPtr p = Marshal.ReadIntPtr(data, IntPtr.Size * 2);
+                if (p != IntPtr.Zero)
+                {
+                    if (format == MpvNative.FormatDouble) e.Number = BitConverter.Int64BitsToDouble(Marshal.ReadInt64(p));
+                    else if (format == MpvNative.FormatFlag) e.Number = Marshal.ReadInt32(p);
+                    else if (format == MpvNative.FormatInt64) e.Number = Marshal.ReadInt64(p);
+                    else if (format == MpvNative.FormatString) e.Text = MpvNative.FromU8(Marshal.ReadIntPtr(p));
+                }
+            }
+            else if (id == MpvNative.EventEndFile && data != IntPtr.Zero)
+            {
+                e.Reason = Marshal.ReadInt32(data);
+                e.Error = Marshal.ReadInt32(data, 4);
+            }
+            return e;
         }
 
         static IntPtr[] Args(string[] args, List<IntPtr> allocs)
@@ -168,48 +194,59 @@ namespace Retake.Player
         /// <summary>Runs a command; returns the libmpv result code (negative on failure).</summary>
         public int Command(params string[] args)
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) return -1;
+            if (!Enter(out IntPtr h)) return -1;
             var allocs = new List<IntPtr>();
             try { return MpvNative.mpv_command(h, Args(args, allocs)); }
-            finally { foreach (IntPtr p in allocs) Marshal.FreeHGlobal(p); }
+            finally
+            {
+                foreach (IntPtr p in allocs) Marshal.FreeHGlobal(p);
+                gate.Exit();
+            }
         }
 
         public void Set(string name, string value)
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) return;
-            Check(MpvNative.mpv_set_property_string(h, MpvNative.U8(name), MpvNative.U8(value)), "set " + name);
+            if (!Enter(out IntPtr h)) return;
+            try { Check(MpvNative.mpv_set_property_string(h, MpvNative.U8(name), MpvNative.U8(value)), "set " + name); }
+            finally { gate.Exit(); }
         }
 
         public double GetDouble(string name)
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) return double.NaN;
-            return MpvNative.mpv_get_property(h, MpvNative.U8(name), MpvNative.FormatDouble, out double v) < 0 ? double.NaN : v;
+            if (!Enter(out IntPtr h)) return double.NaN;
+            try { return MpvNative.mpv_get_property(h, MpvNative.U8(name), MpvNative.FormatDouble, out double v) < 0 ? double.NaN : v; }
+            finally { gate.Exit(); }
         }
 
         public long GetLong(string name, long fallback = -1)
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) return fallback;
-            return MpvNative.mpv_get_property(h, MpvNative.U8(name), MpvNative.FormatInt64, out long v) < 0 ? fallback : v;
+            if (!Enter(out IntPtr h)) return fallback;
+            try { return MpvNative.mpv_get_property(h, MpvNative.U8(name), MpvNative.FormatInt64, out long v) < 0 ? fallback : v; }
+            finally { gate.Exit(); }
         }
 
         public string? GetString(string name)
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) return null;
-            IntPtr p = MpvNative.mpv_get_property_string(h, MpvNative.U8(name));
-            if (p == IntPtr.Zero) return null;
-            try { return MpvNative.FromU8(p); } finally { MpvNative.mpv_free(p); }
+            if (!Enter(out IntPtr h)) return null;
+            try
+            {
+                IntPtr p = MpvNative.mpv_get_property_string(h, MpvNative.U8(name));
+                if (p == IntPtr.Zero) return null;
+                try { return MpvNative.FromU8(p); } finally { MpvNative.mpv_free(p); }
+            }
+            finally { gate.Exit(); }
         }
 
         /// <summary><c>screenshot-raw</c>: the frame mpv shows, at native size for <c>video</c>. Blocks until mpv has rendered it; call it off the UI thread.</summary>
         public RawFrame ScreenshotRaw(string mode = "video")
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) throw new MpvException("No player");
+            if (!Enter(out IntPtr h)) throw new MpvException("No player");
+            try { return ScreenshotRaw(h, mode); }
+            finally { gate.Exit(); }
+        }
+
+        static RawFrame ScreenshotRaw(IntPtr h, string mode)
+        {
             var allocs = new List<IntPtr>();
             IntPtr node = Marshal.AllocHGlobal(16);
             try
@@ -253,16 +290,27 @@ namespace Retake.Player
             }
         }
 
-        /// <summary>Stops the event thread, then destroys the player. Safe to call twice.</summary>
+        /// <summary>
+        /// Stops the event thread, then destroys the player once no call runs on it: at once when the calls in flight
+        /// end within 3 s, else when the last of them returns. Safe to call twice.
+        /// </summary>
         public void Dispose()
         {
-            IntPtr h = Handle;
-            if (h == IntPtr.Zero) return;
+            if (gate.Closed) return;
             stopping = true;
-            MpvNative.mpv_wakeup(h);
+            if (Enter(out IntPtr wake))
+            {
+                try { MpvNative.mpv_wakeup(wake); }
+                finally { gate.Exit(); }
+            }
             if (Thread.CurrentThread != events) events.Join(3000);
-            Handle = IntPtr.Zero;
-            MpvNative.mpv_terminate_destroy(h);
+            IntPtr h = Handle;
+            bool now = gate.Close(3000, () =>
+            {
+                Handle = IntPtr.Zero;
+                MpvNative.mpv_terminate_destroy(h);
+            });
+            if (!now && gate.InFlight > 0) Retake.Core.Log.Warning("player: a call still runs at shutdown; the player is destroyed when it returns");
         }
     }
 

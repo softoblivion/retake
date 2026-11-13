@@ -12,10 +12,11 @@
     <ProjectReference Include="..\..\src\Retake.Core\Retake.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The pure parts of the application (no WPF): frame formulas, timeline rules, region geometry, window place, path text,
+    <!-- The pure parts of the application (no WPF): frame formulas, the gate of the player handle, timeline rules, region geometry, window place, path text,
          the save of an edit, the file cache of the thumbnails, the window of a video, the Discard of unsaved notes,
          the banner after a save and the copy. -->
     <Compile Include="..\..\src\Retake\Player\FrameMath.cs" Link="Linked\FrameMath.cs" />
+    <Compile Include="..\..\src\Retake\Player\CallGate.cs" Link="Linked\CallGate.cs" />
     <Compile Include="..\..\src\Retake\Views\RegionMath.cs" Link="Linked\RegionMath.cs" />
     <Compile Include="..\..\src\Retake\Views\TimelineMath.cs" Link="Linked\TimelineMath.cs" />
     <Compile Include="..\..\src\Retake\Views\WindowPlace.cs" Link="Linked\WindowPlace.cs" />

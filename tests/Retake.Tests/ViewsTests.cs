@@ -385,6 +385,54 @@ namespace Retake.Tests
             Directory.Delete(target);
         }
 
+        [Test("player.call_gate.the_handle_is_released_only_after_the_last_call_returns")]
+        public static void CallGateWaitsForCallsInFlight(TestEnv t)
+        {
+            // no call running: the release runs at once, and nothing enters afterwards
+            var idle = new CallGate();
+            int idleRuns = 0;
+            Check.True(idle.Close(1000, () => idleRuns++));
+            Check.Equal(1, idleRuns);
+            Check.False(idle.TryEnter(), "closed");
+            Check.False(idle.Close(1000, () => idleRuns++), "a second close does nothing");
+            Check.Equal(1, idleRuns);
+            Check.Throws<InvalidOperationException>(() => idle.Exit());
+
+            // a frame grab still runs past the wait: the release waits for it and runs on its thread when it returns
+            var gate = new CallGate();
+            using (var inside = new System.Threading.ManualResetEventSlim())
+            using (var finish = new System.Threading.ManualResetEventSlim())
+            {
+                int runs = 0, inFlightAtRelease = -1;
+                var call = new System.Threading.Thread(() =>
+                {
+                    if (!gate.TryEnter()) return;
+                    inside.Set();
+                    finish.Wait();
+                    gate.Exit();
+                });
+                call.Start();
+                Check.True(inside.Wait(5000), "the call entered");
+                Check.False(gate.Close(50, () => { runs++; inFlightAtRelease = gate.InFlight; }), "timed out with the call in flight");
+                Check.Equal(0, runs, "never released under a running call");
+                Check.False(gate.TryEnter(), "no new call after the close");
+                finish.Set();
+                Check.True(call.Join(5000));
+                Check.Equal(1, runs, "released by the last call to leave");
+                Check.Equal(0, inFlightAtRelease);
+            }
+
+            // a call that ends within the wait: the close returns after the release
+            var quick = new CallGate();
+            Check.True(quick.TryEnter());
+            int quickRuns = 0;
+            var leave = new System.Threading.Thread(() => { System.Threading.Thread.Sleep(50); quick.Exit(); });
+            leave.Start();
+            Check.True(quick.Close(5000, () => quickRuns++));
+            Check.Equal(1, quickRuns);
+            Check.True(leave.Join(5000));
+        }
+
         [Test("views.save_notice.a_failed_frame_image_is_named_when_the_session_throws_too")]
         public static void SaveNoticeKeepsTheImageError(TestEnv t)
         {
