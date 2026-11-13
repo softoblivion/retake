@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using Retake.Core;
 
 namespace Retake.Views
@@ -12,6 +14,7 @@ namespace Retake.Views
     {
         readonly Session session;
         bool discarded;
+        Task<bool>? asking;
 
         public UnsavedGate(Session session)
         {
@@ -20,6 +23,18 @@ namespace Retake.Views
 
         /// <summary>True while notes are in memory that the data file does not have and no Discard covers them.</summary>
         public bool MustAsk => session.GetState().Unsaved && !discarded;
+
+        /// <summary>
+        /// Runs <paramref name="ask"/> (the question and its answer: true to go on) once for every caller that comes while
+        /// it runs: a second move that must ask (a playback failure while the window closes) gets the same answer
+        /// instead of a second question.
+        /// </summary>
+        public Task<bool> Resolve(Func<Task<bool>> ask)
+        {
+            if (asking != null && !asking.IsCompleted) return asking;
+            asking = ask();
+            return asking;
+        }
 
         /// <summary>The reviewer chose Discard for the move about to happen.</summary>
         public void Discard()

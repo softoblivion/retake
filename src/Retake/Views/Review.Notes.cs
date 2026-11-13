@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Threading;
 using Retake.Core;
 using Retake.Design.Controls;
 using Retake.Player;
@@ -464,8 +465,9 @@ namespace Retake.Views
                 saving = false;
                 if (reopen != null)
                 {
-                    // The editor is back with the typed text: a pick made during the save is dropped with it.
+                    // The editor is back with the typed text: a pick or keys made during the save are dropped with it.
                     pendingPick = null;
+                    keysDuringSave.Clear();
                     edit = reopen;
                     BeginEdit(text);
                 }
@@ -473,6 +475,8 @@ namespace Retake.Views
                 {
                     ApplyPick(selectedId, false);
                     ReturnKeys();
+                    // After this save has ended: a replayed key that saves first must not wait for it.
+                    if (keysDuringSave.Count > 0) _ = window.Dispatcher.BeginInvoke(new Action(ReplayKeysAfterSave), DispatcherPriority.Input);
                 }
                 Trace();
             }
@@ -521,8 +525,11 @@ namespace Retake.Views
         /// <summary>
         /// Before the notes leave memory (closing, another video, a restart for an update): while they are not saved, the
         /// question "Notes are not saved" with Retry, Discard and Cancel. True to go on (saved, or discarded), false to stay.
+        /// One question at a time: a caller that comes while it is open shares its answer.
         /// </summary>
-        async Task<bool> ResolveUnsaved()
+        Task<bool> ResolveUnsaved() => unsaved.Resolve(AskUnsaved);
+
+        async Task<bool> AskUnsaved()
         {
             string? reason = null;
             while (unsaved.MustAsk)

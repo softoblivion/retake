@@ -523,6 +523,47 @@ namespace Retake.Tests
             Directory.Delete(target);
         }
 
+        [Test("views.unsaved.a_second_caller_shares_the_open_question_instead_of_a_second_one")]
+        public static void OneUnsavedQuestionAtATime(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            c.OpenUnknown();
+            var gate = new UnsavedGate(c.Session);
+            int asked = 0;
+            var answer = new System.Threading.Tasks.TaskCompletionSource<bool>();
+            Func<System.Threading.Tasks.Task<bool>> ask = () => { asked++; return answer.Task; };
+            var failing = gate.Resolve(ask);
+            var closing = gate.Resolve(ask);
+            Check.Equal(1, asked, "the playback failure and the close share one question");
+            Check.True(ReferenceEquals(failing, closing));
+            answer.SetResult(false);
+            Check.False(failing.Result);
+            Check.False(closing.Result, "Cancel answers both");
+            var next = new System.Threading.Tasks.TaskCompletionSource<bool>();
+            next.SetResult(true);
+            Check.True(gate.Resolve(() => { asked++; return next.Task; }).Result);
+            Check.Equal(2, asked, "a later move asks again");
+        }
+
+        [Test("views.keys.keys_pressed_during_a_save_wait_in_order_without_repeats_or_editor_keys")]
+        public static void KeysWaitForTheSave(TestEnv t)
+        {
+            var keys = new PendingKeys<string>(k => k != "Enter" && k != "Ctrl+1");
+            Check.True(keys.Add("Space", false), "Space after a type-bar save");
+            Check.False(keys.Add("Space", true), "a held key's repeats are not kept");
+            Check.False(keys.Add("Enter", false), "an editor key does not wait");
+            Check.False(keys.Add("Ctrl+1", false));
+            Check.True(keys.Add("Right", false));
+            Check.True(keys.Add("Right", false));
+            Check.True(keys.Add("L", false));
+            Check.False(keys.Add("K", false), "at most four keys wait");
+            Check.Equal(new[] { "Space", "Right", "Right", "L" }, keys.Take());
+            Check.Equal(0, keys.Count);
+            keys.Add("Delete", false);
+            keys.Clear();
+            Check.Equal(0, keys.Take().Count, "the editor that comes back drops them");
+        }
+
         [Test("player.call_gate.the_handle_is_released_only_after_the_last_call_returns")]
         public static void CallGateWaitsForCallsInFlight(TestEnv t)
         {

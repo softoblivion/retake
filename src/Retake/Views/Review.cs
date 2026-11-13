@@ -525,6 +525,12 @@ namespace Retake.Views
 
         void CloseVideo()
         {
+            // Notes that became unsaved after the question stay, with the editor and the region: only the video stops.
+            if (unsaved.MustAsk)
+            {
+                StopVideo();
+                return;
+            }
             if (edit != null) EndEditUi();
             edit = null;
             if (quick != null) DropQuick();

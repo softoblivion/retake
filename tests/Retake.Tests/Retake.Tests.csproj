@@ -19,6 +19,7 @@
     <Compile Include="..\..\src\Retake\Player\CallGate.cs" Link="Linked\CallGate.cs" />
     <Compile Include="..\..\src\Retake\Player\SpeedLadder.cs" Link="Linked\SpeedLadder.cs" />
     <Compile Include="..\..\src\Retake\Views\KeyRoute.cs" Link="Linked\KeyRoute.cs" />
+    <Compile Include="..\..\src\Retake\Views\PendingKeys.cs" Link="Linked\PendingKeys.cs" />
     <Compile Include="..\..\src\Retake\Views\RegionMath.cs" Link="Linked\RegionMath.cs" />
     <Compile Include="..\..\src\Retake\Views\TimelineMath.cs" Link="Linked\TimelineMath.cs" />
     <Compile Include="..\..\src\Retake\Views\WindowPlace.cs" Link="Linked\WindowPlace.cs" />
