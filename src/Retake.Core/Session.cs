@@ -270,12 +270,20 @@ namespace Retake.Core
             else { _fps = null; _fpsSource = "unknown"; }
         }
 
-        /// <summary>Changes the frame rate (null clears the override). Frame numbers stay, timecodes and image names are rewritten. Throws <see cref="SessionException"/> for no open video or a rate outside 0.1..1000.</summary>
+        /// <summary>
+        /// Changes the frame rate (null clears the override). Frame numbers stay, timecodes and image names are rewritten.
+        /// All or nothing: when the data file cannot be written, the images keep their names and the session and the
+        /// settings go back to the old rate, so the rate always matches the data file on disk; the state is published,
+        /// then a <see cref="SessionException"/> is thrown (<see cref="SessionException.NotSaved"/> only when earlier
+        /// changes still wait for a retry). Throws <see cref="SessionException"/> for no open video or a rate outside 0.1..1000.
+        /// </summary>
         public SessionState SetFps(double? fps)
         {
             lock (_lock)
             {
                 string video = RequireVideo();
+                double? oldOverride = _settings.FpsOverride(video);
+                bool wasUnsaved = _unsaved;
                 if (fps == null)
                 {
                     _settings.SetFpsOverride(video, null);
@@ -294,7 +302,15 @@ namespace Retake.Core
                 TimecodeBase? newTb = Tb();
                 if (oldTb != null && newTb != null && !oldTb.Equals(newTb)) RenameImages(newTb);
                 string? error = WriteNotes();
-                return Finish(error);
+                if (error == null) return Finish(null);
+                // The renames are undone already (WriteNotes); the rate follows them back.
+                _settings.SetFpsOverride(video, oldOverride);
+                SaveSettings();
+                ResolveFps();
+                _unsaved = wasUnsaved;
+                Finish(null);
+                throw new SessionException("The frame rate was not changed: the notes could not be saved to "
+                    + NotesLayout.NotesPathFor(video), false, wasUnsaved);
             }
         }
 

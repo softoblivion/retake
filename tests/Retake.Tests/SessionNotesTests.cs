@@ -579,7 +579,46 @@ namespace Retake.Tests
             UnblockDataFile(c);
             c.Session.Save();
             Check.Equal(new[] { "0-00-20-00_ADD.png" }, Fx.Names(frames));
-            Check.Equal("# Frame Notes 1\n# source: dummy.mp4\n# fps: 50\n0:00:18:00\tADD\tb\trect 0.540,0.360 0.880,0.800\t0-00-20-00_ADD.png\n", NotesTxt(c));
+            // the rate change was not kept (all or nothing), the other changes were
+            Check.Equal("# Frame Notes 1\n# source: dummy.mp4\n# fps: 25\n0:00:36:00\tADD\tb\trect 0.540,0.360 0.880,0.800\t0-00-20-00_ADD.png\n", NotesTxt(c));
+        }
+
+        [Test("session.a_rate_change_that_cannot_be_saved_keeps_the_old_rate")]
+        public static void UnsavedRateChangeKeepsTheOldRate(TestEnv t)
+        {
+            var c = new SessionCase(t);
+            string video = c.OpenUnknown(25.0);
+            c.Session.AddNote(307, "FIX", "a", SessionCase.Rect(), SessionCase.Png);
+            BlockDataFile(c);
+            c.Events.Clear();
+            SessionException ex = Check.Throws<SessionException>(() => c.Session.SetFps(29.97));
+            Check.Contains("The frame rate was not changed", ex.Message);
+            Check.False(ex.NotSaved, "nothing waits for a retry");
+            Check.Equal(1, c.Events.Count, "the state is published before the error");
+            SessionState state = c.Session.GetState();
+            Check.Equal(25.0, state.Video!.Fps);
+            Check.False(state.Unsaved);
+            Check.Equal("0:00:12:07", state.Notes[0].Timecode);
+            Check.Equal("0-00-12-07_FIX.png", state.Notes[0].Image);
+            Check.Equal(25.0, c.Settings.FpsOverride(video), "the settings keep the rate of the data file");
+            Check.Equal(new[] { "0-00-12-07_FIX.png" }, Fx.Names(c.Path_("dummy_notes", "frames")));
+            // the next open reads the rate the data file has
+            c.Session.Close();
+            UnblockDataFile(c);
+            Fx.WriteText(c.Path_("dummy_notes", "dummy_notes.txt"), Header + "0:00:12:07\tFIX\ta\trect 0.540,0.360 0.880,0.800\t0-00-12-07_FIX.png\n");
+            Check.Equal(25.0, c.Session.Open(video).Video!.Fps);
+
+            // with changes already waiting for a retry, the retry stays offered
+            BlockDataFile(c);
+            Check.Throws<SessionException>(() => c.Session.AddNote(500, "ADD", "b", null, null));
+            ex = Check.Throws<SessionException>(() => c.Session.SetFps(50));
+            Check.True(ex.NotSaved);
+            Check.True(c.Session.GetState().Unsaved);
+            Check.Equal(25.0, c.Session.GetState().Video!.Fps);
+            UnblockDataFile(c);
+            c.Session.Save();
+            Check.Contains("# fps: 25\n", NotesTxt(c));
+            Check.Contains("0:00:20:00\tADD\tb\n", NotesTxt(c));
         }
 
         [Test("session.new_images_of_notes_that_were_never_saved_go_when_the_notes_are_dropped")]
