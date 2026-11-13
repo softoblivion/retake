@@ -102,9 +102,10 @@ offers Edit, Copy the timecode, Copy the text, Move to the playhead and Delete. 
 hides and shows it.
 
 `Ctrl+Z` undoes the last removal or change of a note, one step at a time: a removed note comes back with its mark
-and its frame image, an edited or moved one gets its text, type, mark, frame and image back. The message that
-confirms a removal has an **Undo** button as well. Adding a note is not undone (remove it instead), and the steps
-are forgotten when another video is opened or the frame rate is changed.
+and its frame image, an edited or moved one gets its text, type, mark, frame and image back; one edit in the editor
+is one step, even when it also moved the note. The message that confirms a removal has an **Undo** button as well.
+Adding a note is not undone (remove it instead). The app keeps the last 100 steps, fewer when they hold many large
+frame images (the oldest go first), and forgets them when a video is opened or closed or another frame rate is set.
 
 ### Window
 
@@ -146,11 +147,16 @@ The start screen and the **Recent** menu list recent videos with their last posi
 scrolls); a click opens a video at the frame it was left on. Right click an entry to open it, show its notes folder in Explorer,
 delete its notes (asks once more first) or take it off the list. Delete notes moves the files Retake writes in the
 notes folder to the Recycle Bin; when that is all the folder holds, the folder goes as one item. Any other file in it,
-such as a picture of your own, stays where it is with the folder, and the message says how many were kept.
+such as a picture of your own, stays where it is with the folder, and the message says how many were kept. When the
+Recycle Bin cannot take the notes (a network share or a removable drive has none, the drive's bin is set to remove
+files at once, or the files are larger than the bin holds), nothing is deleted yet: a question names what would go
+and where, with **Delete permanently** and **Cancel**. **Cancel** (or `Esc`) keeps everything; only **Delete
+permanently** deletes the files for good, and the message then says they were deleted permanently.
 
 ## Keyboard
 
-The keys work when no text field has focus; `?` shows them in the app.
+The keys work when no text field has focus; `?` shows them in the app. Keys pressed while a note and its
+frame image are being saved (`Space` to play on, the arrows) run once it is saved.
 
 | Key | Action |
 |---|---|

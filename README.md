@@ -56,15 +56,15 @@ admin rights.
 | | |
 |---|---|
 | **Built-in engine** | Containers MP4, MOV, MKV and WebM, decoded by mpv inside the exe with hardware decoding where the GPU has it; no codec packs or Windows extensions. |
-| **Shuttle and stepping** | Arrow keys step one frame, `Shift` ten, `J` / `K` / `L` shuttle up to 8x; dragging in the ruler scrubs. The [full key map](docs/USER_GUIDE.md#keyboard) is one `?` away. |
+| **Shuttle and stepping** | Arrow keys step one frame, `Shift` ten, `J` / `K` / `L` shuttle up to 8x, `[` / `]` step the speed from 0.25x to 8x; dragging in the ruler scrubs and `Ctrl+G` goes to a typed timecode or frame number. The [full key map](docs/USER_GUIDE.md#keyboard) is one `?` away. |
 | **Frame rate** | Read from the file and checked against the player; a wrong or missing rate is overridden per video, and the timecodes of its notes follow. |
 | **Mini timeline** | Ruler with timecodes, playhead and one tagged marker per note; resting on a tag shows the note and its frame image, a drag moves the note to another frame, the wheel zooms. |
-| **Note types** | FIX, ADD and REMOVE for change requests, LIKE and DISLIKE for reactions, and general notes about the whole video; each type has its key, colour and icon. |
-| **Notes list** | General notes for the whole video first, then every frame note with its type icon and thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes. |
+| **Note types** | FIX, ADD and REMOVE for change requests, LIKE and DISLIKE for reactions, and general notes about the whole video; each type has its key, colour and icon. Drag a region on the video and pick a type to save a note without typing. |
+| **Notes list** | General notes for the whole video first, then every frame note with its type icon and thumbnail; `↑` / `↓` move through them, `F2` edits, `Delete` removes, `Ctrl+Z` brings back the last removed or changed note. |
 | **Right-click menus** | Notes, the video, the timeline and the list offer their actions with the key of each, so nobody has to learn the keys first. |
 | **Send the review** | **Done** packs the notes (plain text and Markdown) and their frame images into one zip; the notes folder keeps the Markdown file with the reviewer's name, ready for any Markdown viewer; `Ctrl+Shift+C` copies the notes as plain text for a chat or an e-mail; a click on any timecode copies it for the time field of After Effects or Premiere. |
 | **Any window size** | Resize the window or maximize it; the video takes the room, and the size is remembered. |
-| **Recent videos** | The start screen lists recent videos with their note counts and opens them at the frame they were left on. |
+| **Recent videos** | The start screen lists recent videos with their note counts and opens them at the frame they were left on; Delete notes sends the notes to the Recycle Bin and asks before anything would be deleted for good. |
 | **Glass look** | Crystal Black and Crystal Sky themes and a Scale setting from 100 to 200 % for the whole window. |
 | **Self-updating** | New releases are found in the background, downloaded, verified by size and SHA-256 and installed on **Restart to update**. |
 
