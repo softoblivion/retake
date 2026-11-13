@@ -40,9 +40,11 @@ namespace Retake.Views
         public const string RecentMissing = "Video not found";
         public const string MenuOpen = "Open", MenuReveal = "Show in Explorer", MenuDelete = "Delete notes", MenuForget = "Remove from recent";
         public const string MenuDeleteTip = "Moves the notes to the Recycle Bin; other files stay; asks first", MenuForgetTip = "Takes it off the list; files stay";
-        public const string DeleteAsk = "Delete {0} and {1}?", DeleteAskEmpty = "Delete the empty notes folder?";
-        public const string Deleted = "Deleted {0} and {1}", DeletedEmpty = "Deleted the empty notes folder";
-        public const string DeletedKept = "Deleted {0} and {1}; kept {2} in the notes folder";
+        public const string DeleteEmpty = "the empty notes folder", DeleteFiles = "the notes files", DeleteSomeFiles = "some of the notes files";
+        public const string DeletePermanentTitle = "Delete notes permanently?";
+        public const string DeletePermanentBody = "The Recycle Bin cannot take {0} in {1}: the drive has no Recycle Bin, it is set to remove files at once, or the files are larger than it holds. Deleted permanently, they cannot be restored.";
+        public const string DeletePermanent = "Delete permanently", DeletePermanentTip = "Deletes the notes for good; they cannot be restored";
+        public const string DeleteCancel = "Cancel", DeleteCancelTip = "Keep the notes (Esc)";
 
         // Transport.
         public const string BackTip = "Previous frame (←)", ForwardTip = "Next frame (→)";
@@ -130,13 +132,39 @@ namespace Retake.Views
         public static string Frames(int n) => Count(n, "frame", "frames");
         public static string OtherFiles(int n) => Count(n, "other file", "other files");
 
-        /// <summary>The notice after Delete notes; files of other programs the delete kept are counted in it.</summary>
-        public static string DeletedNotice(int notes, int frames, int kept)
+        public static string Items(int n) => Count(n, "item", "items");
+
+        /// <summary>What a delete of notes removes, as the question and the notice name it: "2 notes and 1 frame", "the empty notes folder".</summary>
+        public static string DeleteWhat(int notes, int frames, int kept, int failed = 0)
         {
-            var culture = System.Globalization.CultureInfo.InvariantCulture;
-            if (kept > 0) return string.Format(culture, DeletedKept, Notes(notes), Frames(frames), OtherFiles(kept));
-            if (notes == 0 && frames == 0) return DeletedEmpty;
-            return string.Format(culture, Deleted, Notes(notes), Frames(frames));
+            if (notes > 0 || frames > 0) return Notes(notes) + " and " + Frames(frames);
+            if (failed > 0) return DeleteSomeFiles;
+            return kept > 0 ? DeleteFiles : DeleteEmpty;
+        }
+
+        /// <summary>The second step of the menu entry: "Delete 2 notes and 1 frame?", with the files that stay named.</summary>
+        public static string DeleteQuestionLabel(int notes, int frames, int kept)
+        {
+            string what = DeleteWhat(notes, frames, kept);
+            return kept > 0 ? "Delete " + what + ", keep " + OtherFiles(kept) + "?" : "Delete " + what + "?";
+        }
+
+        /// <summary>The body of the question before a permanent delete: what, and the folder it is in.</summary>
+        public static string DeletePermanentText(int notes, int frames, int kept, string folder)
+        {
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture, DeletePermanentBody, DeleteWhat(notes, frames, kept), folder);
+        }
+
+        /// <summary>
+        /// The notice after Delete notes. It counts only what went, says when that was for good, names the files of other
+        /// programs the delete kept and the items it could not remove.
+        /// </summary>
+        public static string DeletedNotice(int notes, int frames, int kept, bool permanently = false, int failed = 0)
+        {
+            string text = "Deleted " + DeleteWhat(notes, frames, kept, failed) + (permanently ? " permanently" : "");
+            if (kept > 0) text += "; kept " + OtherFiles(kept) + " in the notes folder";
+            if (failed > 0) text += "; " + Items(failed) + " could not be deleted";
+            return text;
         }
     }
 }

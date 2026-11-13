@@ -212,14 +212,18 @@ namespace Retake.Views
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception || ex is InvalidOperationException) { Banner.Show(ex.Message); }
         }
 
-        public bool DeleteNotes(RecentItem item)
+        public async Task<bool> DeleteNotes(RecentItem item)
         {
             bool isOpen = PathText.Same(openPath, item.Path);
             if (isOpen && edit != null) CancelEdit();
             try
             {
-                DeleteResult r = NotesLayout.DeleteNotes(item.Path);
-                window.Root.Toasts.Show(ToastLevel.Success, Copy.DeletedNotice(r.Notes, r.Frames, r.Kept));
+                // When the Recycle Bin cannot take the notes nothing goes without the explicit answer to delete for good.
+                DeleteResult? r = await NotesLayout.DeleteNotesAsking(item.Path, ShellRecycler.Instance,
+                    plan => DeleteQuestion.Ask(window.Root.Overlay, Copy.DeletePermanentText(plan.Notes, plan.Frames, plan.Kept, plan.Folder)));
+                if (r == null) return false;
+                isOpen = PathText.Same(openPath, item.Path);
+                window.Root.Toasts.Show(r.Failed > 0 ? ToastLevel.Warning : ToastLevel.Success, Copy.DeletedNotice(r.Notes, r.Frames, r.Kept, r.Permanently, r.Failed));
                 if (isOpen)
                 {
                     selectedId = null;

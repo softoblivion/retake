@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -133,8 +134,8 @@ namespace Retake.Views
     {
         void OpenPath(string path);
         void Reveal(RecentItem item);
-        /// <summary>Deletes the notes of a video; returns false when it was refused (the reason is shown).</summary>
-        bool DeleteNotes(RecentItem item);
+        /// <summary>Deletes the notes of a video; false when it was refused (the reason is shown) or the person kept them.</summary>
+        Task<bool> DeleteNotes(RecentItem item);
         void Forget(RecentItem item);
     }
 
@@ -165,7 +166,7 @@ namespace Retake.Views
                 }
                 reset.Stop();
                 menu.Close();
-                actions.DeleteNotes(item);
+                _ = actions.DeleteNotes(item);
             });
             delete.KeepsMenuOpen = true;
             delete.IsEnabled = item.Summary != null || item.HasNotesFolder;
@@ -184,11 +185,19 @@ namespace Retake.Views
             return menu;
         }
 
+        /// <summary>The question with what the delete would remove and keep, read from the folder as it is now.</summary>
         static string Question(RecentItem item)
         {
-            int n = item.Summary?.Notes ?? 0, f = item.Summary?.Frames ?? 0;
-            if (n == 0 && f == 0) return Copy.DeleteAskEmpty;
-            return string.Format(CultureInfo.InvariantCulture, Copy.DeleteAsk, Copy.Notes(n), Copy.Frames(f));
+            try
+            {
+                DeletePlan plan = NotesLayout.PlanDelete(item.Path);
+                return Copy.DeleteQuestionLabel(plan.Notes, plan.Frames, plan.Kept);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is SessionException || ex is ArgumentException || ex is NotSupportedException)
+            {
+                // The delete itself reports the reason in the banner; the question shows the counts of the list.
+                return Copy.DeleteQuestionLabel(item.Summary?.Notes ?? 0, item.Summary?.Frames ?? 0, 0);
+            }
         }
     }
 

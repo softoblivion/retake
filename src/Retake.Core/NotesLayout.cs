@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace Retake.Core
 {
@@ -30,28 +31,95 @@ namespace Retake.Core
         public int Frames { get; private set; }
     }
 
-    /// <summary>What <see cref="NotesLayout.DeleteNotes"/> removed.</summary>
+    /// <summary>What <see cref="NotesLayout.DeleteNotes(DeletePlan, IRecycler, bool)"/> removed.</summary>
     public sealed class DeleteResult
     {
-        public DeleteResult(int notes, int frames, string path, int kept = 0)
+        public DeleteResult(int notes, int frames, string path, int kept = 0, int failed = 0, bool permanently = false)
         {
             Notes = notes;
             Frames = frames;
             Path = path;
             Kept = kept;
+            Failed = failed;
+            Permanently = permanently;
         }
 
         /// <summary>Number of other files (a sub-folder counts as one) left where they were, with the folders that hold them.</summary>
         public int Kept { get; private set; }
 
-        /// <summary>Number of notes in the deleted data file.</summary>
+        /// <summary>Number of notes in the deleted data file (0 when the data file is still there).</summary>
         public int Notes { get; private set; }
 
         /// <summary>Number of PNG files removed.</summary>
         public int Frames { get; private set; }
 
-        /// <summary>The notes folder that was removed.</summary>
+        /// <summary>The notes folder.</summary>
         public string Path { get; private set; }
+
+        /// <summary>Number of items of the plan that are still there: the delete went only part of the way.</summary>
+        public int Failed { get; private set; }
+
+        /// <summary>True when the files were deleted for good rather than moved to the Recycle Bin.</summary>
+        public bool Permanently { get; private set; }
+    }
+
+    /// <summary>One item a delete of notes removes: a file, or a folder with everything in it.</summary>
+    public sealed class DeleteTarget
+    {
+        internal DeleteTarget(string path, bool isFolder, IList<string> files, IList<string> folders)
+        {
+            Path = path;
+            IsFolder = isFolder;
+            Files = files.ToList().AsReadOnly();
+            Folders = folders.ToList().AsReadOnly();
+        }
+
+        /// <summary>The item as the Recycle Bin takes it.</summary>
+        public string Path { get; private set; }
+
+        public bool IsFolder { get; private set; }
+
+        /// <summary>The files in it, in the order a permanent delete removes them (the item itself for a file).</summary>
+        public IReadOnlyList<string> Files { get; private set; }
+
+        /// <summary>The folders a permanent delete removes after the files, inner first; each is empty by then.</summary>
+        public IReadOnlyList<string> Folders { get; private set; }
+    }
+
+    /// <summary>
+    /// What a delete of notes would remove, worked out before anything goes: the items in delete order (images first,
+    /// the data file last), the counts the question and the notice show, and the entries that stay.
+    /// </summary>
+    public sealed class DeletePlan
+    {
+        internal DeletePlan(string video, string folder, int notes, int frames, int kept, IList<DeleteTarget> targets, IDictionary<string, int> notesIn)
+        {
+            Video = video;
+            Folder = folder;
+            Notes = notes;
+            Frames = frames;
+            Kept = kept;
+            Targets = targets.ToList().AsReadOnly();
+            NotesIn = new Dictionary<string, int>(notesIn, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public string Video { get; private set; }
+
+        /// <summary>The notes folder, also when only a 1.0 data file beside the video is deleted.</summary>
+        public string Folder { get; private set; }
+
+        public int Notes { get; private set; }
+
+        /// <summary>Number of frame images (PNG files) the delete removes.</summary>
+        public int Frames { get; private set; }
+
+        /// <summary>Number of other entries that stay (a sub-folder counts as one).</summary>
+        public int Kept { get; private set; }
+
+        public IReadOnlyList<DeleteTarget> Targets { get; private set; }
+
+        /// <summary>The data files among the targets' files with the number of notes each holds.</summary>
+        internal Dictionary<string, int> NotesIn { get; private set; }
     }
 
     /// <summary>
@@ -311,17 +379,16 @@ namespace Retake.Core
         }
 
         /// <summary>
-        /// Removes the files the app wrote in the notes folder of the video (and a 1.0 data file beside it): the data
-        /// file, the Markdown file and the package, the images the data file names or that carry a name in the app's own
-        /// form, the part and rename files of those writes, <c>Thumbs.db</c> and <c>desktop.ini</c>. Every other file,
-        /// sub-folder or link stays where it is, with the folders that hold it, and is counted in
-        /// <see cref="DeleteResult.Kept"/>; with none, the folder goes as one item. Throws
-        /// <see cref="NotesLayoutException"/> when there is nothing to delete, when the folder is a link or belongs to
-        /// another video, or when a removal fails; nothing is removed by a refusal.
-        /// With <paramref name="toRecycleBin"/> the files go to the Recycle Bin (on a drive without one, such as a network
-        /// share, the shell deletes them); without it they are deleted.
+        /// Works out what a delete of the notes of the video removes, and removes nothing: the files the app wrote in the
+        /// notes folder (and a 1.0 data file beside it), that is the data file, the Markdown file and the package, the
+        /// images the data file names or that carry a name in the app's own form, the part and rename files of those
+        /// writes, <c>Thumbs.db</c> and <c>desktop.ini</c>. Every other file, sub-folder or link stays where it is, with
+        /// the folders that hold it, and is counted in <see cref="DeletePlan.Kept"/>; with none, the folder goes as one
+        /// item, so a restore from the Recycle Bin brings the whole review back. Throws
+        /// <see cref="NotesLayoutException"/> when there is nothing to delete, or when the folder is a link or belongs to
+        /// another video.
         /// </summary>
-        public static DeleteResult DeleteNotes(string video, bool toRecycleBin = true)
+        public static DeletePlan PlanDelete(string video)
         {
             string folder = NotesDirFor(video);
             string dataFile = NotesPathFor(video);
@@ -347,9 +414,10 @@ namespace Retake.Core
             var frameFiles = new List<string>();
             int kept = 0;
             string? framesWhole = null;
+            NotesFile? nf = null;
             if (folderExists)
             {
-                NotesFile? nf = File.Exists(dataFile) ? ReadNotesFile(dataFile) : null;
+                nf = File.Exists(dataFile) ? ReadNotesFile(dataFile) : null;
                 if (nf != null && !SameName(nf.Source, videoName))
                     throw new NotesLayoutException("The notes folder " + folderName + " belongs to " + nf.Source + ".");
                 if (nf != null) notesCount = nf.Notes.Count;
@@ -421,51 +489,126 @@ namespace Retake.Core
                 string n = Path.GetFileName(p).ToLowerInvariant();
                 return n == dataLower ? 3 : n == exportLower ? 2 : n == packageLower ? 1 : 0;
             }).ToList();
-            string keptNote = kept > 0 ? ", " + kept + " other entries kept" : "";
 
-            if (toRecycleBin)
+            // With nothing else in it the checked folder goes as one item; with other entries kept only the app's own
+            // items go (the frames folder as one item when nothing else is in it), and the folder stays.
+            var targets = new List<DeleteTarget>();
+            var none = new string[0];
+            if (folderExists && kept == 0)
             {
-                // With nothing else in it the checked folder goes as one item, so a restore from the Recycle Bin brings the
-                // whole review back; with other entries kept only the app's own items go, and the folder stays.
-                var targets = new List<string>();
-                if (folderExists && kept == 0) targets.Add(folder);
-                else if (folderExists)
-                {
-                    if (framesWhole != null) targets.Add(framesWhole);
-                    else targets.AddRange(frameFiles);
-                    targets.AddRange(files);
-                }
-                if (legacyOurs) targets.Add(legacy);
-                try
-                {
-                    NativeFile.Recycle(targets);
-                }
-                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
-                {
-                    Log.Error("deleting the notes of " + video + " failed: " + ex.Message);
-                    throw new NotesLayoutException("The notes folder " + folderName + " could not be deleted completely.", ex);
-                }
-                Log.Info("moved the notes of " + videoName + " to the Recycle Bin: " + folder + " (" + notesCount + " notes, " + pngs + " frame images" + keptNote + ")");
-                return new DeleteResult(notesCount, pngs, folder, kept);
+                var folders = new List<string>();
+                if (framesWhole != null) folders.Add(framesWhole);
+                folders.Add(folder);
+                targets.Add(new DeleteTarget(folder, true, frameFiles.Concat(files).ToList(), folders));
             }
-            try
+            else if (folderExists)
             {
-                foreach (string path in frameFiles) File.Delete(path);
-                foreach (string path in files) File.Delete(path);
-                if (folderExists)
-                {
-                    if (framesWhole != null) Directory.Delete(framesWhole, false);
-                    if (kept == 0) Directory.Delete(folder, false);
-                }
-                if (legacyOurs) File.Delete(legacy);
+                if (framesWhole != null) targets.Add(new DeleteTarget(framesWhole, true, frameFiles, new[] { framesWhole }));
+                else targets.AddRange(frameFiles.Select(f => new DeleteTarget(f, false, new[] { f }, none)));
+                targets.AddRange(files.Select(f => new DeleteTarget(f, false, new[] { f }, none)));
             }
-            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            if (legacyOurs) targets.Add(new DeleteTarget(legacy, false, new[] { legacy }, none));
+            // The notes are counted with the file that holds them: the data file in the folder, else the 1.0 one beside it.
+            var notesIn = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            string? dataTarget = files.FirstOrDefault(p => string.Equals(Path.GetFileName(p), dataName, StringComparison.OrdinalIgnoreCase));
+            if (nf != null && dataTarget != null) notesIn[dataTarget] = nf.Notes.Count;
+            else if (nf == null && legacyOurs && legacyNf != null) notesIn[legacy] = legacyNf.Notes.Count;
+            return new DeletePlan(video, folder, notesCount, pngs, kept, targets, notesIn);
+        }
+
+        /// <summary>The plan's items the Recycle Bin cannot take: with any, a move there would delete them for good.</summary>
+        public static IList<string> NotRecyclable(DeletePlan plan, IRecycler recycler)
+        {
+            return recycler.NotRecyclable(plan.Targets.Select(t => t.Path).ToList());
+        }
+
+        /// <summary>
+        /// Delete notes as the app runs it: plans the delete; when the Recycle Bin takes every item, moves them there;
+        /// when it cannot take any of them, removes nothing and asks <paramref name="askPermanently"/> with the plan, and
+        /// deletes for good only on its true answer. Returns null when the answer was no (nothing was removed).
+        /// </summary>
+        public static async Task<DeleteResult?> DeleteNotesAsking(string video, IRecycler recycler, Func<DeletePlan, Task<bool>> askPermanently)
+        {
+            DeletePlan plan = PlanDelete(video);
+            if (NotRecyclable(plan, recycler).Count == 0) return DeleteNotes(plan, recycler, false);
+            if (!await askPermanently(plan)) return null;
+            return DeleteNotes(plan, recycler, true);
+        }
+
+        /// <summary>
+        /// Plans and runs a delete of the notes of the video (see <see cref="PlanDelete"/> and
+        /// <see cref="DeleteNotes(DeletePlan, IRecycler, bool)"/>).
+        /// </summary>
+        public static DeleteResult DeleteNotes(string video, IRecycler recycler, bool permanently = false)
+        {
+            return DeleteNotes(PlanDelete(video), recycler, permanently);
+        }
+
+        /// <summary>
+        /// Removes the items of <paramref name="plan"/>. Without <paramref name="permanently"/> they go to the Recycle Bin
+        /// through <paramref name="recycler"/>, and when the bin cannot take any of them nothing is removed and a
+        /// <see cref="NotesLayoutException"/> says so: only the caller's explicit <paramref name="permanently"/>, the
+        /// person's answer to that question, deletes for good. A permanent delete removes the files one by one, the data
+        /// file last, and stops at the first failure so the notes stay readable. The result counts only what went, and
+        /// <see cref="DeleteResult.Failed"/> the items still there; when nothing went it throws.
+        /// </summary>
+        public static DeleteResult DeleteNotes(DeletePlan plan, IRecycler recycler, bool permanently)
+        {
+            string videoName = Path.GetFileName(plan.Video);
+            string folderName = Path.GetFileName(plan.Folder);
+            var gone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int targetsGone = 0;
+            Exception? failure = null;
+            if (!permanently)
             {
-                Log.Error("deleting the notes of " + video + " failed: " + ex.Message);
-                throw new NotesLayoutException("The notes folder " + folderName + " could not be deleted completely.", ex);
+                IList<string> paths = plan.Targets.Select(t => t.Path).ToList();
+                IList<string> blocked = recycler.NotRecyclable(paths);
+                if (blocked.Count > 0)
+                    throw new NotesLayoutException("The Recycle Bin cannot take the notes in " + folderName + ", so nothing was deleted.");
+                IList<string> went;
+                try { went = recycler.Recycle(paths); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) { went = new string[0]; failure = ex; }
+                var wentSet = new HashSet<string>(went.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+                foreach (DeleteTarget target in plan.Targets)
+                {
+                    if (!wentSet.Contains(Path.GetFullPath(target.Path))) continue;
+                    targetsGone++;
+                    foreach (string file in target.Files) gone.Add(file);
+                }
             }
-            Log.Info("deleted the notes of " + videoName + ": " + folder + " (" + notesCount + " notes, " + pngs + " frame images" + keptNote + ")");
-            return new DeleteResult(notesCount, pngs, folder, kept);
+            else
+            {
+                foreach (DeleteTarget target in plan.Targets)
+                {
+                    try
+                    {
+                        foreach (string file in target.Files)
+                        {
+                            File.Delete(file);
+                            gone.Add(file);
+                        }
+                        foreach (string dir in target.Folders) Directory.Delete(dir, false);
+                        targetsGone++;
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                    {
+                        failure = ex;
+                        break;
+                    }
+                }
+            }
+            int failed = plan.Targets.Count - targetsGone;
+            if (failure != null || failed > 0)
+                Log.Error("deleting the notes of " + plan.Video + " left " + failed + " of " + plan.Targets.Count + " items" + (failure != null ? ": " + failure.Message : ""));
+            if (targetsGone == 0 && gone.Count == 0)
+                throw failure != null
+                    ? new NotesLayoutException("The notes folder " + folderName + " could not be deleted.", failure)
+                    : new NotesLayoutException("The notes folder " + folderName + " could not be deleted.");
+            int notes = plan.NotesIn.Where(kv => gone.Contains(kv.Key)).Sum(kv => kv.Value);
+            int frames = gone.Count(f => IsPng(Path.GetFileName(f)));
+            Log.Info((permanently ? "deleted the notes of " : "moved the notes of ") + videoName + (permanently ? " for good: " : " to the Recycle Bin: ") + plan.Folder
+                + " (" + notes + " notes, " + frames + " frame images" + (plan.Kept > 0 ? ", " + plan.Kept + " other entries kept" : "") + ")");
+            return new DeleteResult(notes, frames, plan.Folder, plan.Kept, failed, permanently);
         }
     }
 }

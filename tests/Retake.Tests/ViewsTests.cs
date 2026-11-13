@@ -360,7 +360,7 @@ namespace Retake.Tests
                 Check.False(PathText.Same(video, bad));
                 Check.True(PathText.Same(bad, bad), "compared as written");
                 // what the core throws for it is one of the types Delete notes reports in the banner
-                Exception ex = Check.Throws<Exception>(() => NotesLayout.DeleteNotes(bad));
+                Exception ex = Check.Throws<Exception>(() => NotesLayout.PlanDelete(bad));
                 Check.True(ex is IOException || ex is UnauthorizedAccessException || ex is SessionException || ex is ArgumentException || ex is NotSupportedException,
                     bad + " threw " + ex.GetType().Name);
             }
@@ -372,7 +372,24 @@ namespace Retake.Tests
             Check.Equal("Deleted 2 notes and 1 frame", Copy.DeletedNotice(2, 1, 0));
             Check.Equal("Deleted the empty notes folder", Copy.DeletedNotice(0, 0, 0));
             Check.Equal("Deleted 2 notes and 1 frame; kept 1 other file in the notes folder", Copy.DeletedNotice(2, 1, 1));
-            Check.Equal("Deleted 0 notes and 0 frames; kept 3 other files in the notes folder", Copy.DeletedNotice(0, 0, 3));
+            // with only kept files beside the app's own, neither notes nor an empty folder are named
+            Check.Equal("Deleted the notes files; kept 3 other files in the notes folder", Copy.DeletedNotice(0, 0, 3));
+            Check.Equal("Delete the notes files, keep 3 other files?", Copy.DeleteQuestionLabel(0, 0, 3));
+            Check.Equal("Delete the empty notes folder?", Copy.DeleteQuestionLabel(0, 0, 0));
+            Check.Equal("Delete 2 notes and 1 frame, keep 1 other file?", Copy.DeleteQuestionLabel(2, 1, 1));
+            Check.Equal("Delete 2 notes and 1 frame?", Copy.DeleteQuestionLabel(2, 1, 0));
+        }
+
+        [Test("views.recent.delete_notice_says_permanently_and_counts_what_failed")]
+        public static void DeleteNoticeSaysPermanently(TestEnv t)
+        {
+            Check.Equal("Deleted 2 notes and 1 frame permanently", Copy.DeletedNotice(2, 1, 0, true));
+            Check.Equal("Deleted the empty notes folder permanently", Copy.DeletedNotice(0, 0, 0, true));
+            Check.Equal("Deleted 0 notes and 1 frame; 2 items could not be deleted", Copy.DeletedNotice(0, 1, 0, false, 2));
+            Check.Equal("Deleted some of the notes files permanently; 1 item could not be deleted", Copy.DeletedNotice(0, 0, 0, true, 1));
+            string body = Copy.DeletePermanentText(3, 2, 0, @"\\studio\clips\promo_notes");
+            Check.Contains("3 notes and 2 frames in \\\\studio\\clips\\promo_notes", body);
+            Check.Contains("cannot be restored", body);
         }
     
 

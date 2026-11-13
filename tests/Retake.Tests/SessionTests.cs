@@ -602,7 +602,7 @@ namespace Retake.Tests
             Check.Equal(1, c.Session.Open(video).Notes.Count, "the stripped source names this video");
             Check.Equal(1, NotesLayout.NotesSummaryFor(video)!.Notes);
             c.Session.Close();
-            Check.Equal(1, NotesLayout.DeleteNotes(video, false).Notes);
+            Check.Equal(1, NotesLayout.DeleteNotes(video, new TestBin(t)).Notes);
         }
 
         [Test("session.open_refuses_a_path_without_a_full_form")]

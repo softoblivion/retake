@@ -45,8 +45,10 @@ namespace Retake.Core
         }
 
         private const uint FileOpDelete = 3;
-        // FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOCONFIRMMKDIR | FOF_NOERRORUI: no window of any kind, an error comes back as the result.
-        private const ushort RecycleFlags = 0x0004 | 0x0010 | 0x0040 | 0x0200 | 0x0400;
+        // FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOCONFIRMMKDIR | FOF_NOERRORUI: no window, an error comes back
+        // as the result. FOF_WANTNUKEWARNING overrides FOF_NOCONFIRMATION for an item the shell would delete for good
+        // instead of recycling: the shell asks first, so a permanent delete never passes silently.
+        private const ushort RecycleFlags = 0x0004 | 0x0010 | 0x0040 | 0x0200 | 0x0400 | 0x4000;
 
         // SHFILEOPSTRUCTW is packed to 1 byte in a 32-bit process and naturally aligned in a 64-bit one.
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode, Pack = 1)]
@@ -82,13 +84,13 @@ namespace Retake.Core
         private static extern int FileOperation64(ref FileOp64 op);
 
         /// <summary>
-        /// Moves files and folders to the Recycle Bin with the shell's own operation, with no window (on a drive without a
-        /// Recycle Bin the shell deletes them). Throws <see cref="IOException"/> when the shell reports an error or an item
-        /// is still there afterwards.
+        /// Moves files and folders to the Recycle Bin with the shell's own operation in one call, with no window unless
+        /// the shell would delete an item for good (then it asks). Returns the items that are gone afterwards; an item
+        /// the shell kept, or a call it refused or the person cancelled, leaves its items out of the list.
         /// </summary>
-        public static void Recycle(IList<string> paths)
+        public static IList<string> Recycle(IList<string> paths)
         {
-            if (paths.Count == 0) return;
+            if (paths.Count == 0) return new List<string>();
             // The list is double-NUL terminated: one NUL between the full paths, the marshaller adds the last one.
             string from = string.Join("\0", paths.Select(Path.GetFullPath)) + "\0";
             int result;
@@ -105,11 +107,80 @@ namespace Retake.Core
                 result = FileOperation32(ref op);
                 aborted = op.Aborted != 0;
             }
-            if (result != 0 || aborted) throw new IOException("The shell could not move the files to the Recycle Bin (code 0x" + result.ToString("X", System.Globalization.CultureInfo.InvariantCulture) + (aborted ? ", aborted" : "") + ")");
-            foreach (string path in paths)
+            if (result != 0 || aborted) Log.Warning("the shell did not move every item to the Recycle Bin (code 0x" + result.ToString("X", System.Globalization.CultureInfo.InvariantCulture) + (aborted ? ", aborted" : "") + ")");
+            return paths.Where(p => !File.Exists(p) && !Directory.Exists(p)).ToList();
+        }
+
+        private const uint DriveFixed = 3;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint GetDriveTypeW(string root);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool GetVolumePathNameW(string path, System.Text.StringBuilder volume, int length);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool GetVolumeNameForVolumeMountPointW(string mountPoint, System.Text.StringBuilder name, int length);
+
+        // SHQUERYRBINFO: naturally aligned in a 64-bit process, packed to 4 bytes (no gap after the size) in a 32-bit one.
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BinInfo64
+        {
+            public int Size;
+            public long Bytes;
+            public long Items;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        private struct BinInfo32
+        {
+            public int Size;
+            public long Bytes;
+            public long Items;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "SHQueryRecycleBinW")]
+        private static extern int QueryRecycleBin64(string root, ref BinInfo64 info);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "SHQueryRecycleBinW")]
+        private static extern int QueryRecycleBin32(string root, ref BinInfo32 info);
+
+        /// <summary>
+        /// The mount point of the volume that holds <paramref name="fullPath"/> (<c>C:\</c>, or a folder a volume is
+        /// mounted in), or null when there is none, such as on a drive letter with no volume behind it.
+        /// </summary>
+        internal static string? VolumeRoot(string fullPath)
+        {
+            var volume = new System.Text.StringBuilder(1024);
+            return GetVolumePathNameW(fullPath, volume, volume.Capacity) ? volume.ToString() : null;
+        }
+
+        /// <summary>True when the volume at <paramref name="root"/> is a fixed drive (not removable, not a network drive).</summary>
+        internal static bool IsFixedDrive(string root)
+        {
+            return GetDriveTypeW(root) == DriveFixed;
+        }
+
+        /// <summary>True when the shell reports a Recycle Bin for the volume at <paramref name="root"/>.</summary>
+        internal static bool HasRecycleBin(string root)
+        {
+            if (IntPtr.Size == 8)
             {
-                if (File.Exists(path) || Directory.Exists(path)) throw new IOException(path + " is still there after the move to the Recycle Bin");
+                var info = new BinInfo64 { Size = Marshal.SizeOf(typeof(BinInfo64)) };
+                return QueryRecycleBin64(root, ref info) == 0;
             }
+            var info32 = new BinInfo32 { Size = Marshal.SizeOf(typeof(BinInfo32)) };
+            return QueryRecycleBin32(root, ref info32) == 0;
+        }
+
+        /// <summary>The <c>{guid}</c> of the volume at <paramref name="root"/>, the key of its Recycle Bin settings; null when unknown.</summary>
+        internal static string? VolumeGuid(string root)
+        {
+            var name = new System.Text.StringBuilder(64);
+            if (!GetVolumeNameForVolumeMountPointW(root, name, name.Capacity)) return null;
+            string text = name.ToString();
+            int open = text.IndexOf('{'), close = text.IndexOf('}');
+            return open >= 0 && close > open ? text.Substring(open, close - open + 1) : null;
         }
 
         private const uint ReparseTagMountPoint = 0xA0000003;

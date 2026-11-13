@@ -449,6 +449,19 @@ namespace Retake.Design
             frame.Margin = new Thickness(0, 6, 0, 0);
             block.Children.Add(frame);
 
+            // The question before Delete notes deletes for good (Cancel focused).
+            var askFrame = new Grid { Height = 300, ClipToBounds = true, Margin = new Thickness(0, 6, 0, 0) };
+            askFrame.Children.Add(new Scene());
+            var askVeil = new Rectangle();
+            askVeil.SetResourceReference(Shape.FillProperty, "T.scrim");
+            askFrame.Children.Add(askVeil);
+            Sheet ask = Views.DeleteQuestion.Build(Views.Copy.DeletePermanentText(3, 2, 0, @"\\studio\share\clips\promo_notes"), out _, out _);
+            ask.Margin = new Thickness(0, 18, 0, 0);
+            askFrame.Children.Add(ask);
+            askFrame.SizeChanged += (s, e) => askFrame.Clip = new RectangleGeometry(new Rect(e.NewSize), 18, 18);
+            block.Children.Add(Caption("The question before a delete the Recycle Bin cannot take (Esc, the veil and Cancel keep the notes)"));
+            block.Children.Add(askFrame);
+
             // Menu, hover card, tooltip.
             var row = new Grid { Margin = new Thickness(0, 18, 0, 0) };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

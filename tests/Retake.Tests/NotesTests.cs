@@ -460,12 +460,12 @@ namespace Retake.Tests
             string folder = MakeReview(t);
             Fx.WriteBytes(Path.Combine(folder, "frames", "0-00-01-00_FIX.png.part"), new byte[0]);
             Fx.WriteBytes(Path.Combine(folder, "Thumbs.db"), new byte[0]);
-            DeleteResult result = NotesLayout.DeleteNotes(video, false);
+            DeleteResult result = NotesLayout.DeleteNotes(video, new TestBin(t));
             Check.Equal(2, result.Notes);
             Check.Equal(1, result.Frames);
             Check.Equal(folder, result.Path);
             Check.Equal(new[] { "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, new TestBin(t)));
             Check.Equal("There are no notes for promo.mp4.", ex.Message);
         }
 
@@ -478,7 +478,7 @@ namespace Retake.Tests
             foreach (string place in new[] { Path.Combine(folder, "frames", "ref_logo.png"), Path.Combine(folder, "ref_logo.png"), Path.Combine(folder, "frames", "shot.png.part"), Path.Combine(folder, "frames", "old.rename") })
             {
                 Fx.WriteBytes(place, foreign);
-                DeleteResult kept = NotesLayout.DeleteNotes(video, false);
+                DeleteResult kept = NotesLayout.DeleteNotes(video, new TestBin(t));
                 Check.Equal(2, kept.Notes, place);
                 Check.Equal(1, kept.Frames, place);
                 Check.Equal(1, kept.Kept, place);
@@ -494,7 +494,7 @@ namespace Retake.Tests
             Fx.WriteBytes(Path.Combine(folder, "frames", "0-00-03-00_LIKE_2.png"), new byte[] { 5 });
             Fx.WriteBytes(Path.Combine(folder, "frames", "0-00-01-00_FIX.png.part"), new byte[0]);
             Fx.WriteBytes(Path.Combine(folder, "frames", "0123abcd.rename"), new byte[] { 6 });
-            DeleteResult result = NotesLayout.DeleteNotes(video, false);
+            DeleteResult result = NotesLayout.DeleteNotes(video, new TestBin(t));
             Check.Equal(2, result.Frames);
             Check.Equal(0, result.Kept);
             Check.False(Directory.Exists(folder));
@@ -517,7 +517,7 @@ namespace Retake.Tests
             };
             foreach (var kv in foreign) Fx.WriteBytes(t.Combine(kv.Key.Split('/')), kv.Value);
             Directory.CreateDirectory(Path.Combine(folder, "frames", "rejected"));
-            DeleteResult result = NotesLayout.DeleteNotes(video, false);
+            DeleteResult result = NotesLayout.DeleteNotes(video, new TestBin(t));
             Check.Equal(2, result.Notes);
             Check.Equal(2, result.Frames);
             Check.Equal(4, result.Kept, "a file and a folder in the notes folder, a file and a folder in frames");
@@ -528,7 +528,7 @@ namespace Retake.Tests
             Check.Equal(new[] { "client", "frames", "ref_logo.png" }, Fx.Names(folder));
             Check.Equal(new[] { "grade_ref.png", "rejected" }, Fx.Names(Path.Combine(folder, "frames")));
             // with only the reviewer's files left there are no notes to delete, and nothing moves
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, new TestBin(t)));
             Check.Equal("There are no notes for promo.mp4.", ex.Message);
             Check.Equal(left.Keys.ToList(), Fx.Tree(t.Tmp).Keys.ToList());
         }
@@ -550,7 +550,7 @@ namespace Retake.Tests
             string folder = MakeReview(t);
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { (byte)'P', (byte)'K' });
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip.part"), new byte[0]);
-            DeleteResult result = NotesLayout.DeleteNotes(video, false);
+            DeleteResult result = NotesLayout.DeleteNotes(video, new TestBin(t));
             Check.Equal(2, result.Notes);
             Check.Equal(1, result.Frames);
             Check.False(Directory.Exists(folder));
@@ -559,7 +559,7 @@ namespace Retake.Tests
             Fx.WriteBytes(Path.Combine(folder, "promo_notes.zip"), new byte[] { 1 });
             Fx.WriteText(Path.Combine(folder, "promo_notes.txt"), Data);
             Fx.WriteBytes(Path.Combine(folder, "other.zip"), new byte[] { 7 });
-            Check.Equal(1, NotesLayout.DeleteNotes(video, false).Kept);
+            Check.Equal(1, NotesLayout.DeleteNotes(video, new TestBin(t)).Kept);
             Check.Equal(new[] { "other.zip" }, Fx.Names(folder));
             Check.Equal(new byte[] { 7 }, File.ReadAllBytes(Path.Combine(folder, "other.zip")));
         }
@@ -577,7 +577,7 @@ namespace Retake.Tests
             Fx.WriteText(t.Combine("promo_notes.txt"), Data);
             Fx.WriteBytes(t.Combine("promo_notes", "0-00-01-00_FIX.png"), new byte[] { (byte)'p', (byte)'n', (byte)'g' });
             Fx.WriteText(t.Combine("other_notes.txt"), "keep");
-            Check.Equal(1, NotesLayout.DeleteNotes(video, false).Frames);
+            Check.Equal(1, NotesLayout.DeleteNotes(video, new TestBin(t)).Frames);
             Check.Equal(new[] { "other_notes.txt", "promo.mp4" }, Fx.Names(t.Tmp).Where(n => n != "home").ToList());
         }
 
@@ -588,7 +588,7 @@ namespace Retake.Tests
             string folder = MakeReview(t);
             Fx.WriteText(Path.Combine(folder, "my edit.prproj"), "keep");
             Fx.WriteText(Path.Combine(folder, "promo_notes.txt"), Data.Replace("promo.mp4", "promo.mov"));
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, new TestBin(t)));
             Check.Equal("The notes folder promo_notes belongs to promo.mov.", ex.Message);
             // nothing was removed by the refusal
             Check.Equal(new[] { "frames", "my edit.prproj", "promo_notes.md", "promo_notes.txt" }, Fx.Names(folder));
@@ -600,7 +600,7 @@ namespace Retake.Tests
         {
             string video = MakeVideo(t);
             Fx.WriteText(t.Combine("promo_notes"), "not a folder");
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, new TestBin(t)));
             Check.Equal("The notes folder promo_notes is a link or a file, not a folder. Delete it by hand.", ex.Message);
             Check.True(File.Exists(t.Combine("promo_notes")));
         }
@@ -624,7 +624,7 @@ namespace Retake.Tests
                 process.WaitForExit();
                 Check.Equal(0, process.ExitCode, "mklink /J");
             }
-            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, false));
+            NotesLayoutException ex = Check.Throws<NotesLayoutException>(() => NotesLayout.DeleteNotes(video, new TestBin(t)));
             Check.Equal("The notes folder promo_notes is a link or a file, not a folder. Delete it by hand.", ex.Message);
             Check.False(NotesLayout.MigrateLayout(video), "images behind a junction are not moved");
             Check.Equal(new[] { "a.png", "promo_notes.txt" }, Fx.Names(real));
@@ -652,7 +652,7 @@ namespace Retake.Tests
                 process.WaitForExit();
                 Check.Equal(0, process.ExitCode, "mklink /J");
             }
-            DeleteResult result = NotesLayout.DeleteNotes(video, false);
+            DeleteResult result = NotesLayout.DeleteNotes(video, new TestBin(t));
             Check.Equal(1, result.Kept);
             Check.Equal(0, result.Frames, "images behind a link are not counted");
             Check.Equal(new[] { "frames" }, Fx.Names(folder));
